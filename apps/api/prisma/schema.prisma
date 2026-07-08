@@ -1,0 +1,182 @@
+// Schema Prisma untuk Mold Tracker.
+// Enum di sini harus konsisten dengan packages/shared/src/index.ts.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  PENYEDIA
+  PENYEWA
+  OPERATOR
+}
+
+enum MachineStatus {
+  TERSEDIA
+  DIAJUKAN
+  DIKONFIRMASI
+  DIKIRIM
+  AKTIF
+  SELESAI_SEWA
+  DIKEMBALIKAN
+  PENGECEKAN
+  MAINTENANCE
+}
+
+enum WarrantyStatus {
+  AKTIF
+  HABIS
+}
+
+enum RentalStatus {
+  DIAJUKAN
+  DITOLAK
+  DIKONFIRMASI
+  DIKIRIM
+  AKTIF
+  SELESAI_SEWA
+  DIKEMBALIKAN
+  SELESAI
+}
+
+enum ExtensionStatus {
+  DIAJUKAN
+  DITERIMA
+  DITOLAK
+}
+
+enum CauseCategory {
+  SETTING_OPERATOR
+  KUALITAS_MATERIAL
+  KONDISI_MESIN
+  LAIN
+}
+
+enum ReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ConditionResult {
+  BAIK
+  BUTUH_MAINTENANCE
+  RUSAK
+}
+
+model User {
+  id           String   @id @default(cuid())
+  nama         String
+  email        String   @unique
+  passwordHash String
+  role         Role
+  parentId     String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  parent    User?  @relation("OperatorParent", fields: [parentId], references: [id])
+  operators User[] @relation("OperatorParent")
+
+  machines        Machine[]
+  rentalsPenyewa  Rental[]          @relation("RentalPenyewa")
+  rentalsPenyedia Rental[]          @relation("RentalPenyedia")
+  batches         ProductionBatch[]
+  checks          ConditionCheck[]
+}
+
+model Machine {
+  id                     String         @id @default(cuid())
+  machineNumber          String         @unique
+  spesifikasi            String
+  standardRatio          Float
+  status                 MachineStatus  @default(TERSEDIA)
+  ownerId                String
+  warrantyStart          DateTime
+  warrantyDurationMonths Int
+  warrantyEnd            DateTime
+  warrantyStatus         WarrantyStatus
+  createdAt              DateTime       @default(now())
+
+  owner   User              @relation(fields: [ownerId], references: [id])
+  rentals Rental[]
+  batches ProductionBatch[]
+  checks  ConditionCheck[]
+}
+
+model Rental {
+  id                    String       @id @default(cuid())
+  machineId             String
+  penyewaId             String
+  penyediaId            String
+  status                RentalStatus @default(DIAJUKAN)
+  requestedDurationDays Int
+  destinationLocation   String
+  startDate             DateTime?
+  endDate               DateTime?
+  confirmedAt           DateTime?
+  shippedAt             DateTime?
+  receivedAt            DateTime?
+  returnedAt            DateTime?
+  rejectionReason       String?
+  createdAt             DateTime     @default(now())
+
+  machine    Machine           @relation(fields: [machineId], references: [id])
+  penyewa    User              @relation("RentalPenyewa", fields: [penyewaId], references: [id])
+  penyedia   User              @relation("RentalPenyedia", fields: [penyediaId], references: [id])
+  extensions RentalExtension[]
+  batches    ProductionBatch[]
+  checks     ConditionCheck[]
+}
+
+model RentalExtension {
+  id             String          @id @default(cuid())
+  rentalId       String
+  additionalDays Int
+  status         ExtensionStatus @default(DIAJUKAN)
+  requestedAt    DateTime        @default(now())
+  decidedAt      DateTime?
+
+  rental Rental @relation(fields: [rentalId], references: [id])
+}
+
+model ProductionBatch {
+  id                  String         @id @default(cuid())
+  rentalId            String
+  machineId           String
+  operatorId          String
+  startAt             DateTime
+  endAt               DateTime
+  materialInputKg     Float
+  targetOutput        Float
+  actualOutput        Float
+  rejectCount         Int
+  causeCategory       CauseCategory?
+  efficiency          Float
+  flaggedMachineIssue Boolean        @default(false)
+  reviewStatus        ReviewStatus   @default(PENDING)
+  createdAt           DateTime       @default(now())
+
+  rental   Rental  @relation(fields: [rentalId], references: [id])
+  machine  Machine @relation(fields: [machineId], references: [id])
+  operator User    @relation(fields: [operatorId], references: [id])
+}
+
+model ConditionCheck {
+  id          String          @id @default(cuid())
+  machineId   String
+  rentalId    String
+  checkedById String
+  result      ConditionResult
+  notes       String?
+  checkedAt   DateTime        @default(now())
+
+  machine   Machine @relation(fields: [machineId], references: [id])
+  rental    Rental  @relation(fields: [rentalId], references: [id])
+  checkedBy User    @relation(fields: [checkedById], references: [id])
+}

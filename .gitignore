@@ -1,0 +1,22 @@
+# Dependensi
+node_modules/
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Environment (jangan pernah commit .env asli)
+.env
+.env.*
+!.env.example
+
+# Coverage dan log
+coverage/
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

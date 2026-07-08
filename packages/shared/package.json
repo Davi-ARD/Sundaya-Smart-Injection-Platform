@@ -1,0 +1,15 @@
+{
+  "name": "@mold-tracker/shared",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tipe dan DTO bersama untuk apps/api dan apps/web",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}
