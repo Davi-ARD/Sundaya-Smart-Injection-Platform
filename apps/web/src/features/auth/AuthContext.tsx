@@ -12,7 +12,6 @@ import type {
   User,
 } from '@mold-tracker/shared'
 import { api } from '../../lib/api'
-import { mockAuthApi } from '../../lib/mockAuth'
 import { AuthContext, type AuthContextValue } from './authContextValue'
 
 const SESSION_KEY = 'mold-tracker:auth-session'
@@ -71,14 +70,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
   }, [])
 
-  const requireUser = useCallback(() => {
-    if (!user) {
-      throw new Error('Sesi pengguna belum tersedia.')
-    }
-
-    return user
-  }, [user])
-
   const value = useMemo<AuthContextValue>(
     () => ({
       accessToken,
@@ -87,18 +78,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       register,
       logout,
-      listUsers: (currentUser, filters) =>
-        mockAuthApi.listUsers(currentUser, filters),
-      createUser: (request) => mockAuthApi.createUser(requireUser(), request),
-      updateUser: (userId, request) =>
-        mockAuthApi.updateUser(requireUser(), userId, request),
-      deactivateUser: (userId) =>
-        mockAuthApi.deactivateUser(requireUser(), userId),
-      listOperators: () => mockAuthApi.listOperators(requireUser()),
-      createOperator: (request) =>
-        mockAuthApi.createOperator(requireUser(), request),
+      // Backend menurunkan identitas & otorisasi dari token; cukup kirim accessToken.
+      listUsers: (filters) => api.listUsers(accessToken, filters),
+      createUser: (request) => api.createUser(accessToken, request),
+      updateUser: (userId, request) => api.updateUser(accessToken, userId, request),
+      deactivateUser: (userId) => api.deactivateUser(accessToken, userId),
+      listOperators: () => api.listOperators(accessToken),
+      createOperator: (request) => api.createOperator(accessToken, request),
     }),
-    [accessToken, user, login, register, logout, requireUser],
+    [accessToken, user, login, register, logout],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

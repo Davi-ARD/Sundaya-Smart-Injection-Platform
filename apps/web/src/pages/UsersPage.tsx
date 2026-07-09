@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import {
   Role,
   type CreateUserRequest,
@@ -18,7 +18,8 @@ const emptyCreateForm: CreateUserRequest = {
 }
 
 export function UsersPage() {
-  const { user, listUsers, createUser, updateUser, deactivateUser } = useAuth()
+  const { listUsers, createUser, updateUser, deactivateUser } = useAuth()
+  const [users, setUsers] = useState<User[]>([])
   const [roleFilter, setRoleFilter] = useState<Role | 'SEMUA'>('SEMUA')
   const [activeFilter, setActiveFilter] = useState<'SEMUA' | 'AKTIF' | 'NONAKTIF'>('SEMUA')
   const [createForm, setCreateForm] = useState<CreateUserRequest>(emptyCreateForm)
@@ -26,38 +27,39 @@ export function UsersPage() {
   const [editForm, setEditForm] = useState<UpdateUserRequest>({})
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
-  const [refreshKey, setRefreshKey] = useState(0)
 
-  const users = useMemo(() => {
-    void refreshKey
-
-    if (!user) {
-      return []
+  const loadUsers = useCallback(async () => {
+    try {
+      const data = await listUsers({
+        role: roleFilter === 'SEMUA' ? undefined : roleFilter,
+        isActive: activeFilter === 'SEMUA' ? undefined : activeFilter === 'AKTIF',
+      })
+      setUsers(data)
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : 'Gagal memuat pengguna.')
     }
+  }, [listUsers, roleFilter, activeFilter])
 
-    return listUsers(user, {
-      role: roleFilter === 'SEMUA' ? undefined : roleFilter,
-      isActive:
-        activeFilter === 'SEMUA' ? undefined : activeFilter === 'AKTIF',
-    })
-  }, [user, listUsers, roleFilter, activeFilter, refreshKey])
+  useEffect(() => {
+    void loadUsers()
+  }, [loadUsers])
 
   const resetMessages = () => {
     setNotice('')
     setError('')
   }
 
-  const submitCreate = (event: FormEvent<HTMLFormElement>) => {
+  const submitCreate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     resetMessages()
 
     try {
-      createUser({
+      await createUser({
         ...createForm,
         parentId: createForm.parentId || undefined,
       })
       setCreateForm(emptyCreateForm)
-      setRefreshKey((current) => current + 1)
+      await loadUsers()
       setNotice('Pengguna baru berhasil dibuat.')
     } catch (caughtError) {
       setError(
@@ -79,7 +81,7 @@ export function UsersPage() {
     })
   }
 
-  const submitEdit = (event: FormEvent<HTMLFormElement>) => {
+  const submitEdit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
 
     if (!editingUser) {
@@ -89,10 +91,10 @@ export function UsersPage() {
     resetMessages()
 
     try {
-      updateUser(editingUser.id, editForm)
+      await updateUser(editingUser.id, editForm)
       setEditingUser(null)
       setEditForm({})
-      setRefreshKey((current) => current + 1)
+      await loadUsers()
       setNotice('Informasi pengguna berhasil diperbarui.')
     } catch (caughtError) {
       setError(
@@ -103,12 +105,12 @@ export function UsersPage() {
     }
   }
 
-  const deactivate = (selectedUser: User) => {
+  const deactivate = async (selectedUser: User) => {
     resetMessages()
 
     try {
-      deactivateUser(selectedUser.id)
-      setRefreshKey((current) => current + 1)
+      await deactivateUser(selectedUser.id)
+      await loadUsers()
       setNotice('Pengguna berhasil dinonaktifkan.')
     } catch (caughtError) {
       setError(
@@ -206,7 +208,7 @@ export function UsersPage() {
                 Daftar pengguna
               </h2>
               <p className="mt-1 text-sm text-slate-500">
-                Data berasal dari mock service sesuai kontrak `/users`.
+                Data berasal dari API `/users`.
               </p>
             </div>
             <div className="flex gap-2">

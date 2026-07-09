@@ -1,5 +1,5 @@
-import { useMemo, useState, type FormEvent } from 'react'
-import type { CreateOperatorRequest } from '@mold-tracker/shared'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import type { CreateOperatorRequest, User } from '@mold-tracker/shared'
 import { useAuth } from '../features/auth/authContextValue'
 
 const emptyForm: CreateOperatorRequest = {
@@ -10,26 +10,32 @@ const emptyForm: CreateOperatorRequest = {
 
 export function OperatorsPage() {
   const { listOperators, createOperator } = useAuth()
+  const [operators, setOperators] = useState<User[]>([])
   const [form, setForm] = useState<CreateOperatorRequest>(emptyForm)
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
-  const [refreshKey, setRefreshKey] = useState(0)
 
-  const operators = useMemo(() => {
-    void refreshKey
+  const loadOperators = useCallback(async () => {
+    try {
+      setOperators(await listOperators())
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : 'Gagal memuat operator.')
+    }
+  }, [listOperators])
 
-    return listOperators()
-  }, [listOperators, refreshKey])
+  useEffect(() => {
+    void loadOperators()
+  }, [loadOperators])
 
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setNotice('')
     setError('')
 
     try {
-      createOperator(form)
+      await createOperator(form)
       setForm(emptyForm)
-      setRefreshKey((current) => current + 1)
+      await loadOperators()
       setNotice('Operator berhasil dibuat.')
     } catch (caughtError) {
       setError(
