@@ -1,15 +1,10 @@
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
-import tailwindcss from '@tailwindcss/vite';
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
-  build: {
-    // @mold-tracker/shared dikompilasi ke CommonJS dan berada di luar
-    // node_modules, jadi harus ikut diproses plugin commonjs saat build.
-    commonjsOptions: {
-      include: [/node_modules/, /packages[\\/]shared/],
-    },
+  plugins: [react()],
+  optimizeDeps: {
+    include: ['react', 'react-dom', 'react-router-dom'],
   },
   server: {
     port: 5173,
@@ -17,4 +12,4 @@ export default defineConfig({
       '/api': 'http://localhost:3000',
     },
   },
-});
+})
