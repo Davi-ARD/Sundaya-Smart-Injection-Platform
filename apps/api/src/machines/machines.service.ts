@@ -96,7 +96,10 @@ export class MachinesService {
       this.prisma.rental.findMany({ where: { machineId: id }, orderBy: { createdAt: 'asc' } }),
       this.prisma.conditionCheck.findMany({ where: { machineId: id }, orderBy: { checkedAt: 'asc' } }),
     ]);
-    return { rentals: rentals.map(toRental), conditionChecks: conditionChecks.map(toConditionCheck) };
+    return {
+      rentals: rentals.map((r) => toRental(r)),
+      conditionChecks: conditionChecks.map(toConditionCheck),
+    };
   }
 
   private async getOwnedOrThrow(user: PrismaUser, id: string) {

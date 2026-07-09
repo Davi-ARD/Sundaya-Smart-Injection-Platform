@@ -3,10 +3,11 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { MachinesModule } from './machines/machines.module';
+import { RentalsModule } from './rentals/rentals.module';
 import { HealthController } from './health.controller';
 
 @Module({
-  imports: [PrismaModule, AuthModule, UsersModule, MachinesModule],
+  imports: [PrismaModule, AuthModule, UsersModule, MachinesModule, RentalsModule],
   controllers: [HealthController],
 })
 export class AppModule {}
