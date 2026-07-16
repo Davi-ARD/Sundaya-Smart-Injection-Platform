@@ -21,13 +21,29 @@ Publik. Registrasi mandiri untuk PENYEWA atau PENYEDIA. Operator dibuat oleh Pen
 - Response 201: `AuthResponse` { accessToken, user: User }
 
 ### POST /auth/login
-Publik.
-- Request: `LoginRequest` { email, password }
+Publik. `identifier` adalah email untuk ADMIN/PENYEDIA/PENYEWA, atau nama untuk OPERATOR (OPERATOR tidak punya email — lihat modul Operator).
+- Request: `LoginRequest` { identifier, password }
 - Response 200: `AuthResponse` { accessToken, user: User }
 
 ### GET /auth/me
 Semua role terautentikasi.
 - Response 200: `User`
+
+### PATCH /auth/me
+Semua role terautentikasi. Edit profil sendiri. Field opsional — hanya yang dikirim yang diubah.
+- `email` ditolak untuk OPERATOR (400) karena OPERATOR login memakai nama.
+- Ganti password: kirim `newPassword` (min 6) beserta `currentPassword`. `currentPassword` diverifikasi (401 bila salah); `newPassword` tanpa `currentPassword` → 400.
+- Bentrok `email` unik → 409; bentrok `nama` (unik per role) → 409.
+- JWT keyed by id, jadi ganti nama/email tidak membatalkan sesi (tidak ada token baru).
+- Request: `UpdateProfileRequest` { nama?, email?, currentPassword?, newPassword? }
+- Response 200: `User`
+
+### POST /auth/me/avatar
+Semua role terautentikasi. Upload foto profil (`multipart/form-data`, field `avatar`).
+- Format: JPEG/PNG/WEBP saja, maks 5MB (400 bila ditolak).
+- File lama otomatis dihapus dari disk saat diganti.
+- File tersimpan di `apps/api/uploads/avatars/`, disajikan statis di `/api/uploads/avatars/:filename` (gabungkan dengan `avatarUrl` yang dikembalikan, sudah berupa path relatif diawali `/uploads/...` — akses via `${API_BASE_URL}${avatarUrl}`).
+- Response 200: `User` (dengan `avatarUrl` terbaru)
 
 ---
 
@@ -39,27 +55,37 @@ Role: ADMIN.
 - Response 200: `User[]`
 
 ### POST /users
-Role: ADMIN. Membuat user role apa pun.
-- Request: `CreateUserRequest` { nama, email, password, role, parentId? }
+Role: ADMIN. Membuat user role apa pun. `email` wajib untuk semua role kecuali OPERATOR (OPERATOR login memakai nama, lihat modul Operator).
+- Request: `CreateUserRequest` { nama, email?, password, role, parentId? }
 - Response 201: `User`
 
 ### PATCH /users/:id
-Role: ADMIN.
+Role: ADMIN. Menonaktifkan (`isActive: false`) akun sendiri yang sedang login ditolak (403, cegah lockout tidak sengaja).
 - Request: `UpdateUserRequest` { nama?, email?, role?, isActive? }
 - Response 200: `User`
 
 ### PATCH /users/:id/deactivate
-Role: ADMIN.
+Role: ADMIN. Menonaktifkan akun sendiri yang sedang login ditolak (403, sama seperti di atas).
 - Response 200: `User`
 
+### DELETE /users/:id
+Role: ADMIN. Menghapus akun apa pun secara permanen.
+- Menghapus akun sendiri yang sedang login ditolak (403), untuk mencegah lockout tidak sengaja.
+- Ditolak 409 bila akun itu masih punya riwayat data terkait (mesin, sewa, batch, dst.) — nonaktifkan saja lewat PATCH /users/:id/deactivate sebagai gantinya.
+- Response 204
+
 ### POST /operators
-Role: PENYEWA. Membuat sub-akun Operator di bawah Penyewa ini (parentId di-set otomatis ke id Penyewa).
-- Request: `CreateOperatorRequest` { nama, email, password }
+Role: PENYEWA. Membuat sub-akun Operator di bawah Penyewa ini (parentId di-set otomatis ke id Penyewa). Operator tidak punya email — login memakai `nama` sebagai `identifier` di POST /auth/login. `nama` harus unik di antara sesama OPERATOR (409 bila bentrok).
+- Request: `CreateOperatorRequest` { nama, password }
 - Response 201: `User`
 
 ### GET /operators
 Role: PENYEWA. Daftar operator di bawah Penyewa ini.
 - Response 200: `User[]`
+
+### DELETE /operators/:id
+Role: PENYEWA (pemilik). Menghapus permanen sub-akun Operator miliknya. Ditolak 409 bila operator itu sudah punya riwayat batch produksi (data audit tidak boleh hilang) — pemilik harus minta ADMIN menonaktifkan lewat PATCH /users/:id/deactivate sebagai gantinya.
+- Response 204
 
 ---
 
@@ -67,7 +93,7 @@ Role: PENYEWA. Daftar operator di bawah Penyewa ini.
 
 ### GET /machines
 Role: semua terautentikasi. Penyewa yang memakai ini untuk katalog hanya menerima mesin berstatus TERSEDIA (disaring server).
-- Query opsional: `status` (MachineStatus)
+- Query opsional: `status` (MachineStatus), `archived` (`'true'` untuk melihat mesin yang diarsipkan; default/tanpa param menyembunyikan mesin arsip)
 - Response 200: `Machine[]`
 
 ### GET /machines/:id
@@ -84,9 +110,17 @@ Role: PENYEDIA (pemilik), ADMIN.
 - Request: `UpdateMachineRequest` { spesifikasi?, standardRatio?, warrantyStart?, warrantyDurationMonths? }
 - Response 200: `Machine`
 
-### DELETE /machines/:id
-Role: PENYEDIA (pemilik), ADMIN.
-- Response 204
+### PATCH /machines/:id/archive
+Role: PENYEDIA (pemilik), ADMIN. Arsip (soft-delete) — set `isArchived: true`. Mesin tetap ada di database (relasi rental/batch/check tidak hilang), cuma disembunyikan dari daftar aktif kecuali diminta lewat `?archived=true`.
+- Response 200: `Machine`
+
+### PATCH /machines/:id/unarchive
+Role: PENYEDIA (pemilik), ADMIN. Kembalikan mesin dari arsip — set `isArchived: false`.
+- Response 200: `Machine`
+
+### PATCH /machines/:id/complete-maintenance
+Role: PENYEDIA (pemilik), ADMIN. Tandai maintenance selesai — mesin MAINTENANCE kembali TERSEDIA, siap diajukan sewa lagi. Ditolak (409) bila status mesin saat ini bukan MAINTENANCE (transisi divalidasi lewat `MACHINE_FLOW`, sama seperti transisi status di modul Sewa).
+- Response 200: `Machine`
 
 ### GET /machines/:id/history
 Role: PENYEDIA (pemilik), ADMIN. Rekam jejak satu mesin.
@@ -102,12 +136,12 @@ Role: PENYEWA. Mengajukan sewa. Mesin harus TERSEDIA. Status rental menjadi DIAJ
 - Response 201: `Rental`
 
 ### GET /rentals
-Role: semua terautentikasi, disaring per kepemilikan.
+Role: semua terautentikasi, disaring per kepemilikan. `Rental.extensions` berisi riwayat pengajuan perpanjangan (termasuk yang masih DIAJUKAN), supaya Penyedia bisa memutuskan langsung tanpa endpoint daftar terpisah.
 - Query opsional: `status` (RentalStatus)
 - Response 200: `Rental[]`
 
 ### GET /rentals/:id
-Role: pihak terkait (penyewa, penyedia) atau ADMIN.
+Role: pihak terkait (penyewa, penyedia) atau ADMIN. `Rental.extensions` disertakan sama seperti GET /rentals.
 - Response 200: `Rental`
 
 ### PATCH /rentals/:id/confirm
@@ -124,7 +158,8 @@ Role: PENYEDIA. Menandai mesin dikirim. Status DIKONFIRMASI ke DIKIRIM.
 - Response 200: `Rental`
 
 ### PATCH /rentals/:id/receive
-Role: PENYEWA. Konfirmasi mesin diterima. Status DIKIRIM ke AKTIF. Sejak ini Operator boleh input batch.
+Role: PENYEWA, ADMIN (override — Admin bisa memicu langsung tanpa menunggu Penyewa login, mis. setelah konfirmasi lewat telepon). Konfirmasi mesin diterima. Status DIKIRIM ke AKTIF. Sejak ini Operator boleh input batch.
+- `startDate` dan `endDate` dihitung ulang dari momen konfirmasi ini (`startDate = now`, `endDate = now + requestedDurationDays`) — durasi sewa penuh selalu dimulai utuh saat mesin benar-benar mulai dipakai, tidak terpotong keterlambatan antara pengajuan dan pengiriman.
 - Response 200: `Rental`
 
 ### PATCH /rentals/:id/return
@@ -188,7 +223,8 @@ Role: PENYEDIA.
 
 ### GET /dashboard/penyewa
 Role: PENYEWA.
-- Response 200: `PenyewaDashboard` { activeRentals: [{ rentalId, machineNumber, remainingDays }], efficiencyByBatch: [{ batchId, machineNumber, date, efficiency }], rejectRate, machineIssueBatches: ProductionBatch[] }
+- Response 200: `PenyewaDashboard` { activeRentals: [{ rentalId, machineNumber, endDate }], efficiencyByBatch: [{ batchId, machineNumber, date, efficiency }], rejectRate, machineIssueBatches: ProductionBatch[] }
+  - `endDate` mentah (bukan jumlah hari terhitung server) — frontend menampilkannya lewat `CountdownTimer` yang sama dipakai di Status Sewa, biar konsisten (jam-menit live, bukan dibulatkan).
 
 ### GET /dashboard/admin
 Role: ADMIN.
@@ -203,3 +239,22 @@ Role: PENYEWA, ADMIN. Batch berindikasi masalah mesin yang sudah APPROVED.
 Role: PENYEWA, ADMIN. Mengunduh laporan.
 - Query: `format` (csv | pdf), opsional `rentalId`, `machineId`
 - Response 200: file (Content-Type text/csv atau application/pdf)
+
+---
+
+## Modul Notifikasi
+
+Notifikasi in-app lintas role, dibuat otomatis oleh server di titik transisi siklus sewa dan produksi (bukan dibuat langsung lewat endpoint publik). Frontend polling `GET /notifications` secara berkala. Pengiriman email belum diimplementasikan (menyusul).
+
+### GET /notifications
+Semua role terautentikasi. Hanya notifikasi milik user yang login.
+- Query opsional: `unreadOnly` (boolean)
+- Response 200: `AppNotification[]` { id, title, message, link, isRead, createdAt }, maksimal 50 terbaru
+
+### PATCH /notifications/:id/read
+Semua role terautentikasi. Tandai satu notifikasi sudah dibaca.
+- Response 200: `AppNotification`
+
+### PATCH /notifications/read-all
+Semua role terautentikasi. Tandai semua notifikasi milik user sudah dibaca.
+- Response 204

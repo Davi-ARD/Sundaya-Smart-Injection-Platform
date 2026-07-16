@@ -76,10 +76,11 @@ export type ISODateString = string;
 export interface User {
   id: string;
   nama: string;
-  email: string;
+  email: string | null; // null untuk OPERATOR: login memakai nama, bukan email
   role: Role;
   parentId: string | null; // untuk OPERATOR: id PENYEWA induk
   isActive: boolean;
+  avatarUrl: string | null; // path relatif, mis. /uploads/avatars/xxx.jpg
   createdAt: ISODateString;
 }
 
@@ -95,6 +96,7 @@ export interface Machine {
   warrantyDurationMonths: number;
   warrantyEnd: ISODateString;
   warrantyStatus: WarrantyStatus;
+  isArchived: boolean;
   createdAt: ISODateString;
 }
 
@@ -115,6 +117,9 @@ export interface Rental {
   returnedAt: ISODateString | null;
   rejectionReason: string | null;
   createdAt: ISODateString;
+  // Diisi pada GET /rentals dan GET /rentals/:id agar Penyedia bisa memutuskan
+  // perpanjangan tanpa endpoint daftar terpisah. Kosong pada respons aksi lain.
+  extensions: RentalExtension[];
 }
 
 export interface RentalExtension {
@@ -172,14 +177,15 @@ export interface RegisterRequest {
 }
 
 export interface LoginRequest {
-  email: string;
+  // Email untuk ADMIN/PENYEDIA/PENYEWA, nama untuk OPERATOR (tidak punya email).
+  identifier: string;
   password: string;
 }
 
 // User
 export interface CreateUserRequest {
   nama: string;
-  email: string;
+  email?: string; // wajib kecuali role OPERATOR
   password: string;
   role: Role;
   parentId?: string;
@@ -192,9 +198,18 @@ export interface UpdateUserRequest {
   isActive?: boolean;
 }
 
+// Edit profil sendiri (semua role). email diabaikan untuk OPERATOR (login by nama).
+// Ganti password opsional: kalau newPassword diisi, currentPassword wajib untuk verifikasi.
+export interface UpdateProfileRequest {
+  nama?: string;
+  email?: string;
+  currentPassword?: string;
+  newPassword?: string;
+}
+
 export interface CreateOperatorRequest {
+  // Operator login memakai nama, bukan email. nama unik per role (lihat User).
   nama: string;
-  email: string;
   password: string;
 }
 
@@ -305,7 +320,7 @@ export interface PenyewaDashboard {
   activeRentals: {
     rentalId: string;
     machineNumber: string;
-    remainingDays: number;
+    endDate: ISODateString;
   }[];
   efficiencyByBatch: {
     batchId: string;
@@ -323,6 +338,19 @@ export interface AdminDashboard {
   machineStatusCounts: MachineStatusCount[];
   totalActiveRentals: number;
   flaggedPendingReview: number;
+}
+
+// =====================================================================
+// NOTIFIKASI
+// =====================================================================
+
+export interface AppNotification {
+  id: string;
+  title: string;
+  message: string;
+  link: string | null;
+  isRead: boolean;
+  createdAt: ISODateString;
 }
 
 // =====================================================================
