@@ -3,6 +3,7 @@ import PDFDocument from 'pdfkit';
 import { $Enums, Prisma, User as PrismaUser } from '@prisma/client';
 import {
   AdminDashboard,
+  CauseCategory,
   MachineStatus,
   MachineStatusCount,
   PenyediaDashboard,
@@ -21,12 +22,51 @@ import { buildCsv } from './csv';
 const asRentalStatus = (s: RentalStatus) => s as unknown as $Enums.RentalStatus;
 const asReviewStatus = (s: ReviewStatus) => s as unknown as $Enums.ReviewStatus;
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
 interface IssueFilters {
   rentalId?: string;
   machineId?: string;
 }
+
+// Baris laporan yang sudah "human-readable": ID mentah diganti nomor mesin/nama orang,
+// dipakai khusus untuk export CSV/PDF (data pendukung klaim garansi ke penyedia/pabrikan).
+interface IssueReportRow {
+  batchId: string;
+  date: Date;
+  machineNumber: string;
+  operatorNama: string;
+  penyewaNama: string;
+  destinationLocation: string;
+  materialInputKg: number;
+  targetOutput: number;
+  actualOutput: number;
+  rejectCount: number;
+  rejectRate: number;
+  efficiency: number;
+  causeCategory: CauseCategory | null;
+  reviewStatus: ReviewStatus;
+}
+
+const causeCategoryLabel: Record<CauseCategory, string> = {
+  [CauseCategory.SETTING_OPERATOR]: 'Setting Operator',
+  [CauseCategory.KUALITAS_MATERIAL]: 'Kualitas Material',
+  [CauseCategory.KONDISI_MESIN]: 'Kondisi Mesin/Mold',
+  [CauseCategory.LAIN]: 'Faktor Lain',
+};
+
+const reviewStatusLabel: Record<ReviewStatus, string> = {
+  [ReviewStatus.PENDING]: 'Menunggu Review',
+  [ReviewStatus.APPROVED]: 'Disetujui',
+  [ReviewStatus.REJECTED]: 'Ditolak',
+};
+
+const formatDateTime = (d: Date) =>
+  d.toLocaleString('id-ID', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 
 @Injectable()
 export class ReportsService {
@@ -68,15 +108,16 @@ export class ReportsService {
       }),
     ]);
 
-    const now = Date.now();
     const rejects = rejectAgg._sum.rejectCount ?? 0;
     const output = rejectAgg._sum.actualOutput ?? 0;
 
     return {
+      // endDate mentah dikirim, bukan remainingDays terhitung server — frontend menampilkan
+      // lewat CountdownTimer yang sama dipakai di Status Sewa (live, jam-menit, tidak dibulatkan).
       activeRentals: activeRentalsRaw.map((r) => ({
         rentalId: r.id,
         machineNumber: r.machine.machineNumber,
-        remainingDays: r.endDate ? Math.max(0, Math.ceil((r.endDate.getTime() - now) / DAY_MS)) : 0,
+        endDate: (r.endDate ?? r.createdAt).toISOString(),
       })),
       efficiencyByBatch: batchesRaw.map((b) => ({
         batchId: b.id,
@@ -125,53 +166,205 @@ export class ReportsService {
     return batches.map(toBatch);
   }
 
-  toCsv(batches: ProductionBatch[]): string {
+  // Sama seperti machineIssues(), tapi dengan relasi mesin/operator/penyewa di-include
+  // dan field turunan (reject %) dihitung — khusus dipakai untuk export CSV/PDF supaya
+  // isinya nama yang bisa dibaca, bukan ID mentah.
+  private async machineIssuesDetailed(
+    user: PrismaUser,
+    filters: IssueFilters,
+  ): Promise<IssueReportRow[]> {
+    const scope = user.role === Role.ADMIN ? {} : { rental: { penyewaId: user.id } };
+    const batches = await this.prisma.productionBatch.findMany({
+      where: {
+        ...scope,
+        flaggedMachineIssue: true,
+        reviewStatus: asReviewStatus(ReviewStatus.APPROVED),
+        rentalId: filters.rentalId,
+        machineId: filters.machineId,
+      },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        machine: { select: { machineNumber: true } },
+        operator: { select: { nama: true } },
+        rental: { select: { destinationLocation: true, penyewa: { select: { nama: true } } } },
+      },
+    });
+    return batches.map((b) => ({
+      batchId: b.id,
+      date: b.startAt,
+      machineNumber: b.machine.machineNumber,
+      operatorNama: b.operator.nama,
+      penyewaNama: b.rental.penyewa.nama,
+      destinationLocation: b.rental.destinationLocation,
+      materialInputKg: b.materialInputKg,
+      targetOutput: b.targetOutput,
+      actualOutput: b.actualOutput,
+      rejectCount: b.rejectCount,
+      rejectRate:
+        b.actualOutput + b.rejectCount > 0
+          ? (b.rejectCount / (b.actualOutput + b.rejectCount)) * 100
+          : 0,
+      efficiency: b.efficiency,
+      causeCategory: b.causeCategory as unknown as CauseCategory | null,
+      reviewStatus: b.reviewStatus as unknown as ReviewStatus,
+    }));
+  }
+
+  async exportMachineIssues(
+    user: PrismaUser,
+    filters: IssueFilters,
+    format: 'csv' | 'pdf',
+  ): Promise<{ buffer: Buffer | string; contentType: string; filename: string }> {
+    const rows = await this.machineIssuesDetailed(user, filters);
+    if (format === 'pdf') {
+      return {
+        buffer: await this.pdfBuffer(rows),
+        contentType: 'application/pdf',
+        filename: 'laporan-masalah-mesin.pdf',
+      };
+    }
+    return {
+      buffer: this.toCsv(rows),
+      contentType: 'text/csv',
+      filename: 'laporan-masalah-mesin.csv',
+    };
+  }
+
+  private toCsv(rows: IssueReportRow[]): string {
     const headers = [
-      'id',
-      'rentalId',
-      'machineId',
-      'operatorId',
-      'startAt',
-      'endAt',
-      'efficiency',
-      'rejectCount',
-      'causeCategory',
-      'reviewStatus',
+      'Tanggal',
+      'Mesin',
+      'Operator',
+      'Penyewa',
+      'Lokasi',
+      'Material Input (kg)',
+      'Target Output',
+      'Output Aktual',
+      'Jumlah Reject',
+      'Reject (%)',
+      'Efisiensi (%)',
+      'Penyebab',
+      'Status Review',
     ];
-    const rows = batches.map((b) => [
-      b.id,
-      b.rentalId,
-      b.machineId,
-      b.operatorId,
-      b.startAt,
-      b.endAt,
-      b.efficiency,
-      b.rejectCount,
-      b.causeCategory ?? '',
-      b.reviewStatus,
+    const csvRows = rows.map((r) => [
+      formatDateTime(r.date),
+      r.machineNumber,
+      r.operatorNama,
+      r.penyewaNama,
+      r.destinationLocation,
+      r.materialInputKg,
+      r.targetOutput,
+      r.actualOutput,
+      r.rejectCount,
+      r.rejectRate.toFixed(1),
+      r.efficiency.toFixed(1),
+      r.causeCategory ? causeCategoryLabel[r.causeCategory] : '-',
+      reviewStatusLabel[r.reviewStatus],
     ]);
-    return buildCsv(headers, rows);
+    return buildCsv(headers, csvRows);
   }
 
   // ponytail: satu dependensi ringan (pdfkit), bukan generator PDF buatan sendiri.
-  // Laporan kecil, jadi kumpulkan ke Buffer lalu StreamableFile yang mengirim.
-  pdfBuffer(batches: ProductionBatch[]): Promise<Buffer> {
-    const doc = new PDFDocument({ margin: 40, size: 'A4' });
+  // Landscape A4 supaya kolom tabel muat tanpa terpotong. Laporan kecil, jadi
+  // kumpulkan ke Buffer lalu StreamableFile yang mengirim.
+  private pdfBuffer(rows: IssueReportRow[]): Promise<Buffer> {
+    const doc = new PDFDocument({ margin: 40, size: 'A4', layout: 'landscape' });
     const chunks: Buffer[] = [];
     doc.on('data', (c: Buffer) => chunks.push(c));
     const done = new Promise<Buffer>((resolve) =>
       doc.on('end', () => resolve(Buffer.concat(chunks))),
     );
 
-    doc.fontSize(16).text('Laporan Batch Berindikasi Masalah Mesin');
-    doc.moveDown().fontSize(10);
-    if (batches.length === 0) doc.text('Tidak ada data.');
-    for (const b of batches) {
-      doc.text(
-        `${b.startAt.slice(0, 10)}  mesin=${b.machineId}  operator=${b.operatorId}  ` +
-          `eff=${b.efficiency.toFixed(1)}%  reject=${b.rejectCount}  ${b.causeCategory ?? '-'}`,
-      );
+    const pageBottom = doc.page.height - doc.page.margins.bottom;
+    const columns: { key: keyof IssueReportRow; label: string; x: number; width: number; align?: 'left' | 'right' }[] =
+      [
+        { key: 'date', label: 'Tanggal', x: 40, width: 75 },
+        { key: 'machineNumber', label: 'Mesin', x: 115, width: 55 },
+        { key: 'operatorNama', label: 'Operator', x: 170, width: 90 },
+        { key: 'penyewaNama', label: 'Penyewa', x: 260, width: 90 },
+        { key: 'destinationLocation', label: 'Lokasi', x: 350, width: 100 },
+        { key: 'materialInputKg', label: 'Material (kg)', x: 450, width: 55, align: 'right' },
+        { key: 'targetOutput', label: 'Target', x: 505, width: 50, align: 'right' },
+        { key: 'actualOutput', label: 'Aktual', x: 555, width: 50, align: 'right' },
+        { key: 'rejectRate', label: 'Reject %', x: 605, width: 50, align: 'right' },
+        { key: 'efficiency', label: 'Efisiensi %', x: 655, width: 55, align: 'right' },
+        { key: 'causeCategory', label: 'Penyebab', x: 710, width: 92 },
+      ];
+
+    const cellText = (row: IssueReportRow, key: (typeof columns)[number]['key']): string => {
+      switch (key) {
+        case 'date':
+          return formatDateTime(row.date);
+        case 'materialInputKg':
+          return row.materialInputKg.toFixed(1);
+        case 'targetOutput':
+          return row.targetOutput.toFixed(1);
+        case 'actualOutput':
+          return row.actualOutput.toFixed(1);
+        case 'rejectRate':
+          return row.rejectRate.toFixed(1);
+        case 'efficiency':
+          return row.efficiency.toFixed(1);
+        case 'causeCategory':
+          return row.causeCategory ? causeCategoryLabel[row.causeCategory] : '-';
+        default:
+          return String(row[key as keyof IssueReportRow] ?? '');
+      }
+    };
+
+    const drawHeader = (y: number) => {
+      doc.font('Helvetica-Bold').fontSize(9);
+      for (const col of columns) {
+        doc.text(col.label, col.x, y, { width: col.width, align: col.align ?? 'left' });
+      }
+      doc
+        .moveTo(40, y + 14)
+        .lineTo(doc.page.width - doc.page.margins.right, y + 14)
+        .strokeColor('#cbd5e1')
+        .stroke();
+      doc.font('Helvetica').fontSize(9);
+      return y + 20;
+    };
+
+    doc.font('Helvetica-Bold').fontSize(16).text('Laporan Data Pendukung Klaim Garansi');
+    doc
+      .font('Helvetica')
+      .fontSize(9)
+      .fillColor('#64748b')
+      .text('Rekap batch produksi yang disetujui dan ditandai berindikasi masalah mesin.')
+      .text(`Dicetak: ${formatDateTime(new Date())}`)
+      .fillColor('#000000');
+    doc.moveDown(0.5);
+
+    if (rows.length > 0) {
+      const avgEfficiency = rows.reduce((sum, r) => sum + r.efficiency, 0) / rows.length;
+      const totalReject = rows.reduce((sum, r) => sum + r.rejectCount, 0);
+      doc
+        .fontSize(9)
+        .text(
+          `Total batch: ${rows.length}   |   Rata-rata efisiensi: ${avgEfficiency.toFixed(1)}%   |   Total reject: ${totalReject}`,
+        );
     }
+    doc.moveDown(0.75);
+
+    if (rows.length === 0) {
+      doc.text('Tidak ada data.');
+      doc.end();
+      return done;
+    }
+
+    let y = drawHeader(doc.y);
+    for (const row of rows) {
+      if (y + 16 > pageBottom) {
+        doc.addPage();
+        y = drawHeader(doc.page.margins.top);
+      }
+      for (const col of columns) {
+        doc.text(cellText(row, col.key), col.x, y, { width: col.width, align: col.align ?? 'left' });
+      }
+      y += 16;
+    }
+
     doc.end();
     return done;
   }

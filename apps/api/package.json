@@ -33,7 +33,9 @@
   "devDependencies": {
     "@nestjs/cli": "^11.0.0",
     "@nestjs/schematics": "^11.0.0",
+    "@types/express": "^5.0.6",
     "@types/jest": "^29.5.14",
+    "@types/multer": "^2.2.0",
     "@types/node": "^22.10.0",
     "@types/pdfkit": "^0.17.6",
     "eslint": "^9.18.0",

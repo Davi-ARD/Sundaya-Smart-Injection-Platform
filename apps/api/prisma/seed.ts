@@ -41,7 +41,7 @@ async function main() {
   const operator = await prisma.user.create({
     data: {
       nama: 'Operator Satu',
-      email: 'operator@mold.test',
+      email: null, // OPERATOR login memakai nama, bukan email
       passwordHash,
       role: Role.OPERATOR,
       parentId: penyewa.id,

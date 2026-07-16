@@ -16,6 +16,7 @@ import {
   Role,
 } from '@mold-tracker/shared';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import {
   CreateConditionCheckDto,
   CreateExtensionDto,
@@ -36,9 +37,21 @@ const addDays = (d: Date, days: number) => new Date(d.getTime() + days * DAY_MS)
 
 const withMachineNumber = { include: { machine: { select: { machineNumber: true } } } } as const;
 
+// Sertakan riwayat perpanjangan supaya Penyedia bisa memutuskan langsung dari daftar
+// sewa tanpa endpoint terpisah (belum ada GET /extensions di kontrak).
+const withDetails = {
+  include: {
+    machine: { select: { machineNumber: true } },
+    extensions: { orderBy: { requestedAt: 'desc' as const } },
+  },
+} as const;
+
 @Injectable()
 export class RentalsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notifications: NotificationsService,
+  ) {}
 
   // PENYEWA: sewa miliknya. PENYEDIA: sewa mesin miliknya. OPERATOR: sewa induk (PENYEWA-nya).
   // ADMIN: semua. Penyaringan kepemilikan di service, bukan controller.
@@ -56,16 +69,16 @@ export class RentalsService {
     const rentals = await this.prisma.rental.findMany({
       where: { ...scope, status: statusFilter },
       orderBy: { createdAt: 'desc' },
-      ...withMachineNumber,
+      ...withDetails,
     });
-    return rentals.map((r) => toRental(r, r.machine.machineNumber));
+    return rentals.map((r) => toRental(r, r.machine.machineNumber, r.extensions));
   }
 
   async findOne(user: PrismaUser, id: string): Promise<Rental> {
-    const r = await this.prisma.rental.findUnique({ where: { id }, ...withMachineNumber });
+    const r = await this.prisma.rental.findUnique({ where: { id }, ...withDetails });
     if (!r) throw new NotFoundException('Sewa tidak ditemukan');
     this.assertParty(user, r);
-    return toRental(r, r.machine.machineNumber);
+    return toRental(r, r.machine.machineNumber, r.extensions);
   }
 
   // PENYEWA mengajukan sewa. Mesin harus TERSEDIA -> DIAJUKAN.
@@ -95,62 +108,111 @@ export class RentalsService {
       }),
       this.setMachineStatus(machine.id, nextMachine),
     ]);
+
+    await this.notifications.create(
+      machine.ownerId,
+      'Permintaan sewa baru',
+      `${user.nama} mengajukan sewa mesin ${machine.machineNumber} ke ${dto.destinationLocation}.`,
+      '/rental-cycle',
+    );
+
     return toRental(rental, machine.machineNumber);
   }
 
   // PENYEDIA menerima: DIAJUKAN -> DIKONFIRMASI.
-  confirm(user: PrismaUser, id: string): Promise<Rental> {
-    return this.advance(user, id, {
+  async confirm(user: PrismaUser, id: string): Promise<Rental> {
+    const rental = await this.advance(user, id, {
       party: 'penyedia',
       fromRental: RentalStatus.DIAJUKAN,
       toRental: RentalStatus.DIKONFIRMASI,
       machinePath: [MachineStatus.DIKONFIRMASI],
       data: { confirmedAt: new Date() },
     });
+    await this.notifications.create(
+      rental.penyewaId,
+      'Sewa dikonfirmasi',
+      `Pengajuan sewa mesin ${rental.machineNumber} dikonfirmasi Penyedia.`,
+      '/rentals',
+    );
+    return rental;
   }
 
   // PENYEDIA menolak: DIAJUKAN -> DITOLAK, mesin kembali TERSEDIA.
-  reject(user: PrismaUser, id: string, dto: RejectRentalDto): Promise<Rental> {
-    return this.advance(user, id, {
+  async reject(user: PrismaUser, id: string, dto: RejectRentalDto): Promise<Rental> {
+    const rental = await this.advance(user, id, {
       party: 'penyedia',
       fromRental: RentalStatus.DIAJUKAN,
       toRental: RentalStatus.DITOLAK,
       machinePath: [MachineStatus.TERSEDIA],
       data: { rejectionReason: dto.reason },
     });
+    await this.notifications.create(
+      rental.penyewaId,
+      'Sewa ditolak',
+      `Pengajuan sewa mesin ${rental.machineNumber} ditolak: ${dto.reason}`,
+      '/rentals',
+    );
+    return rental;
   }
 
   // PENYEDIA menandai dikirim: DIKONFIRMASI -> DIKIRIM.
-  ship(user: PrismaUser, id: string): Promise<Rental> {
-    return this.advance(user, id, {
+  async ship(user: PrismaUser, id: string): Promise<Rental> {
+    const rental = await this.advance(user, id, {
       party: 'penyedia',
       fromRental: RentalStatus.DIKONFIRMASI,
       toRental: RentalStatus.DIKIRIM,
       machinePath: [MachineStatus.DIKIRIM],
       data: { shippedAt: new Date() },
     });
+    await this.notifications.create(
+      rental.penyewaId,
+      'Mesin sedang dikirim',
+      `Mesin ${rental.machineNumber} sedang dalam pengiriman ke lokasi Anda.`,
+      '/rentals',
+    );
+    return rental;
   }
 
-  // PENYEWA konfirmasi terima: DIKIRIM -> AKTIF.
-  receive(user: PrismaUser, id: string): Promise<Rental> {
-    return this.advance(user, id, {
+  // PENYEWA konfirmasi terima (atau ADMIN override): DIKIRIM -> AKTIF.
+  // startDate/endDate dihitung ulang dari momen konfirmasi ini, bukan dari startDate
+  // yang diajukan di awal — supaya durasi sewa penuh (requestedDurationDays) selalu
+  // dimulai utuh saat mesin benar-benar mulai dipakai, tidak terpotong keterlambatan kirim.
+  async receive(user: PrismaUser, id: string): Promise<Rental> {
+    const rental = await this.advance(user, id, {
       party: 'penyewa',
       fromRental: RentalStatus.DIKIRIM,
       toRental: RentalStatus.AKTIF,
       machinePath: [MachineStatus.AKTIF],
-      data: { receivedAt: new Date() },
+      data: (loaded) => {
+        const now = new Date();
+        return { receivedAt: now, startDate: now, endDate: addDays(now, loaded.requestedDurationDays) };
+      },
     });
+    await this.notifications.create(
+      rental.penyediaId,
+      'Mesin diterima Penyewa',
+      `Mesin ${rental.machineNumber} sudah diterima Penyewa, sewa kini Aktif.`,
+      '/rental-cycle',
+    );
+    return rental;
   }
 
   // PENYEWA mengajukan pengembalian: AKTIF -> SELESAI_SEWA; mesin SELESAI_SEWA lalu DIKEMBALIKAN.
-  return(user: PrismaUser, id: string): Promise<Rental> {
-    return this.advance(user, id, {
+  async return(user: PrismaUser, id: string): Promise<Rental> {
+    const rental = await this.advance(user, id, {
       party: 'penyewa',
       fromRental: RentalStatus.AKTIF,
       toRental: RentalStatus.SELESAI_SEWA,
       machinePath: [MachineStatus.SELESAI_SEWA, MachineStatus.DIKEMBALIKAN],
       data: { returnedAt: new Date() },
     });
+    await this.notifications.create(
+      rental.penyediaId,
+      'Pengembalian mesin diajukan',
+      `Penyewa mengajukan pengembalian mesin ${rental.machineNumber}. Perlu pengecekan kondisi.`,
+      '/rental-cycle',
+    );
+    return rental;
   }
 
   // PENYEDIA mencatat pengecekan: rental SELESAI; mesin PENGECEKAN lalu TERSEDIA/MAINTENANCE.
@@ -185,6 +247,20 @@ export class RentalsService {
         data: { status: asMachineStatus(finalMachine) },
       }),
     ]);
+
+    const resultLabel =
+      dto.result === ConditionResult.BAIK
+        ? 'Baik'
+        : dto.result === ConditionResult.BUTUH_MAINTENANCE
+          ? 'Butuh Maintenance'
+          : 'Rusak';
+    await this.notifications.create(
+      rental.penyewaId,
+      'Pengecekan kondisi selesai',
+      `Pengecekan kondisi mesin ${rental.machine.machineNumber} selesai: ${resultLabel}.`,
+      '/rentals',
+    );
+
     return toConditionCheck(check);
   }
 
@@ -203,6 +279,14 @@ export class RentalsService {
         status: asExtensionStatus(ExtensionStatus.DIAJUKAN),
       },
     });
+
+    await this.notifications.create(
+      rental.penyediaId,
+      'Perpanjangan sewa diajukan',
+      `Penyewa mengajukan perpanjangan ${dto.additionalDays} hari untuk mesin ${rental.machine.machineNumber}.`,
+      '/rental-cycle',
+    );
+
     return toRentalExtension(ext);
   }
 
@@ -214,7 +298,7 @@ export class RentalsService {
   ): Promise<RentalExtension> {
     const ext = await this.prisma.rentalExtension.findUnique({
       where: { id: extensionId },
-      include: { rental: true },
+      include: { rental: { include: { machine: { select: { machineNumber: true } } } } },
     });
     if (!ext) throw new NotFoundException('Perpanjangan tidak ditemukan');
     if (user.role !== Role.ADMIN && ext.rental.penyediaId !== user.id) {
@@ -239,10 +323,21 @@ export class RentalsService {
       );
     }
     const [updated] = await this.prisma.$transaction(ops);
+
+    await this.notifications.create(
+      ext.rental.penyewaId,
+      dto.decision === ExtensionStatus.DITERIMA ? 'Perpanjangan diterima' : 'Perpanjangan ditolak',
+      `Perpanjangan ${ext.additionalDays} hari untuk mesin ${ext.rental.machine.machineNumber} ${
+        dto.decision === ExtensionStatus.DITERIMA ? 'diterima' : 'ditolak'
+      } Penyedia.`,
+      '/rentals',
+    );
+
     return toRentalExtension(updated as Parameters<typeof toRentalExtension>[0]);
   }
 
   // Jalur bersama untuk transisi satu-langkah rental + mesin dalam satu transaksi.
+  // data boleh berupa fungsi bila butuh field rental yang baru termuat (mis. requestedDurationDays).
   private async advance(
     user: PrismaUser,
     id: string,
@@ -251,7 +346,9 @@ export class RentalsService {
       fromRental: RentalStatus;
       toRental: RentalStatus;
       machinePath: MachineStatus[];
-      data: Prisma.RentalUpdateInput;
+      data:
+        | Prisma.RentalUpdateInput
+        | ((rental: { requestedDurationDays: number }) => Prisma.RentalUpdateInput);
     },
   ): Promise<Rental> {
     const rental = await this.loadOwned(user, id, step.party);
@@ -260,11 +357,12 @@ export class RentalsService {
       rental.machine.status as unknown as MachineStatus,
       ...step.machinePath,
     );
+    const resolvedData = typeof step.data === 'function' ? step.data(rental) : step.data;
 
     const [updated] = await this.prisma.$transaction([
       this.prisma.rental.update({
         where: { id: rental.id },
-        data: { ...step.data, status: asRentalStatus(step.toRental) },
+        data: { ...resolvedData, status: asRentalStatus(step.toRental) },
         ...withMachineNumber,
       }),
       this.setMachineStatus(rental.machineId, nextMachine),

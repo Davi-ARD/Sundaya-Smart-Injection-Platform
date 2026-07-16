@@ -1,5 +1,5 @@
-import { IsEmail, IsIn, IsString, MinLength } from 'class-validator';
-import { LoginRequest, RegisterRequest, Role } from '@mold-tracker/shared';
+import { IsEmail, IsIn, IsOptional, IsString, MinLength } from 'class-validator';
+import { LoginRequest, RegisterRequest, Role, UpdateProfileRequest } from '@mold-tracker/shared';
 
 export class RegisterDto implements RegisterRequest {
   @IsString()
@@ -18,9 +18,31 @@ export class RegisterDto implements RegisterRequest {
 }
 
 export class LoginDto implements LoginRequest {
-  @IsEmail()
-  email: string;
+  // Email untuk ADMIN/PENYEDIA/PENYEWA, nama untuk OPERATOR.
+  @IsString()
+  @MinLength(1)
+  identifier: string;
 
   @IsString()
   password: string;
+}
+
+export class UpdateProfileDto implements UpdateProfileRequest {
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  nama?: string;
+
+  @IsOptional()
+  @IsEmail()
+  email?: string;
+
+  @IsOptional()
+  @IsString()
+  currentPassword?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(6)
+  newPassword?: string;
 }

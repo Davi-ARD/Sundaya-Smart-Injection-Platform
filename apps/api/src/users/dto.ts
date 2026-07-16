@@ -11,8 +11,9 @@ export class CreateUserDto implements CreateUserRequest {
   @MinLength(1)
   nama: string;
 
+  @IsOptional()
   @IsEmail()
-  email: string;
+  email?: string;
 
   @IsString()
   @MinLength(6)
@@ -49,9 +50,6 @@ export class CreateOperatorDto implements CreateOperatorRequest {
   @IsString()
   @MinLength(1)
   nama: string;
-
-  @IsEmail()
-  email: string;
 
   @IsString()
   @MinLength(6)

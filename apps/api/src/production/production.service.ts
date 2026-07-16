@@ -15,6 +15,7 @@ import {
   Role,
 } from '@mold-tracker/shared';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateBatchDto, ReviewBatchDto } from './dto';
 import { toBatch } from './batch.mapper';
 import { computeBatchMetrics } from './efficiency';
@@ -34,13 +35,16 @@ interface BatchFilters {
 
 @Injectable()
 export class ProductionService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notifications: NotificationsService,
+  ) {}
 
   // OPERATOR input batch untuk mesin yang AKTIF di sewa induk (PENYEWA-nya).
   async create(user: PrismaUser, dto: CreateBatchDto): Promise<ProductionBatch> {
     const rental = await this.prisma.rental.findUnique({
       where: { id: dto.rentalId },
-      include: { machine: { select: { status: true, standardRatio: true } } },
+      include: { machine: { select: { status: true, standardRatio: true, machineNumber: true } } },
     });
     if (!rental) throw new NotFoundException('Sewa tidak ditemukan');
     // Operator hanya boleh input untuk sewa milik PENYEWA induknya.
@@ -84,6 +88,20 @@ export class ProductionService {
         reviewStatus: asReviewStatus(reviewStatus),
       },
     });
+
+    if (flaggedMachineIssue) {
+      const admins = await this.prisma.user.findMany({
+        where: { role: Role.ADMIN as unknown as $Enums.Role },
+        select: { id: true },
+      });
+      await this.notifications.createMany(
+        [rental.penyewaId, ...admins.map((a) => a.id)],
+        'Batch terindikasi masalah mesin',
+        `Batch produksi mesin ${rental.machine.machineNumber} terindikasi masalah mesin, menunggu review.`,
+        '/production',
+      );
+    }
+
     return toBatch(batch);
   }
 
@@ -111,7 +129,10 @@ export class ProductionService {
 
   // ADMIN menyetujui/menolak batch yang di-flag sebelum masuk laporan resmi.
   async review(id: string, dto: ReviewBatchDto): Promise<ProductionBatch> {
-    const batch = await this.prisma.productionBatch.findUnique({ where: { id } });
+    const batch = await this.prisma.productionBatch.findUnique({
+      where: { id },
+      include: { rental: { select: { penyewaId: true } }, machine: { select: { machineNumber: true } } },
+    });
     if (!batch) throw new NotFoundException('Batch tidak ditemukan');
     if (batch.reviewStatus !== asReviewStatus(ReviewStatus.PENDING)) {
       throw new ConflictException('Batch tidak menunggu review');
@@ -120,6 +141,15 @@ export class ProductionService {
       where: { id },
       data: { reviewStatus: asReviewStatus(dto.reviewStatus) },
     });
+
+    const approved = dto.reviewStatus === ReviewStatus.APPROVED;
+    await this.notifications.createMany(
+      [...new Set([batch.operatorId, batch.rental.penyewaId])],
+      approved ? 'Batch produksi disetujui' : 'Batch produksi ditolak',
+      `Batch produksi mesin ${batch.machine.machineNumber} ${approved ? 'disetujui' : 'ditolak'} Admin untuk laporan resmi.`,
+      '/production',
+    );
+
     return toBatch(updated);
   }
 

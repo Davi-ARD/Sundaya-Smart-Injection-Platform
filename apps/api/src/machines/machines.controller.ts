@@ -1,9 +1,7 @@
 import {
   Body,
   Controller,
-  Delete,
   Get,
-  HttpCode,
   Param,
   Patch,
   Post,
@@ -21,12 +19,16 @@ export class MachinesController {
 
   // Semua terautentikasi. Penyaringan per role dilakukan di service.
   @Get()
-  findAll(@CurrentUser() user: PrismaUser, @Query('status') status?: string): Promise<Machine[]> {
+  findAll(
+    @CurrentUser() user: PrismaUser,
+    @Query('status') status?: string,
+    @Query('archived') archived?: string,
+  ): Promise<Machine[]> {
     const statusFilter =
       status && (Object.values(MachineStatus) as string[]).includes(status)
         ? (status as MachineStatus)
         : undefined;
-    return this.machines.findAll(user, statusFilter);
+    return this.machines.findAll(user, statusFilter, archived === 'true');
   }
 
   @Get(':id')
@@ -51,10 +53,21 @@ export class MachinesController {
   }
 
   @Roles(Role.PENYEDIA, Role.ADMIN)
-  @Delete(':id')
-  @HttpCode(204)
-  remove(@CurrentUser() user: PrismaUser, @Param('id') id: string): Promise<void> {
-    return this.machines.remove(user, id);
+  @Patch(':id/archive')
+  archive(@CurrentUser() user: PrismaUser, @Param('id') id: string): Promise<Machine> {
+    return this.machines.archive(user, id);
+  }
+
+  @Roles(Role.PENYEDIA, Role.ADMIN)
+  @Patch(':id/unarchive')
+  unarchive(@CurrentUser() user: PrismaUser, @Param('id') id: string): Promise<Machine> {
+    return this.machines.unarchive(user, id);
+  }
+
+  @Roles(Role.PENYEDIA, Role.ADMIN)
+  @Patch(':id/complete-maintenance')
+  completeMaintenance(@CurrentUser() user: PrismaUser, @Param('id') id: string): Promise<Machine> {
+    return this.machines.completeMaintenance(user, id);
   }
 
   @Roles(Role.PENYEDIA, Role.ADMIN)

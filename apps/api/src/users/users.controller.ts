@@ -1,6 +1,7 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
+import { User as PrismaUser } from '@prisma/client';
 import { Role, User } from '@mold-tracker/shared';
-import { Roles } from '../auth/decorators';
+import { CurrentUser, Roles } from '../auth/decorators';
 import { UsersService } from './users.service';
 import { CreateUserDto, UpdateUserDto } from './dto';
 
@@ -25,12 +26,22 @@ export class UsersController {
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateUserDto): Promise<User> {
-    return this.users.update(id, dto);
+  update(
+    @CurrentUser() admin: PrismaUser,
+    @Param('id') id: string,
+    @Body() dto: UpdateUserDto,
+  ): Promise<User> {
+    return this.users.update(admin.id, id, dto);
   }
 
   @Patch(':id/deactivate')
-  deactivate(@Param('id') id: string): Promise<User> {
-    return this.users.deactivate(id);
+  deactivate(@CurrentUser() admin: PrismaUser, @Param('id') id: string): Promise<User> {
+    return this.users.deactivate(admin.id, id);
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  remove(@CurrentUser() admin: PrismaUser, @Param('id') id: string): Promise<void> {
+    return this.users.remove(admin.id, id);
   }
 }

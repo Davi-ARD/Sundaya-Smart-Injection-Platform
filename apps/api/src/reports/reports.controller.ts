@@ -25,16 +25,16 @@ export class ReportsController {
     @Query('rentalId') rentalId?: string,
     @Query('machineId') machineId?: string,
   ): Promise<StreamableFile> {
-    const batches = await this.reports.machineIssues(user, { rentalId, machineId });
-    if (format === 'pdf') {
-      return new StreamableFile(await this.reports.pdfBuffer(batches), {
-        type: 'application/pdf',
-        disposition: 'attachment; filename="machine-issues.pdf"',
-      });
-    }
-    return new StreamableFile(Buffer.from(this.reports.toCsv(batches), 'utf-8'), {
-      type: 'text/csv',
-      disposition: 'attachment; filename="machine-issues.csv"',
+    const result = await this.reports.exportMachineIssues(
+      user,
+      { rentalId, machineId },
+      format === 'pdf' ? 'pdf' : 'csv',
+    );
+    const buffer =
+      typeof result.buffer === 'string' ? Buffer.from(result.buffer, 'utf-8') : result.buffer;
+    return new StreamableFile(buffer, {
+      type: result.contentType,
+      disposition: `attachment; filename="${result.filename}"`,
     });
   }
 }

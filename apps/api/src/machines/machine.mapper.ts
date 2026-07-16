@@ -20,6 +20,7 @@ export function toMachine(m: PrismaMachine, ownerNama?: string): Machine {
     warrantyDurationMonths: m.warrantyDurationMonths,
     warrantyEnd: m.warrantyEnd.toISOString(),
     warrantyStatus: m.warrantyStatus as unknown as Machine['warrantyStatus'],
+    isArchived: m.isArchived,
     createdAt: m.createdAt.toISOString(),
   };
 }
