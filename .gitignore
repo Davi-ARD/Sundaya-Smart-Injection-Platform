@@ -24,6 +24,9 @@ Thumbs.db
 .pnpm-store/
 *.db
 
+# File lock sementara Microsoft Office (mis. ~$dokumen.docx saat file dibuka)
+~$*
+
 # File upload user (avatar dll.) - tidak dilacak, disimpan lokal saja
 apps/api/uploads/
 
