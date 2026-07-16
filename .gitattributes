@@ -1,2 +1,9 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# File biner: jangan normalisasi akhir baris atau tampilkan diff teksnya.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.docx binary
