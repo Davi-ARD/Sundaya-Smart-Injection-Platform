@@ -21,10 +21,14 @@ const readSession = () => localStorage.getItem(SESSION_KEY)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [accessToken, setAccessToken] = useState<string | null>(() => readSession())
   const [user, setUser] = useState<User | null>(null)
+  // Token tersimpan tapi belum diverifikasi ke /auth/me. ProtectedRoute harus
+  // menunggu ini selesai sebelum menyimpulkan "belum login" pada reload/deep-link.
+  const [isInitializing, setIsInitializing] = useState(() => Boolean(readSession()))
 
   useEffect(() => {
     if (!accessToken) {
       setUser(null)
+      setIsInitializing(false)
       return
     }
 
@@ -37,6 +41,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         localStorage.removeItem(SESSION_KEY)
         setAccessToken(null)
         setUser(null)
+      } finally {
+        setIsInitializing(false)
       }
     }
 
@@ -70,23 +76,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
   }, [])
 
+  const updateUser = useCallback((updatedUser: User) => {
+    setUser(updatedUser)
+  }, [])
+
   const value = useMemo<AuthContextValue>(
     () => ({
       accessToken,
       user,
       isAuthenticated: Boolean(user && accessToken),
+      isInitializing,
       login,
       register,
       logout,
-      // Backend menurunkan identitas & otorisasi dari token; cukup kirim accessToken.
-      listUsers: (filters) => api.listUsers(accessToken, filters),
-      createUser: (request) => api.createUser(accessToken, request),
-      updateUser: (userId, request) => api.updateUser(accessToken, userId, request),
-      deactivateUser: (userId) => api.deactivateUser(accessToken, userId),
-      listOperators: () => api.listOperators(accessToken),
-      createOperator: (request) => api.createOperator(accessToken, request),
+      updateUser,
     }),
-    [accessToken, user, login, register, logout],
+    [accessToken, user, isInitializing, login, register, logout, updateUser],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

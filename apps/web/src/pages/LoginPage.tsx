@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { Link, Navigate, useNavigate } from 'react-router-dom'
 import type { LoginRequest } from '@mold-tracker/shared'
 import { useAuth } from '../features/auth/authContextValue'
 import logo from '../assets/sundaya-Logo.png'
@@ -7,14 +7,20 @@ import logo from '../assets/sundaya-Logo.png'
 export function LoginPage() {
   const { login, isAuthenticated } = useAuth()
   const navigate = useNavigate()
-  const location = useLocation()
+  const [mode, setMode] = useState<'email' | 'operator'>('email')
   const [form, setForm] = useState<LoginRequest>({
-    email: '',
+    identifier: '',
     password: '',
   })
   const [error, setError] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const switchMode = (nextMode: 'email' | 'operator') => {
+    setMode(nextMode)
+    setError('')
+    setForm({ identifier: '', password: '' })
+  }
 
   if (isAuthenticated) {
     return <Navigate to="/dashboard" replace />
@@ -27,13 +33,8 @@ export function LoginPage() {
 
     login(form)
       .then(() => {
-        const pathname =
-          typeof location.state === 'object' &&
-          location.state &&
-          'from' in location.state
-            ? location.state.from?.pathname
-            : '/dashboard'
-        navigate(pathname ?? '/dashboard', { replace: true })
+        // Selalu ke dashboard setelah login, jangan kembali ke path terakhir sebelum logout.
+        navigate('/dashboard', { replace: true })
       })
       .catch((caughtError) => {
         setIsSubmitting(false)
@@ -97,10 +98,10 @@ export function LoginPage() {
             <div className="flex items-center justify-between gap-4">
               <div>
                 <p className="text-sm font-semibold text-white">
-                  Status sistem
+                  Masuk ke Mold Tracker
                 </p>
                 <p className="mt-1 text-sm text-slate-300">
-                  Mock service siap diganti ke API nyata.
+                  Masukkan kredensial Anda untuk mengakses ruang kontrol produksi molding.
                 </p>
               </div>
               <span className="relative flex h-3 w-3">
@@ -129,20 +130,20 @@ export function LoginPage() {
               <form className="mt-7 space-y-5" onSubmit={submit}>
                 <label className="group block">
                   <span className="text-sm font-semibold text-slate-700">
-                    Email
+                    {mode === 'operator' ? 'Nama operator' : 'Email'}
                   </span>
                   <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 transition group-focus-within:border-brand-500 group-focus-within:bg-white group-focus-within:ring-4 group-focus-within:ring-brand-100">
                     <input
-                      type="email"
-                      value={form.email}
+                      type={mode === 'operator' ? 'text' : 'email'}
+                      value={form.identifier}
                       onChange={(event) =>
                         setForm((current) => ({
                           ...current,
-                          email: event.target.value,
+                          identifier: event.target.value,
                         }))
                       }
                       className="w-full bg-transparent text-slate-950 outline-none placeholder:text-slate-400"
-                      placeholder="nama@perusahaan.com"
+                      placeholder={mode === 'operator' ? 'Nama operator' : 'nama@perusahaan.com'}
                       required
                     />
                   </div>
@@ -194,15 +195,33 @@ export function LoginPage() {
                 </button>
               </form>
 
-              <p className="mt-7 text-center text-sm text-slate-600">
-                Belum punya akun?{' '}
-                <Link
-                  className="font-semibold text-brand-700 hover:text-brand-600"
-                  to="/register"
-                >
-                  Daftar mandiri
-                </Link>
-              </p>
+              {mode === 'email' ? (
+                <p className="mt-7 text-center text-sm text-slate-600">
+                  Belum punya akun?{' '}
+                  <Link
+                    className="font-semibold text-brand-700 hover:text-brand-600"
+                    to="/register"
+                  >
+                    Daftar mandiri
+                  </Link>
+                </p>
+              ) : null}
+
+              <div className="mt-4 flex items-center gap-3">
+                <span className="h-px flex-1 bg-slate-200" />
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  atau
+                </span>
+                <span className="h-px flex-1 bg-slate-200" />
+              </div>
+
+              <button
+                type="button"
+                onClick={() => switchMode(mode === 'operator' ? 'email' : 'operator')}
+                className="mt-4 w-full rounded-lg border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:-translate-y-0.5 hover:border-brand-500 hover:text-brand-700"
+              >
+                {mode === 'operator' ? 'Masuk dengan email' : 'Masuk sebagai Operator'}
+              </button>
             </div>
           </div>
         </section>
