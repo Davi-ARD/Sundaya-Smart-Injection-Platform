@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import {
+  CauseCategory,
   ConditionResult,
   MachineStatus,
   RentalStatus,
@@ -139,4 +140,12 @@ const reviewStatusLabel: Record<ReviewStatus, string> = {
 
 export function ReviewStatusBadge({ status }: { status: ReviewStatus }) {
   return <Badge tone={reviewStatusTone[status]}>{reviewStatusLabel[status]}</Badge>
+}
+
+// Label kategori penyebab selisih produksi. Dipakai di tabel Produksi dan Laporan.
+export const causeCategoryLabel: Record<CauseCategory, string> = {
+  [CauseCategory.SETTING_OPERATOR]: 'Setting Operator',
+  [CauseCategory.KUALITAS_MATERIAL]: 'Kualitas Material',
+  [CauseCategory.KONDISI_MESIN]: 'Kondisi Mesin/Mold',
+  [CauseCategory.LAIN]: 'Faktor Lain',
 }

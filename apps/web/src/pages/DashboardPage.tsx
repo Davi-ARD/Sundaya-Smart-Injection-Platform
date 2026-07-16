@@ -1,4 +1,5 @@
 import { useEffect, useState, type ComponentType } from 'react'
+import { errorMessage } from '../lib/errorMessage'
 import { Link } from 'react-router-dom'
 import {
   Bar,
@@ -37,9 +38,6 @@ import {
   ReviewStatusBadge,
   WarrantyStatusBadge,
 } from '../components/ui/Badge'
-
-const errorMessage = (caughtError: unknown, fallback: string) =>
-  caughtError instanceof Error ? caughtError.message : fallback
 
 // Pola fetch + isLoading + toast-on-error yang sama dipakai ketiga dashboard role.
 function useDashboardData<T>(fetcher: (token: string | null) => Promise<T>) {

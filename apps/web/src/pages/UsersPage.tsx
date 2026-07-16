@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { errorMessage } from '../lib/errorMessage'
 import { Plus } from 'lucide-react'
 import {
   Role,
@@ -30,9 +31,6 @@ const emptyCreateForm: CreateUserRequest = {
 }
 
 const displayEmail = (email: string | null) => email ?? '(login dengan nama, tanpa email)'
-
-const errorMessage = (caughtError: unknown, fallback: string) =>
-  caughtError instanceof Error ? caughtError.message : fallback
 
 export function UsersPage() {
   const { accessToken } = useAuth()

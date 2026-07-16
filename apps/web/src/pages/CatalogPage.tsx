@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { errorMessage } from '../lib/errorMessage'
 import { MachineStatus, Role, type CreateRentalRequest, type Machine } from '@mold-tracker/shared'
 import { useAuth } from '../features/auth/authContextValue'
 import { api } from '../lib/api'
@@ -15,9 +16,6 @@ const emptyForm = {
   destinationLocation: '',
   startDate: new Date().toISOString().slice(0, 10),
 }
-
-const errorMessage = (caughtError: unknown, fallback: string) =>
-  caughtError instanceof Error ? caughtError.message : fallback
 
 export function CatalogPage() {
   const { accessToken, user } = useAuth()

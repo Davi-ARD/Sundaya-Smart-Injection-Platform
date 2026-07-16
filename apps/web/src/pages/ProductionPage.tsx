@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { errorMessage } from '../lib/errorMessage'
 import { useSearchParams } from 'react-router-dom'
 import { Plus } from 'lucide-react'
 import {
@@ -13,7 +14,7 @@ import {
 import { useAuth } from '../features/auth/authContextValue'
 import { api } from '../lib/api'
 import { useToast } from '../components/ui/Toast'
-import { Badge, ReviewStatusBadge } from '../components/ui/Badge'
+import { Badge, causeCategoryLabel, ReviewStatusBadge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { DataTable, type Column } from '../components/ui/DataTable'
@@ -21,15 +22,6 @@ import { FieldGroup, SelectField, TextField } from '../components/ui/FormField'
 import { Modal } from '../components/ui/Modal'
 import { TableSkeleton } from '../components/ui/Skeleton'
 
-const errorMessage = (caughtError: unknown, fallback: string) =>
-  caughtError instanceof Error ? caughtError.message : fallback
-
-const causeCategoryLabel: Record<CauseCategory, string> = {
-  [CauseCategory.SETTING_OPERATOR]: 'Setting Operator',
-  [CauseCategory.KUALITAS_MATERIAL]: 'Kualitas Material',
-  [CauseCategory.KONDISI_MESIN]: 'Kondisi Mesin/Mold',
-  [CauseCategory.LAIN]: 'Faktor Lain',
-}
 
 const causeCategoryOptions = [
   { value: '' as CauseCategory | '', label: 'Tidak ada penyebab khusus' },

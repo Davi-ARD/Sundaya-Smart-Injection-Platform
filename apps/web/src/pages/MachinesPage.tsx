@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { errorMessage } from '../lib/errorMessage'
 import { useSearchParams } from 'react-router-dom'
 import { Plus } from 'lucide-react'
 import { MachineStatus } from '@mold-tracker/shared'
@@ -39,9 +40,6 @@ const emptyCreateForm: CreateMachineRequest = {
 
 // Input type="date" butuh yyyy-MM-dd; API mengembalikan ISO 8601 lengkap.
 const toDateInputValue = (iso: string) => iso.slice(0, 10)
-
-const errorMessage = (caughtError: unknown, fallback: string) =>
-  caughtError instanceof Error ? caughtError.message : fallback
 
 const statusFilterOptions: { value: MachineStatus | 'SEMUA' | 'ARSIP'; label: string }[] = [
   { value: 'SEMUA', label: 'Semua Status' },
