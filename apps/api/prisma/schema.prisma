@@ -73,11 +73,12 @@ enum ConditionResult {
 model User {
   id           String   @id @default(cuid())
   nama         String
-  email        String   @unique
+  email        String?  @unique // null untuk OPERATOR: login memakai nama, bukan email
   passwordHash String
   role         Role
   parentId     String?
   isActive     Boolean  @default(true)
+  avatarUrl    String? // path relatif ke file avatar terupload, mis. /uploads/avatars/xxx.jpg
   createdAt    DateTime @default(now())
 
   parent    User?  @relation("OperatorParent", fields: [parentId], references: [id])
@@ -88,6 +89,24 @@ model User {
   rentalsPenyedia Rental[]          @relation("RentalPenyedia")
   batches         ProductionBatch[]
   checks          ConditionCheck[]
+  notifications   Notification[]
+
+  // Operator login-by-nama butuh nama unik per role agar pencarian tidak ambigu.
+  @@unique([nama, role])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  message   String
+  link      String?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, isRead])
 }
 
 model Machine {
@@ -101,6 +120,9 @@ model Machine {
   warrantyDurationMonths Int
   warrantyEnd            DateTime
   warrantyStatus         WarrantyStatus
+  // Arsip (soft-delete): mesin tetap ada demi relasi rental/batch/check, cuma
+  // disembunyikan dari daftar aktif. Ganti hapus permanen yang kena FK restrict.
+  isArchived             Boolean        @default(false)
   createdAt              DateTime       @default(now())
 
   owner   User              @relation(fields: [ownerId], references: [id])

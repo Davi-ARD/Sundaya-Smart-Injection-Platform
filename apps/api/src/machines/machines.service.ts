@@ -7,6 +7,7 @@ import {
 import { $Enums, Prisma, User as PrismaUser } from '@prisma/client';
 import { Machine, MachineHistory, MachineStatus, Role, WarrantyStatus } from '@mold-tracker/shared';
 import { PrismaService } from '../prisma/prisma.service';
+import { machineWalk } from '../rentals/rental-state';
 import { CreateMachineDto, UpdateMachineDto } from './dto';
 import { toConditionCheck, toMachine, toRental } from './machine.mapper';
 import { computeWarranty } from './warranty';
@@ -22,13 +23,15 @@ export class MachinesService {
   constructor(private prisma: PrismaService) {}
 
   // ADMIN: semua mesin. PENYEDIA: hanya miliknya. PENYEWA/OPERATOR: katalog, hanya TERSEDIA.
-  async findAll(user: PrismaUser, status?: MachineStatus): Promise<Machine[]> {
+  // Mesin yang diarsipkan disembunyikan dari daftar aktif kecuali archived=true diminta eksplisit.
+  async findAll(user: PrismaUser, status?: MachineStatus, archived?: boolean): Promise<Machine[]> {
+    const isArchived = archived ?? false;
     const where =
       user.role === Role.ADMIN
-        ? { status: status ? asMachineStatus(status) : undefined }
+        ? { status: status ? asMachineStatus(status) : undefined, isArchived }
         : user.role === Role.PENYEDIA
-          ? { ownerId: user.id, status: status ? asMachineStatus(status) : undefined }
-          : { status: asMachineStatus(MachineStatus.TERSEDIA) };
+          ? { ownerId: user.id, status: status ? asMachineStatus(status) : undefined, isArchived }
+          : { status: asMachineStatus(MachineStatus.TERSEDIA), isArchived };
 
     const machines = await this.prisma.machine.findMany({ where, ...withOwnerNama });
     return machines.map((m) => toMachine(m, m.owner.nama));
@@ -83,11 +86,34 @@ export class MachinesService {
     return toMachine(m);
   }
 
-  async remove(user: PrismaUser, id: string): Promise<void> {
+  // Arsip (soft-delete): mesin disembunyikan dari daftar aktif, data & relasi tetap utuh.
+  async archive(user: PrismaUser, id: string): Promise<Machine> {
     await this.getOwnedOrThrow(user, id);
-    // ponytail: FK restrict memblok hapus mesin yang punya rental/batch/check (Prisma menolak).
-    // Ubah ke 409 eksplisit kalau UX butuh pesan lebih jelas.
-    await this.prisma.machine.delete({ where: { id } });
+    const m = await this.prisma.machine.update({ where: { id }, data: { isArchived: true }, ...withOwnerNama });
+    return toMachine(m, m.owner.nama);
+  }
+
+  async unarchive(user: PrismaUser, id: string): Promise<Machine> {
+    await this.getOwnedOrThrow(user, id);
+    const m = await this.prisma.machine.update({ where: { id }, data: { isArchived: false }, ...withOwnerNama });
+    return toMachine(m, m.owner.nama);
+  }
+
+  // Maintenance selesai: mesin siap disewakan lagi. MACHINE_FLOW sudah mengizinkan
+  // MAINTENANCE -> TERSEDIA (dipakai machineWalk di modul Sewa); di sini dipicu manual
+  // oleh Penyedia, bukan lewat siklus sewa, karena mesin MAINTENANCE tidak terikat sewa aktif.
+  async completeMaintenance(user: PrismaUser, id: string): Promise<Machine> {
+    const existing = await this.getOwnedOrThrow(user, id);
+    const nextStatus = machineWalk(
+      existing.status as unknown as MachineStatus,
+      MachineStatus.TERSEDIA,
+    );
+    const m = await this.prisma.machine.update({
+      where: { id },
+      data: { status: asMachineStatus(nextStatus) },
+      ...withOwnerNama,
+    });
+    return toMachine(m, m.owner.nama);
   }
 
   async history(user: PrismaUser, id: string): Promise<MachineHistory> {

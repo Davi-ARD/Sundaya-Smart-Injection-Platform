@@ -7,7 +7,11 @@ import {
 
 // Batas record Prisma -> bentuk API bersama: tanggal jadi ISO string, enum di-cast.
 // ponytail: enum shared dan Prisma nominal berbeda meski nilainya sama, cast di sini saja.
-export function toRental(r: PrismaRental, machineNumber?: string): Rental {
+export function toRental(
+  r: PrismaRental,
+  machineNumber?: string,
+  extensions: PrismaRentalExtension[] = [],
+): Rental {
   return {
     id: r.id,
     machineId: r.machineId,
@@ -25,6 +29,7 @@ export function toRental(r: PrismaRental, machineNumber?: string): Rental {
     returnedAt: r.returnedAt?.toISOString() ?? null,
     rejectionReason: r.rejectionReason,
     createdAt: r.createdAt.toISOString(),
+    extensions: extensions.map(toRentalExtension),
   };
 }
 
