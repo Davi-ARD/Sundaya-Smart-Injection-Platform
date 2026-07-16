@@ -8,7 +8,8 @@ services:
       POSTGRES_PASSWORD: mold
       POSTGRES_DB: mold_tracker
     ports:
-      - "5432:5432"
+      # Bind ke loopback saja agar Postgres tidak terekspos ke jaringan lokal.
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
 
