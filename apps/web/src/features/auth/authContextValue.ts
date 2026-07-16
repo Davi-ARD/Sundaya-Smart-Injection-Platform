@@ -1,28 +1,17 @@
 import { createContext, useContext } from 'react'
-import type {
-  AuthResponse,
-  CreateOperatorRequest,
-  CreateUserRequest,
-  LoginRequest,
-  RegisterRequest,
-  Role,
-  UpdateUserRequest,
-  User,
-} from '@mold-tracker/shared'
+import type { AuthResponse, LoginRequest, RegisterRequest, User } from '@mold-tracker/shared'
 
 export type AuthContextValue = {
   accessToken: string | null
   user: User | null
   isAuthenticated: boolean
+  // true selama token tersimpan sedang diverifikasi ke /auth/me (reload/deep-link).
+  isInitializing: boolean
   login: (request: LoginRequest) => Promise<AuthResponse>
   register: (request: RegisterRequest) => Promise<AuthResponse>
   logout: () => void
-  listUsers: (filters?: { role?: Role; isActive?: boolean }) => Promise<User[]>
-  createUser: (request: CreateUserRequest) => Promise<User>
-  updateUser: (userId: string, request: UpdateUserRequest) => Promise<User>
-  deactivateUser: (userId: string) => Promise<User>
-  listOperators: () => Promise<User[]>
-  createOperator: (request: CreateOperatorRequest) => Promise<User>
+  // Perbarui user tersimpan setelah edit profil, tanpa fetch ulang.
+  updateUser: (user: User) => void
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null)
