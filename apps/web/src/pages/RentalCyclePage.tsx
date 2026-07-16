@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type ComponentType, type FormEvent, type ReactNode } from 'react'
+import { errorMessage } from '../lib/errorMessage'
 import { Check, CheckCircle2, ChevronDown, Inbox, Truck, X } from 'lucide-react'
 import {
   ConditionResult,
@@ -18,9 +19,6 @@ import { Modal } from '../components/ui/Modal'
 import { RentalStatusBadge } from '../components/ui/Badge'
 import { CardSkeleton } from '../components/ui/Skeleton'
 import { SelectField, TextAreaField } from '../components/ui/FormField'
-
-const errorMessage = (caughtError: unknown, fallback: string) =>
-  caughtError instanceof Error ? caughtError.message : fallback
 
 const conditionResultOptions = [
   { value: ConditionResult.BAIK, label: 'Baik' },

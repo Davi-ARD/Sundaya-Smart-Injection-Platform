@@ -1,4 +1,5 @@
 import { useRef, useState, type ChangeEvent, type FormEvent } from 'react'
+import { errorMessage } from '../lib/errorMessage'
 import { Camera, Pencil } from 'lucide-react'
 import { Role, type UpdateProfileRequest } from '@mold-tracker/shared'
 import { useAuth } from '../features/auth/authContextValue'
@@ -8,9 +9,6 @@ import { useToast } from '../components/ui/Toast'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { TextField } from '../components/ui/FormField'
-
-const errorMessage = (caughtError: unknown, fallback: string) =>
-  caughtError instanceof Error ? caughtError.message : fallback
 
 const AVATAR_MAX_SIZE_BYTES = 5 * 1024 * 1024
 const ALLOWED_AVATAR_TYPES = ['image/jpeg', 'image/png', 'image/webp']

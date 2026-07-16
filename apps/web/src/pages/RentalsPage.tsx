@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { errorMessage } from '../lib/errorMessage'
 import { ChevronDown } from 'lucide-react'
 import { RentalStatus, type Rental } from '@mold-tracker/shared'
 import { useAuth } from '../features/auth/authContextValue'
@@ -12,9 +13,6 @@ import { Modal } from '../components/ui/Modal'
 import { RentalStepper } from '../components/ui/RentalStepper'
 import { CardSkeleton } from '../components/ui/Skeleton'
 import { TextField } from '../components/ui/FormField'
-
-const errorMessage = (caughtError: unknown, fallback: string) =>
-  caughtError instanceof Error ? caughtError.message : fallback
 
 // Riwayat (terminal, sudah selesai) disembunyikan di balik toggle supaya halaman tidak
 // penuh begitu sewa mulai dipakai jangka panjang — data tetap tersimpan, cuma dilipat.

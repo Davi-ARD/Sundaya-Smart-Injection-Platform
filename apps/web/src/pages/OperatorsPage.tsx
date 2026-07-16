@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { errorMessage } from '../lib/errorMessage'
 import type { CreateOperatorRequest, User } from '@mold-tracker/shared'
 import { useAuth } from '../features/auth/authContextValue'
 import { api } from '../lib/api'
@@ -14,9 +15,6 @@ const emptyForm: CreateOperatorRequest = {
   nama: '',
   password: '',
 }
-
-const errorMessage = (caughtError: unknown, fallback: string) =>
-  caughtError instanceof Error ? caughtError.message : fallback
 
 export function OperatorsPage() {
   const { accessToken } = useAuth()

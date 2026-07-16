@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { errorMessage } from '../lib/errorMessage'
 import { FileDown } from 'lucide-react'
-import { CauseCategory, Role, type ProductionBatch, type Rental } from '@mold-tracker/shared'
+import { Role, type ProductionBatch, type Rental } from '@mold-tracker/shared'
 import { useAuth } from '../features/auth/authContextValue'
 import { api } from '../lib/api'
 import { useToast } from '../components/ui/Toast'
@@ -8,17 +9,8 @@ import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { DataTable, type Column } from '../components/ui/DataTable'
 import { TableSkeleton } from '../components/ui/Skeleton'
-import { ReviewStatusBadge } from '../components/ui/Badge'
+import { causeCategoryLabel, ReviewStatusBadge } from '../components/ui/Badge'
 
-const errorMessage = (caughtError: unknown, fallback: string) =>
-  caughtError instanceof Error ? caughtError.message : fallback
-
-const causeCategoryLabel: Record<CauseCategory, string> = {
-  [CauseCategory.SETTING_OPERATOR]: 'Setting Operator',
-  [CauseCategory.KUALITAS_MATERIAL]: 'Kualitas Material',
-  [CauseCategory.KONDISI_MESIN]: 'Kondisi Mesin/Mold',
-  [CauseCategory.LAIN]: 'Faktor Lain',
-}
 
 // Membuat file yang di-fetch sebagai Blob langsung terunduh di browser
 // (dibutuhkan karena endpoint export butuh header Authorization, bukan <a href> polos).
