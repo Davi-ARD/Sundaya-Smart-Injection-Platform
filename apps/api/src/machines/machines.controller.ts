@@ -8,10 +8,18 @@ import {
   Query,
 } from '@nestjs/common';
 import { User as PrismaUser } from '@prisma/client';
-import { Machine, MachineStatus, Role } from '@mold-tracker/shared';
+import {
+  Machine,
+  MachineStatus,
+  MachineStatusCount,
+  OperationalData,
+  Role,
+} from '@mold-tracker/shared';
 import { CurrentUser, Roles } from '../auth/decorators';
 import { MachinesService } from './machines.service';
+import { OperationalService } from './operational.service';
 import { CreateMachineDto, UpdateMachineDto } from './dto';
+import { CreateOperationalDataDto } from './operational.dto';
 
 // Modul internal Sundaya. Semua endpoint hanya untuk staf Sundaya; Penyewa
 // tidak pernah mengakses katalog mesin (booking lewat mold, bukan pilih mesin).
@@ -19,7 +27,10 @@ const STAF_SUNDAYA = [Role.SUPER_ADMIN, Role.ADMIN_SUNDAYA, Role.TEKNISI_SUNDAYA
 
 @Controller('machines')
 export class MachinesController {
-  constructor(private machines: MachinesService) {}
+  constructor(
+    private machines: MachinesService,
+    private operational: OperationalService,
+  ) {}
 
   @Roles(...STAF_SUNDAYA)
   @Get()
@@ -34,10 +45,29 @@ export class MachinesController {
     return this.machines.findAll(statusFilter, archived === 'true');
   }
 
+  // Dideklarasikan sebelum GET :id agar route statis 'operational' tidak
+  // tertangkap oleh parameter :id.
+  @Roles(Role.TEKNISI_SUNDAYA, Role.ADMIN_SUNDAYA)
+  @Get('operational')
+  operationalSummary(): Promise<MachineStatusCount[]> {
+    return this.operational.summary();
+  }
+
   @Roles(...STAF_SUNDAYA)
   @Get(':id')
   findOne(@Param('id') id: string): Promise<Machine> {
     return this.machines.findOne(id);
+  }
+
+  // Layer 1 (Teknisi): append event status realtime + reason code. Append-only.
+  @Roles(Role.TEKNISI_SUNDAYA)
+  @Post(':id/operational')
+  appendOperational(
+    @CurrentUser() user: PrismaUser,
+    @Param('id') id: string,
+    @Body() dto: CreateOperationalDataDto,
+  ): Promise<OperationalData> {
+    return this.operational.append(user, id, dto);
   }
 
   @Roles(Role.ADMIN_SUNDAYA)
