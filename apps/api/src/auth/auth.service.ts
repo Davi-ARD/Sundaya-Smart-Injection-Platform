@@ -21,23 +21,28 @@ export class AuthService {
     private jwt: JwtService,
   ) {}
 
+  // Register publik hanya membuat Manager Penyewa (tenant root). Staf Sundaya
+  // dan Admin Penyewa dibuat lewat modul users, bukan di sini.
   async register(dto: RegisterDto): Promise<AuthResponse> {
     const exists = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (exists) throw new ConflictException('Email sudah terdaftar');
     const passwordHash = await bcrypt.hash(dto.password, 10);
     const user = await this.prisma.user.create({
-      data: { nama: dto.nama, email: dto.email, passwordHash, role: dto.role },
+      data: {
+        nama: dto.nama,
+        email: dto.email,
+        passwordHash,
+        role: $Enums.Role.MANAGER_PENYEWA,
+        companyName: dto.companyName,
+      },
     });
     return this.buildAuth(user);
   }
 
+  // Semua role login memakai email. Staf Sundaya dan penyewa lewat backend auth
+  // yang sama; pemisahan halaman masuk/route ada di frontend.
   async login(dto: LoginDto): Promise<AuthResponse> {
-    // Coba sebagai email dulu (ADMIN/PENYEDIA/PENYEWA), lalu sebagai nama OPERATOR.
-    const user =
-      (await this.prisma.user.findUnique({ where: { email: dto.identifier } })) ??
-      (await this.prisma.user.findUnique({
-        where: { nama_role: { nama: dto.identifier, role: $Enums.Role.OPERATOR } },
-      }));
+    const user = await this.prisma.user.findUnique({ where: { email: dto.identifier } });
     if (!user || !user.isActive) throw new UnauthorizedException('Kredensial salah');
     const ok = await bcrypt.compare(dto.password, user.passwordHash);
     if (!ok) throw new UnauthorizedException('Kredensial salah');
@@ -45,21 +50,26 @@ export class AuthService {
   }
 
   // Edit profil sendiri untuk semua role. JWT keyed by user.id, jadi ganti
-  // nama/email tidak membatalkan sesi — tak perlu token baru.
+  // nama/email tidak membatalkan sesi.
   async updateProfile(user: PrismaUser, dto: UpdateProfileDto): Promise<User> {
     const data: Prisma.UserUpdateInput = {};
 
     if (dto.nama !== undefined) data.nama = dto.nama;
 
     if (dto.email !== undefined) {
-      if (user.role === $Enums.Role.OPERATOR) {
-        throw new BadRequestException('Operator tidak memakai email');
-      }
       const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
       if (existing && existing.id !== user.id) {
         throw new ConflictException('Email sudah terdaftar');
       }
       data.email = dto.email;
+    }
+
+    // companyName hanya relevan untuk Manager Penyewa (identitas perusahaan).
+    if (dto.companyName !== undefined) {
+      if (user.role !== $Enums.Role.MANAGER_PENYEWA) {
+        throw new BadRequestException('Hanya Manager Penyewa yang punya nama perusahaan');
+      }
+      data.companyName = dto.companyName;
     }
 
     if (dto.newPassword) {
@@ -75,9 +85,8 @@ export class AuthService {
       const updated = await this.prisma.user.update({ where: { id: user.id }, data });
       return toUser(updated);
     } catch (error) {
-      // @@unique([nama, role]) — nama bentrok dengan user lain di role yang sama.
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        throw new ConflictException('Nama sudah digunakan untuk role ini');
+        throw new ConflictException('Email sudah terdaftar');
       }
       throw error;
     }

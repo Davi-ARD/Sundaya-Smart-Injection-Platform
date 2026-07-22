@@ -12,6 +12,7 @@ export function toUser(u: PrismaUser): User {
     email: u.email,
     role: u.role as unknown as User['role'],
     parentId: u.parentId,
+    companyName: u.companyName,
     isActive: u.isActive,
     avatarUrl: u.avatarUrl,
     createdAt: u.createdAt.toISOString(),

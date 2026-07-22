@@ -17,17 +17,17 @@ function reflectorReturning(roles: Role[] | undefined): Reflector {
 
 describe('RolesGuard', () => {
   it('tolak role yang tidak diizinkan (jadi 403)', () => {
-    const guard = new RolesGuard(reflectorReturning([Role.ADMIN]));
-    expect(guard.canActivate(ctx({ role: Role.OPERATOR }))).toBe(false);
+    const guard = new RolesGuard(reflectorReturning([Role.ADMIN_SUNDAYA]));
+    expect(guard.canActivate(ctx({ role: Role.TEKNISI_SUNDAYA }))).toBe(false);
   });
 
   it('izinkan role yang cocok', () => {
-    const guard = new RolesGuard(reflectorReturning([Role.ADMIN]));
-    expect(guard.canActivate(ctx({ role: Role.ADMIN }))).toBe(true);
+    const guard = new RolesGuard(reflectorReturning([Role.ADMIN_SUNDAYA]));
+    expect(guard.canActivate(ctx({ role: Role.ADMIN_SUNDAYA }))).toBe(true);
   });
 
   it('izinkan bila endpoint tidak menandai @Roles', () => {
     const guard = new RolesGuard(reflectorReturning(undefined));
-    expect(guard.canActivate(ctx({ role: Role.OPERATOR }))).toBe(true);
+    expect(guard.canActivate(ctx({ role: Role.ADMIN_PENYEWA }))).toBe(true);
   });
 });
