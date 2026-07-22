@@ -115,40 +115,34 @@ Role: MANAGER_PENYEWA (pemilik). Ubah field plan saja; `kodeMold` dan `trackingS
 
 ## Modul Mesin
 
+Modul internal Sundaya. Single-provider: semua mesin milik Sundaya, jadi staf melihat semua. Penyewa (Manager/Admin Penyewa) tidak mengakses modul ini; booking dilakukan lewat mold tanpa memilih mesin. Mesin punya dua sumbu status terpisah: `status` (ketersediaan/rental) dan `operationalStatus` (realtime Layer 1). Kedua sumbu tidak diubah lewat create/update: ketersediaan hanya lewat lifecycle job, realtime hanya lewat Operational Data (Layer 1).
+
 ### GET /machines
-Role: semua terautentikasi. Penyewa yang memakai ini untuk katalog hanya menerima mesin berstatus TERSEDIA (disaring server).
+Role: SUPER_ADMIN, ADMIN_SUNDAYA, TEKNISI_SUNDAYA. Menampilkan semua mesin Sundaya.
 - Query opsional: `status` (MachineStatus), `archived` (`'true'` untuk melihat mesin yang diarsipkan; default/tanpa param menyembunyikan mesin arsip)
 - Response 200: `Machine[]`
 
 ### GET /machines/:id
-Role: semua terautentikasi.
+Role: SUPER_ADMIN, ADMIN_SUNDAYA, TEKNISI_SUNDAYA.
 - Response 200: `Machine`
 
 ### POST /machines
-Role: PENYEDIA, ADMIN. ownerId di-set ke Penyedia pembuat.
-- Request: `CreateMachineRequest` { machineNumber, spesifikasi, standardRatio, warrantyStart, warrantyDurationMonths }
+Role: ADMIN_SUNDAYA. `ownerId` di-set ke user Sundaya pembuat (penegakan single-provider di service). `operationalStatus` awal STANDBY, `status` awal TERSEDIA.
+- Request: `CreateMachineRequest` { machineNumber, spesifikasi, tonaseTon, standardRatio, warrantyStart, warrantyDurationMonths }
 - Response 201: `Machine`
 
 ### PATCH /machines/:id
-Role: PENYEDIA (pemilik), ADMIN.
-- Request: `UpdateMachineRequest` { spesifikasi?, standardRatio?, warrantyStart?, warrantyDurationMonths? }
+Role: ADMIN_SUNDAYA. Tidak mengubah kedua sumbu status.
+- Request: `UpdateMachineRequest` { spesifikasi?, tonaseTon?, standardRatio?, warrantyStart?, warrantyDurationMonths? }
 - Response 200: `Machine`
 
 ### PATCH /machines/:id/archive
-Role: PENYEDIA (pemilik), ADMIN. Arsip (soft-delete) — set `isArchived: true`. Mesin tetap ada di database (relasi rental/batch/check tidak hilang), cuma disembunyikan dari daftar aktif kecuali diminta lewat `?archived=true`.
+Role: ADMIN_SUNDAYA. Arsip (soft-delete) — set `isArchived: true`. Mesin tetap ada di database (relasi job/operational tidak hilang), cuma disembunyikan dari daftar aktif kecuali diminta lewat `?archived=true`.
 - Response 200: `Machine`
 
 ### PATCH /machines/:id/unarchive
-Role: PENYEDIA (pemilik), ADMIN. Kembalikan mesin dari arsip — set `isArchived: false`.
+Role: ADMIN_SUNDAYA. Kembalikan mesin dari arsip — set `isArchived: false`.
 - Response 200: `Machine`
-
-### PATCH /machines/:id/complete-maintenance
-Role: PENYEDIA (pemilik), ADMIN. Tandai maintenance selesai — mesin MAINTENANCE kembali TERSEDIA, siap diajukan sewa lagi. Ditolak (409) bila status mesin saat ini bukan MAINTENANCE (transisi divalidasi lewat `MACHINE_FLOW`, sama seperti transisi status di modul Sewa).
-- Response 200: `Machine`
-
-### GET /machines/:id/history
-Role: PENYEDIA (pemilik), ADMIN. Rekam jejak satu mesin.
-- Response 200: `MachineHistory` { rentals: Rental[], conditionChecks: ConditionCheck[] }
 
 ---
 
