@@ -258,3 +258,24 @@ Semua role terautentikasi. Tandai satu notifikasi sudah dibaca.
 ### PATCH /notifications/read-all
 Semua role terautentikasi. Tandai semua notifikasi milik user sudah dibaca.
 - Response 204
+
+---
+
+## Modul Maintenance
+
+Modul internal Sundaya (SSIP). Teknisi Sundaya menjadwalkan dan mengeksekusi maintenance mesin; Admin Sundaya hanya membaca. Status maintenance berpindah linear lewat service layer (peta transisi konstan): `TERJADWAL -> BERLANGSUNG -> SELESAI`. Modul ini mengelola lifecycle record Maintenance saja dan tidak mengubah sumbu ketersediaan `Machine.status`.
+
+### GET /maintenance
+Role: TEKNISI_SUNDAYA, ADMIN_SUNDAYA. Semua record (single-provider), urut `scheduledAt` menurun.
+- Query opsional: `machineId`, `status` (MaintenanceStatus)
+- Response 200: `Maintenance[]`
+
+### POST /maintenance
+Role: TEKNISI_SUNDAYA. Menjadwalkan maintenance. `byId` di-set ke teknisi pembuat; status awal TERJADWAL. Mesin harus ada (404 bila tidak).
+- Request: `CreateMaintenanceRequest` { machineId, type (MaintenanceType), scheduledAt, notes? }
+- Response 201: `Maintenance`
+
+### PATCH /maintenance/:id/status
+Role: TEKNISI_SUNDAYA. Transisi status lewat service (409 bila transisi tidak sah, misalnya TERJADWAL langsung ke SELESAI). `notes` opsional memperbarui catatan.
+- Request: `UpdateMaintenanceStatusRequest` { status (MaintenanceStatus), notes? }
+- Response 200: `Maintenance`
