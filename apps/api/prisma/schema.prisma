@@ -1,5 +1,8 @@
-// Schema Prisma untuk Mold Tracker.
+// Schema Prisma untuk SSIP (Sundaya Smart Injection Platform).
 // Enum di sini harus konsisten dengan packages/shared/src/index.ts.
+// Single-provider: penyedia selalu Sundaya (user sistem, di-seed sebagai owner mesin).
+// Dual layer: OperationalData (Layer 1, Teknisi) dan LogProduksi (Layer 2, Admin Penyewa)
+// keduanya append-only. Lihat docs/ssip-spec.md dan PROJECT_CONTEXT.md.
 
 generator client {
   provider = "prisma-client-js"
@@ -11,12 +14,14 @@ datasource db {
 }
 
 enum Role {
-  ADMIN
-  PENYEDIA
-  PENYEWA
-  OPERATOR
+  SUPER_ADMIN
+  ADMIN_SUNDAYA
+  TEKNISI_SUNDAYA
+  MANAGER_PENYEWA
+  ADMIN_PENYEWA
 }
 
+// Sumbu ketersediaan/rental mesin (siklus booking).
 enum MachineStatus {
   TERSEDIA
   DIAJUKAN
@@ -29,12 +34,22 @@ enum MachineStatus {
   MAINTENANCE
 }
 
+// Sumbu operasional realtime mesin (Layer 1, diinput Teknisi Sundaya).
+enum MachineOperationalStatus {
+  RUNNING
+  SETUP
+  STANDBY
+  BREAKDOWN
+  MAINTENANCE
+}
+
 enum WarrantyStatus {
   AKTIF
   HABIS
 }
 
-enum RentalStatus {
+// Lifecycle booking/job (dulu RentalStatus).
+enum JobLifecycle {
   DIAJUKAN
   DITOLAK
   DIKONFIRMASI
@@ -45,54 +60,96 @@ enum RentalStatus {
   SELESAI
 }
 
+// Status job untuk dashboard Sundaya (dihitung dari sisa sewa dan progress).
+enum JobStatus {
+  ON_SCHEDULE
+  WARNING
+  CRITICAL
+  COMPLETED
+}
+
 enum ExtensionStatus {
   DIAJUKAN
   DITERIMA
   DITOLAK
 }
 
-enum CauseCategory {
-  SETTING_OPERATOR
-  KUALITAS_MATERIAL
-  KONDISI_MESIN
-  LAIN
+// Tracking fisik mold (10-state linear, hanya lewat service layer).
+enum MoldTrackingStatus {
+  PLANNING
+  READY_DELIVERY
+  DELIVERY
+  RECEIVED
+  WAITING_PRODUCTION
+  ON_MACHINE
+  PRODUCTION
+  REPAIR
+  SEND_BACK
+  COMPLETED
 }
 
-enum ReviewStatus {
-  PENDING
-  APPROVED
-  REJECTED
+// Progress molding (Layer 2, Log Produksi).
+enum ProgressMolding {
+  PLANNING
+  ONGOING
+  SUDAH_DIPRODUKSI
 }
 
-enum ConditionResult {
-  BAIK
-  BUTUH_MAINTENANCE
-  RUSAK
+// Jenis event Log Produksi (Layer 2 timeline).
+enum LogProduksiEventType {
+  MATERIAL_DATANG
+  PRODUKSI_HARIAN
+  PROGRESS_MOLDING
+}
+
+// Reason code downtime (six big losses, dilampirkan saat status non-Running).
+enum DowntimeReason {
+  BREAKDOWN
+  SETUP_ADJUSTMENT
+  MINOR_STOP
+  REDUCED_SPEED
+  STARTUP_REJECT
+  PRODUCTION_REJECT
+}
+
+enum MaintenanceType {
+  PREVENTIVE
+  CORRECTIVE
+}
+
+enum MaintenanceStatus {
+  TERJADWAL
+  BERLANGSUNG
+  SELESAI
 }
 
 model User {
   id           String   @id @default(cuid())
   nama         String
-  email        String?  @unique // null untuk OPERATOR: login memakai nama, bukan email
+  email        String   @unique
   passwordHash String
   role         Role
+  // ADMIN_PENYEWA (child) menunjuk MANAGER_PENYEWA (parent). Role lain null.
   parentId     String?
+  // Identitas perusahaan untuk MANAGER_PENYEWA (tenant root). ponytail: tenant =
+  // subtree parentId, belum perlu model Customer terpisah.
+  companyName  String?
   isActive     Boolean  @default(true)
-  avatarUrl    String? // path relatif ke file avatar terupload, mis. /uploads/avatars/xxx.jpg
+  avatarUrl    String?
   createdAt    DateTime @default(now())
 
-  parent    User?  @relation("OperatorParent", fields: [parentId], references: [id])
-  operators User[] @relation("OperatorParent")
+  parent   User?  @relation("PenyewaHierarchy", fields: [parentId], references: [id])
+  children User[] @relation("PenyewaHierarchy")
 
-  machines        Machine[]
-  rentalsPenyewa  Rental[]          @relation("RentalPenyewa")
-  rentalsPenyedia Rental[]          @relation("RentalPenyedia")
-  batches         ProductionBatch[]
-  checks          ConditionCheck[]
-  notifications   Notification[]
-
-  // Operator login-by-nama butuh nama unik per role agar pencarian tidak ambigu.
-  @@unique([nama, role])
+  machines           Machine[]
+  jobsAsManager      Job[]               @relation("JobManager")
+  jobsAssigned       Job[]               @relation("JobAssignedBy")
+  molds              Mold[]
+  moldTrackingEvents MoldTrackingEvent[]
+  logProduksi        LogProduksi[]
+  operationalData    OperationalData[]
+  maintenances       Maintenance[]
+  notifications      Notification[]
 }
 
 model Notification {
@@ -110,37 +167,87 @@ model Notification {
 }
 
 model Machine {
-  id                     String         @id @default(cuid())
-  machineNumber          String         @unique
+  id                     String                   @id @default(cuid())
+  machineNumber          String                   @unique
   spesifikasi            String
+  tonaseTon              Int
   standardRatio          Float
-  status                 MachineStatus  @default(TERSEDIA)
+  status                 MachineStatus            @default(TERSEDIA) // sumbu ketersediaan/rental
+  operationalStatus      MachineOperationalStatus @default(STANDBY)  // sumbu realtime Layer 1
+  // Owner selalu user sistem Sundaya (single-provider). FK dipertahankan agar
+  // relasi tetap eksplisit; penegakan single-provider ada di service.
   ownerId                String
   warrantyStart          DateTime
   warrantyDurationMonths Int
   warrantyEnd            DateTime
   warrantyStatus         WarrantyStatus
-  // Arsip (soft-delete): mesin tetap ada demi relasi rental/batch/check, cuma
-  // disembunyikan dari daftar aktif. Ganti hapus permanen yang kena FK restrict.
-  isArchived             Boolean        @default(false)
-  createdAt              DateTime       @default(now())
+  // Arsip (soft-delete): mesin tetap ada demi relasi job/operational, cuma
+  // disembunyikan dari daftar aktif.
+  isArchived             Boolean                  @default(false)
+  createdAt              DateTime                 @default(now())
 
-  owner   User              @relation(fields: [ownerId], references: [id])
-  rentals Rental[]
-  batches ProductionBatch[]
-  checks  ConditionCheck[]
+  owner           User              @relation(fields: [ownerId], references: [id])
+  jobs            Job[]
+  operationalData OperationalData[]
+  maintenances    Maintenance[]
 }
 
-model Rental {
+// Cetakan milik Manager Penyewa. Satu mold menghasilkan satu Job.
+model Mold {
+  id                String             @id @default(cuid())
+  kodeMold          String             @unique
+  namaProduk        String
+  cavity            Int
+  tonaseTon         Int
+  deskripsi         String?
+  managerId         String
+  trackingStatus    MoldTrackingStatus @default(PLANNING)
+  planMaterialUtama String?
+  estimasiKg        Float?
+  targetOutput      Float?
+  createdAt         DateTime           @default(now())
+
+  manager        User                @relation(fields: [managerId], references: [id])
+  job            Job?
+  trackingEvents MoldTrackingEvent[]
+}
+
+// Histori pergerakan mold (append-only). Timestamp RECEIVED dipakai sebagai
+// aktual-tiba mold di view Log Pengiriman.
+model MoldTrackingEvent {
+  id     String             @id @default(cuid())
+  moldId String
+  status MoldTrackingStatus
+  at     DateTime           @default(now())
+  byId   String
+
+  mold Mold @relation(fields: [moldId], references: [id])
+  by   User @relation(fields: [byId], references: [id])
+
+  @@index([moldId])
+}
+
+// Production Job (evolve dari Rental). Mesin di-assign Admin Sundaya, null saat booking.
+model Job {
   id                    String       @id @default(cuid())
-  machineId             String
-  penyewaId             String
-  penyediaId            String
-  status                RentalStatus @default(DIAJUKAN)
+  jobNumber             String       @unique
+  moldId                String       @unique // 1 job = 1 mold
+  managerId             String
+  machineId             String? // di-assign Admin Sundaya
+  assignedById          String?
+  lifecycle             JobLifecycle @default(DIAJUKAN)
+  jobStatus             JobStatus    @default(ON_SCHEDULE)
   requestedDurationDays Int
   destinationLocation   String
   startDate             DateTime?
   endDate               DateTime?
+  // Plan diisi Manager saat booking.
+  planMaterialUtama     String?
+  estimasiMaterialKg    Float?
+  materialTambahan      String?
+  targetOutput          Float?
+  // Sumber rencana untuk view Log Pengiriman.
+  rencanaKirimMold      DateTime?
   confirmedAt           DateTime?
   shippedAt             DateTime?
   receivedAt            DateTime?
@@ -148,57 +255,82 @@ model Rental {
   rejectionReason       String?
   createdAt             DateTime     @default(now())
 
-  machine    Machine           @relation(fields: [machineId], references: [id])
-  penyewa    User              @relation("RentalPenyewa", fields: [penyewaId], references: [id])
-  penyedia   User              @relation("RentalPenyedia", fields: [penyediaId], references: [id])
-  extensions RentalExtension[]
-  batches    ProductionBatch[]
-  checks     ConditionCheck[]
+  mold        Mold              @relation(fields: [moldId], references: [id])
+  manager     User              @relation("JobManager", fields: [managerId], references: [id])
+  assignedBy  User?             @relation("JobAssignedBy", fields: [assignedById], references: [id])
+  machine     Machine?          @relation(fields: [machineId], references: [id])
+  extensions  RentalExtension[]
+  logProduksi LogProduksi[]
 }
 
 model RentalExtension {
   id             String          @id @default(cuid())
-  rentalId       String
+  jobId          String
   additionalDays Int
   status         ExtensionStatus @default(DIAJUKAN)
   requestedAt    DateTime        @default(now())
   decidedAt      DateTime?
 
-  rental Rental @relation(fields: [rentalId], references: [id])
+  job Job @relation(fields: [jobId], references: [id])
 }
 
-model ProductionBatch {
-  id                  String         @id @default(cuid())
-  rentalId            String
-  machineId           String
-  operatorId          String
-  startAt             DateTime
-  endAt               DateTime
-  materialInputKg     Float
-  targetOutput        Float
-  actualOutput        Float
-  rejectCount         Int
-  causeCategory       CauseCategory?
-  efficiency          Float
-  flaggedMachineIssue Boolean        @default(false)
-  reviewStatus        ReviewStatus   @default(PENDING)
-  createdAt           DateTime       @default(now())
+// Log Produksi (Layer 2, append-only, diinput Admin Penyewa). Single-table
+// timeline: kolom nullable per jenis event. Pengganti ProductionBatch.
+model LogProduksi {
+  id         String               @id @default(cuid())
+  jobId      String
+  eventType  LogProduksiEventType
+  occurredAt DateTime
+  byId       String
+  catatan    String?
+  // MATERIAL_DATANG. occurredAt dipakai sebagai aktual-tiba material di Log Pengiriman.
+  materialName        String?
+  jumlahKg            Float?
+  noSuratJalan        String?
+  // PRODUKSI_HARIAN
+  goodProduct         Int?
+  rejectCount         Int?
+  materialRemainingKg Float?
+  // PROGRESS_MOLDING
+  progressMolding    ProgressMolding?
+  keteranganProgress String?
+  createdAt          DateTime         @default(now())
 
-  rental   Rental  @relation(fields: [rentalId], references: [id])
-  machine  Machine @relation(fields: [machineId], references: [id])
-  operator User    @relation(fields: [operatorId], references: [id])
+  job Job  @relation(fields: [jobId], references: [id])
+  by  User @relation(fields: [byId], references: [id])
+
+  @@index([jobId, occurredAt])
 }
 
-model ConditionCheck {
-  id          String          @id @default(cuid())
+// Operational Data (Layer 1, append-only, diinput Teknisi Sundaya). Sumber hitung
+// Availability, Performance, Quality, OEE, Utilization, MTBF, MTTR, six big losses.
+model OperationalData {
+  id             String                   @id @default(cuid())
+  machineId      String
+  status         MachineOperationalStatus
+  downtimeReason DowntimeReason?
+  cycleTimeSec   Float?
+  occurredAt     DateTime
+  byId           String
+  catatan        String?
+  createdAt      DateTime                 @default(now())
+
+  machine Machine @relation(fields: [machineId], references: [id])
+  by      User    @relation(fields: [byId], references: [id])
+
+  @@index([machineId, occurredAt])
+}
+
+model Maintenance {
+  id          String            @id @default(cuid())
   machineId   String
-  rentalId    String
-  checkedById String
-  result      ConditionResult
+  type        MaintenanceType
+  status      MaintenanceStatus @default(TERJADWAL)
+  scheduledAt DateTime
   notes       String?
-  checkedAt   DateTime        @default(now())
+  byId        String
+  createdAt   DateTime          @default(now())
 
-  machine   Machine @relation(fields: [machineId], references: [id])
-  rental    Rental  @relation(fields: [rentalId], references: [id])
-  checkedBy User    @relation(fields: [checkedById], references: [id])
+  machine Machine @relation(fields: [machineId], references: [id])
+  by      User    @relation(fields: [byId], references: [id])
 }

@@ -3,9 +3,10 @@ import { User as PrismaUser } from '@prisma/client';
 import { Role, User } from '@mold-tracker/shared';
 import { CurrentUser, Roles } from '../auth/decorators';
 import { UsersService } from './users.service';
-import { CreateUserDto, UpdateUserDto } from './dto';
+import { CreateStaffDto, UpdateUserDto } from './dto';
 
-@Roles(Role.ADMIN)
+// Kelola akun staf Sundaya. Hanya Super Admin.
+@Roles(Role.SUPER_ADMIN)
 @Controller('users')
 export class UsersController {
   constructor(private users: UsersService) {}
@@ -21,27 +22,27 @@ export class UsersController {
   }
 
   @Post()
-  create(@Body() dto: CreateUserDto): Promise<User> {
-    return this.users.create(dto);
+  create(@Body() dto: CreateStaffDto): Promise<User> {
+    return this.users.createStaff(dto);
   }
 
   @Patch(':id')
   update(
-    @CurrentUser() admin: PrismaUser,
+    @CurrentUser() actor: PrismaUser,
     @Param('id') id: string,
     @Body() dto: UpdateUserDto,
   ): Promise<User> {
-    return this.users.update(admin.id, id, dto);
+    return this.users.update(actor.id, id, dto);
   }
 
   @Patch(':id/deactivate')
-  deactivate(@CurrentUser() admin: PrismaUser, @Param('id') id: string): Promise<User> {
-    return this.users.deactivate(admin.id, id);
+  deactivate(@CurrentUser() actor: PrismaUser, @Param('id') id: string): Promise<User> {
+    return this.users.deactivate(actor.id, id);
   }
 
   @Delete(':id')
   @HttpCode(204)
-  remove(@CurrentUser() admin: PrismaUser, @Param('id') id: string): Promise<void> {
-    return this.users.remove(admin.id, id);
+  remove(@CurrentUser() actor: PrismaUser, @Param('id') id: string): Promise<void> {
+    return this.users.remove(actor.id, id);
   }
 }
