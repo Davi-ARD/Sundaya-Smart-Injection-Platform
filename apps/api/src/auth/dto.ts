@@ -1,6 +1,7 @@
-import { IsEmail, IsIn, IsOptional, IsString, MinLength } from 'class-validator';
-import { LoginRequest, RegisterRequest, Role, UpdateProfileRequest } from '@mold-tracker/shared';
+import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
+import { LoginRequest, RegisterRequest, UpdateProfileRequest } from '@mold-tracker/shared';
 
+// Register publik hanya untuk Manager Penyewa (tenant root). Role dipaksa di service.
 export class RegisterDto implements RegisterRequest {
   @IsString()
   @MinLength(1)
@@ -13,14 +14,13 @@ export class RegisterDto implements RegisterRequest {
   @MinLength(6)
   password: string;
 
-  @IsIn([Role.PENYEWA, Role.PENYEDIA])
-  role: Role.PENYEWA | Role.PENYEDIA;
+  @IsString()
+  @MinLength(1)
+  companyName: string;
 }
 
 export class LoginDto implements LoginRequest {
-  // Email untuk ADMIN/PENYEDIA/PENYEWA, nama untuk OPERATOR.
-  @IsString()
-  @MinLength(1)
+  @IsEmail()
   identifier: string;
 
   @IsString()
@@ -36,6 +36,11 @@ export class UpdateProfileDto implements UpdateProfileRequest {
   @IsOptional()
   @IsEmail()
   email?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  companyName?: string;
 
   @IsOptional()
   @IsString()

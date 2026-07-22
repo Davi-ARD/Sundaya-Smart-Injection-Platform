@@ -15,5 +15,7 @@
     "strict": true,
     "strictPropertyInitialization": false,
     "forceConsistentCasingInFileNames": true
-  }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "legacy"]
 }
