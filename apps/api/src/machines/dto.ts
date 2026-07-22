@@ -10,6 +10,10 @@ export class CreateMachineDto implements CreateMachineRequest {
   @MinLength(1)
   spesifikasi: string;
 
+  @IsInt()
+  @IsPositive()
+  tonaseTon: number;
+
   @IsNumber()
   @IsPositive()
   standardRatio: number;
@@ -27,6 +31,11 @@ export class UpdateMachineDto implements UpdateMachineRequest {
   @IsString()
   @MinLength(1)
   spesifikasi?: string;
+
+  @IsOptional()
+  @IsInt()
+  @IsPositive()
+  tonaseTon?: number;
 
   @IsOptional()
   @IsNumber()
