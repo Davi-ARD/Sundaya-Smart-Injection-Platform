@@ -144,6 +144,17 @@ Role: ADMIN_SUNDAYA. Arsip (soft-delete) — set `isArchived: true`. Mesin tetap
 Role: ADMIN_SUNDAYA. Kembalikan mesin dari arsip — set `isArchived: false`.
 - Response 200: `Machine`
 
+### GET /machines/operational
+Role: TEKNISI_SUNDAYA, ADMIN_SUNDAYA. Ringkasan realtime Layer 1: jumlah mesin (non-arsip) per `operationalStatus`, zero-fill kelima status.
+- Response 200: `MachineStatusCount[]` { status (MachineOperationalStatus), count }
+
+### POST /machines/:id/operational
+Role: TEKNISI_SUNDAYA. Append event status realtime mesin (Layer 1, append-only). Dalam satu transaksi: menulis `OperationalData` dan menyetel `Machine.operationalStatus` ke status yang diposting. Koreksi lewat event baru, bukan update/delete.
+- `downtimeReason` wajib saat status non-RUNNING (400 bila kosong) dan dilarang saat RUNNING (400 bila diisi).
+- Mesin harus ada (404).
+- Request: `CreateOperationalDataRequest` { status (MachineOperationalStatus), downtimeReason? (DowntimeReason), cycleTimeSec?, occurredAt, catatan? }
+- Response 201: `OperationalData`
+
 ---
 
 ## Modul Sewa
