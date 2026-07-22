@@ -1,18 +1,21 @@
 // Tipe dan DTO bersama untuk apps/api (NestJS) dan apps/web (React).
 // Sumber kebenaran tunggal. Jangan menduplikasi tipe ini di app mana pun.
 // Enum di sini harus konsisten dengan schema Prisma di apps/api.
+// Lihat docs/ssip-spec.md untuk konteks domain SSIP.
 
 // =====================================================================
 // ENUM
 // =====================================================================
 
 export enum Role {
-  ADMIN = "ADMIN",
-  PENYEDIA = "PENYEDIA",
-  PENYEWA = "PENYEWA",
-  OPERATOR = "OPERATOR",
+  SUPER_ADMIN = "SUPER_ADMIN",
+  ADMIN_SUNDAYA = "ADMIN_SUNDAYA",
+  TEKNISI_SUNDAYA = "TEKNISI_SUNDAYA",
+  MANAGER_PENYEWA = "MANAGER_PENYEWA",
+  ADMIN_PENYEWA = "ADMIN_PENYEWA",
 }
 
+// Sumbu ketersediaan/rental mesin.
 export enum MachineStatus {
   TERSEDIA = "TERSEDIA",
   DIAJUKAN = "DIAJUKAN",
@@ -25,12 +28,22 @@ export enum MachineStatus {
   MAINTENANCE = "MAINTENANCE",
 }
 
+// Sumbu operasional realtime mesin (Layer 1).
+export enum MachineOperationalStatus {
+  RUNNING = "RUNNING",
+  SETUP = "SETUP",
+  STANDBY = "STANDBY",
+  BREAKDOWN = "BREAKDOWN",
+  MAINTENANCE = "MAINTENANCE",
+}
+
 export enum WarrantyStatus {
   AKTIF = "AKTIF",
   HABIS = "HABIS",
 }
 
-export enum RentalStatus {
+// Lifecycle booking/job (dulu RentalStatus).
+export enum JobLifecycle {
   DIAJUKAN = "DIAJUKAN",
   DITOLAK = "DITOLAK",
   DIKONFIRMASI = "DIKONFIRMASI",
@@ -41,29 +54,76 @@ export enum RentalStatus {
   SELESAI = "SELESAI",
 }
 
+// Status job untuk dashboard Sundaya (dihitung).
+export enum JobStatus {
+  ON_SCHEDULE = "ON_SCHEDULE",
+  WARNING = "WARNING",
+  CRITICAL = "CRITICAL",
+  COMPLETED = "COMPLETED",
+}
+
 export enum ExtensionStatus {
   DIAJUKAN = "DIAJUKAN",
   DITERIMA = "DITERIMA",
   DITOLAK = "DITOLAK",
 }
 
-export enum CauseCategory {
-  SETTING_OPERATOR = "SETTING_OPERATOR",
-  KUALITAS_MATERIAL = "KUALITAS_MATERIAL",
-  KONDISI_MESIN = "KONDISI_MESIN",
-  LAIN = "LAIN",
+// Tracking fisik mold (10-state linear).
+export enum MoldTrackingStatus {
+  PLANNING = "PLANNING",
+  READY_DELIVERY = "READY_DELIVERY",
+  DELIVERY = "DELIVERY",
+  RECEIVED = "RECEIVED",
+  WAITING_PRODUCTION = "WAITING_PRODUCTION",
+  ON_MACHINE = "ON_MACHINE",
+  PRODUCTION = "PRODUCTION",
+  REPAIR = "REPAIR",
+  SEND_BACK = "SEND_BACK",
+  COMPLETED = "COMPLETED",
 }
 
-export enum ReviewStatus {
-  PENDING = "PENDING",
-  APPROVED = "APPROVED",
-  REJECTED = "REJECTED",
+// Progress molding (Layer 2).
+export enum ProgressMolding {
+  PLANNING = "PLANNING",
+  ONGOING = "ONGOING",
+  SUDAH_DIPRODUKSI = "SUDAH_DIPRODUKSI",
 }
 
-export enum ConditionResult {
-  BAIK = "BAIK",
-  BUTUH_MAINTENANCE = "BUTUH_MAINTENANCE",
-  RUSAK = "RUSAK",
+// Jenis event Log Produksi (Layer 2 timeline).
+export enum LogProduksiEventType {
+  MATERIAL_DATANG = "MATERIAL_DATANG",
+  PRODUKSI_HARIAN = "PRODUKSI_HARIAN",
+  PROGRESS_MOLDING = "PROGRESS_MOLDING",
+}
+
+// Reason code downtime (six big losses).
+export enum DowntimeReason {
+  BREAKDOWN = "BREAKDOWN",
+  SETUP_ADJUSTMENT = "SETUP_ADJUSTMENT",
+  MINOR_STOP = "MINOR_STOP",
+  REDUCED_SPEED = "REDUCED_SPEED",
+  STARTUP_REJECT = "STARTUP_REJECT",
+  PRODUCTION_REJECT = "PRODUCTION_REJECT",
+}
+
+export enum MaintenanceType {
+  PREVENTIVE = "PREVENTIVE",
+  CORRECTIVE = "CORRECTIVE",
+}
+
+export enum MaintenanceStatus {
+  TERJADWAL = "TERJADWAL",
+  BERLANGSUNG = "BERLANGSUNG",
+  SELESAI = "SELESAI",
+}
+
+// Status pengiriman (dihitung di view Log Pengiriman, tidak disimpan di DB).
+export enum DeliveryStatus {
+  DIRENCANAKAN = "DIRENCANAKAN",
+  DIKIRIM = "DIKIRIM",
+  TIBA_ONTIME = "TIBA_ONTIME",
+  TIBA_TERLAMBAT = "TIBA_TERLAMBAT",
+  BELUM_TIBA = "BELUM_TIBA",
 }
 
 // Tanggal dikirim sebagai ISO 8601 string di JSON.
@@ -76,11 +136,12 @@ export type ISODateString = string;
 export interface User {
   id: string;
   nama: string;
-  email: string | null; // null untuk OPERATOR: login memakai nama, bukan email
+  email: string;
   role: Role;
-  parentId: string | null; // untuk OPERATOR: id PENYEWA induk
+  parentId: string | null; // ADMIN_PENYEWA: id MANAGER_PENYEWA induk
+  companyName: string | null; // untuk MANAGER_PENYEWA
   isActive: boolean;
-  avatarUrl: string | null; // path relatif, mis. /uploads/avatars/xxx.jpg
+  avatarUrl: string | null;
   createdAt: ISODateString;
 }
 
@@ -88,10 +149,11 @@ export interface Machine {
   id: string;
   machineNumber: string;
   spesifikasi: string;
+  tonaseTon: number;
   standardRatio: number; // output standar per kg material
-  status: MachineStatus;
-  ownerId: string; // id PENYEDIA
-  ownerNama?: string;
+  status: MachineStatus; // sumbu ketersediaan
+  operationalStatus: MachineOperationalStatus; // sumbu realtime Layer 1
+  ownerId: string; // user sistem Sundaya
   warrantyStart: ISODateString;
   warrantyDurationMonths: number;
   warrantyEnd: ISODateString;
@@ -100,123 +162,174 @@ export interface Machine {
   createdAt: ISODateString;
 }
 
-export interface Rental {
+export interface Mold {
   id: string;
-  machineId: string;
+  kodeMold: string;
+  namaProduk: string;
+  cavity: number;
+  tonaseTon: number;
+  deskripsi: string | null;
+  managerId: string;
+  trackingStatus: MoldTrackingStatus;
+  planMaterialUtama: string | null;
+  estimasiKg: number | null;
+  targetOutput: number | null;
+  createdAt: ISODateString;
+}
+
+export interface MoldTrackingEvent {
+  id: string;
+  moldId: string;
+  status: MoldTrackingStatus;
+  at: ISODateString;
+  byId: string;
+}
+
+export interface Job {
+  id: string;
+  jobNumber: string;
+  moldId: string;
+  managerId: string;
+  machineId: string | null; // null sebelum di-assign Admin Sundaya
   machineNumber?: string;
-  penyewaId: string;
-  penyediaId: string;
-  status: RentalStatus;
+  assignedById: string | null;
+  lifecycle: JobLifecycle;
+  jobStatus: JobStatus;
   requestedDurationDays: number;
   destinationLocation: string;
   startDate: ISODateString | null;
   endDate: ISODateString | null;
+  planMaterialUtama: string | null;
+  estimasiMaterialKg: number | null;
+  materialTambahan: string | null;
+  targetOutput: number | null;
+  rencanaKirimMold: ISODateString | null;
   confirmedAt: ISODateString | null;
   shippedAt: ISODateString | null;
   receivedAt: ISODateString | null;
   returnedAt: ISODateString | null;
   rejectionReason: string | null;
   createdAt: ISODateString;
-  // Diisi pada GET /rentals dan GET /rentals/:id agar Penyedia bisa memutuskan
-  // perpanjangan tanpa endpoint daftar terpisah. Kosong pada respons aksi lain.
   extensions: RentalExtension[];
 }
 
 export interface RentalExtension {
   id: string;
-  rentalId: string;
+  jobId: string;
   additionalDays: number;
   status: ExtensionStatus;
   requestedAt: ISODateString;
   decidedAt: ISODateString | null;
 }
 
-export interface ProductionBatch {
+export interface LogProduksi {
   id: string;
-  rentalId: string;
-  machineId: string;
-  operatorId: string;
-  startAt: ISODateString;
-  endAt: ISODateString;
-  materialInputKg: number;
-  targetOutput: number;
-  actualOutput: number;
-  rejectCount: number;
-  causeCategory: CauseCategory | null; // null bila tidak ada selisih
-  efficiency: number; // persen, (actualOutput / targetOutput) * 100
-  flaggedMachineIssue: boolean;
-  reviewStatus: ReviewStatus;
+  jobId: string;
+  eventType: LogProduksiEventType;
+  occurredAt: ISODateString;
+  byId: string;
+  catatan: string | null;
+  // MATERIAL_DATANG
+  materialName: string | null;
+  jumlahKg: number | null;
+  noSuratJalan: string | null;
+  // PRODUKSI_HARIAN
+  goodProduct: number | null;
+  rejectCount: number | null;
+  materialRemainingKg: number | null;
+  // PROGRESS_MOLDING
+  progressMolding: ProgressMolding | null;
+  keteranganProgress: string | null;
   createdAt: ISODateString;
 }
 
-export interface ConditionCheck {
+export interface OperationalData {
   id: string;
   machineId: string;
-  rentalId: string;
-  checkedById: string; // id PENYEDIA
-  result: ConditionResult;
-  notes: string | null;
-  checkedAt: ISODateString;
+  status: MachineOperationalStatus;
+  downtimeReason: DowntimeReason | null;
+  cycleTimeSec: number | null;
+  occurredAt: ISODateString;
+  byId: string;
+  catatan: string | null;
+  createdAt: ISODateString;
 }
 
-export interface MachineHistory {
-  rentals: Rental[];
-  conditionChecks: ConditionCheck[];
+export interface Maintenance {
+  id: string;
+  machineId: string;
+  type: MaintenanceType;
+  status: MaintenanceStatus;
+  scheduledAt: ISODateString;
+  notes: string | null;
+  byId: string;
+  createdAt: ISODateString;
+}
+
+// Baris Log Pengiriman (dihitung, tanpa tabel). Rencana dari Job, aktual dari
+// LogProduksi (MATERIAL_DATANG) dan MoldTrackingEvent (RECEIVED).
+export interface DeliveryRow {
+  jobId: string;
+  jobNumber: string;
+  item: string;
+  sumberRencana: string; // mis. "Booking BK-1042"
+  rencanaTiba: ISODateString | null;
+  aktualTiba: ISODateString | null;
+  selisihHari: number | null;
+  status: DeliveryStatus;
 }
 
 // =====================================================================
 // DTO REQUEST
 // =====================================================================
 
-// Auth
+// Auth. Register publik hanya untuk MANAGER_PENYEWA (tenant root).
 export interface RegisterRequest {
   nama: string;
   email: string;
   password: string;
-  role: Role.PENYEWA | Role.PENYEDIA;
+  companyName: string;
 }
 
 export interface LoginRequest {
-  // Email untuk ADMIN/PENYEDIA/PENYEWA, nama untuk OPERATOR (tidak punya email).
-  identifier: string;
+  identifier: string; // email
   password: string;
 }
 
-// User
-export interface CreateUserRequest {
+// User / hierarki tenant
+export interface CreateStaffRequest {
   nama: string;
-  email?: string; // wajib kecuali role OPERATOR
+  email: string;
   password: string;
-  role: Role;
-  parentId?: string;
+  role: Role.SUPER_ADMIN | Role.ADMIN_SUNDAYA | Role.TEKNISI_SUNDAYA;
+}
+
+// Admin Penyewa dibuat oleh Manager (child). parentId diisi dari user Manager.
+export interface CreatePenyewaAdminRequest {
+  nama: string;
+  email: string;
+  password: string;
 }
 
 export interface UpdateUserRequest {
   nama?: string;
   email?: string;
-  role?: Role;
   isActive?: boolean;
 }
 
-// Edit profil sendiri (semua role). email diabaikan untuk OPERATOR (login by nama).
-// Ganti password opsional: kalau newPassword diisi, currentPassword wajib untuk verifikasi.
 export interface UpdateProfileRequest {
   nama?: string;
   email?: string;
+  companyName?: string;
   currentPassword?: string;
   newPassword?: string;
-}
-
-export interface CreateOperatorRequest {
-  // Operator login memakai nama, bukan email. nama unik per role (lihat User).
-  nama: string;
-  password: string;
 }
 
 // Mesin
 export interface CreateMachineRequest {
   machineNumber: string;
   spesifikasi: string;
+  tonaseTon: number;
   standardRatio: number;
   warrantyStart: ISODateString;
   warrantyDurationMonths: number;
@@ -224,26 +337,81 @@ export interface CreateMachineRequest {
 
 export interface UpdateMachineRequest {
   spesifikasi?: string;
+  tonaseTon?: number;
   standardRatio?: number;
   warrantyStart?: ISODateString;
   warrantyDurationMonths?: number;
 }
 
-// Sewa
-export interface CreateRentalRequest {
+// Operational Data (Layer 1, Teknisi). Append event, bukan update mesin langsung.
+export interface CreateOperationalDataRequest {
+  status: MachineOperationalStatus;
+  downtimeReason?: DowntimeReason;
+  cycleTimeSec?: number;
+  occurredAt: ISODateString;
+  catatan?: string;
+}
+
+// Maintenance
+export interface CreateMaintenanceRequest {
   machineId: string;
+  type: MaintenanceType;
+  scheduledAt: ISODateString;
+  notes?: string;
+}
+
+export interface UpdateMaintenanceStatusRequest {
+  status: MaintenanceStatus;
+  notes?: string;
+}
+
+// Cetakan (Mold)
+export interface CreateMoldRequest {
+  kodeMold: string;
+  namaProduk: string;
+  cavity: number;
+  tonaseTon: number;
+  deskripsi?: string;
+  planMaterialUtama?: string;
+  estimasiKg?: number;
+  targetOutput?: number;
+}
+
+export interface UpdateMoldRequest {
+  namaProduk?: string;
+  cavity?: number;
+  tonaseTon?: number;
+  deskripsi?: string;
+  planMaterialUtama?: string;
+  estimasiKg?: number;
+  targetOutput?: number;
+}
+
+// Transisi tracking mold (service-guarded, hanya state berikutnya yang sah).
+export interface UpdateMoldTrackingRequest {
+  status: MoldTrackingStatus;
+}
+
+// Booking / Job. Manager mengajukan tanpa memilih mesin.
+export interface CreateJobRequest {
+  moldId: string;
   requestedDurationDays: number;
   destinationLocation: string;
   startDate: ISODateString;
+  planMaterialUtama?: string;
+  estimasiMaterialKg?: number;
+  materialTambahan?: string;
+  targetOutput?: number;
+  rencanaKirimMold?: ISODateString;
 }
 
-export interface RejectRentalRequest {
+// Admin Sundaya approve dan assign mesin sekaligus.
+export interface AssignJobRequest {
+  machineId: string;
+}
+
+export interface RejectJobRequest {
   reason: string;
-}
-
-export interface CreateConditionCheckRequest {
-  result: ConditionResult;
-  notes?: string;
 }
 
 export interface CreateExtensionRequest {
@@ -254,20 +422,22 @@ export interface DecideExtensionRequest {
   decision: ExtensionStatus.DITERIMA | ExtensionStatus.DITOLAK;
 }
 
-// Produksi
-export interface CreateBatchRequest {
-  rentalId: string;
-  startAt: ISODateString;
-  endAt: ISODateString;
-  materialInputKg: number;
-  targetOutput?: number; // bila kosong, dihitung dari materialInputKg * standardRatio
-  actualOutput: number;
-  rejectCount: number;
-  causeCategory?: CauseCategory;
-}
-
-export interface ReviewBatchRequest {
-  reviewStatus: ReviewStatus.APPROVED | ReviewStatus.REJECTED;
+// Log Produksi (Layer 2, Admin Penyewa). Append-only.
+export interface CreateLogProduksiRequest {
+  eventType: LogProduksiEventType;
+  occurredAt: ISODateString;
+  catatan?: string;
+  // MATERIAL_DATANG
+  materialName?: string;
+  jumlahKg?: number;
+  noSuratJalan?: string;
+  // PRODUKSI_HARIAN
+  goodProduct?: number;
+  rejectCount?: number;
+  materialRemainingKg?: number;
+  // PROGRESS_MOLDING
+  progressMolding?: ProgressMolding;
+  keteranganProgress?: string;
 }
 
 // =====================================================================
@@ -279,65 +449,40 @@ export interface AuthResponse {
   user: User;
 }
 
-export interface OperatorEfficiency {
-  operatorId: string;
-  nama: string;
-  avgEfficiency: number;
-  batchCount: number;
-}
-
-export interface MachineEfficiency {
-  machineId: string;
-  machineNumber: string;
-  avgEfficiency: number;
-  batchCount: number;
-  rejectRate: number; // persen
-}
-
 export interface MachineStatusCount {
-  status: MachineStatus;
+  status: MachineOperationalStatus;
   count: number;
 }
 
-export interface PenyediaDashboard {
-  machineStatusCounts: MachineStatusCount[];
-  machineUtilization: {
-    machineId: string;
-    machineNumber: string;
-    daysRented: number;
-    daysIdle: number;
-  }[];
-  recurringIssueMachines: Machine[];
-  warrantySummary: {
-    machineId: string;
-    machineNumber: string;
-    warrantyStatus: WarrantyStatus;
-    warrantyEnd: ISODateString;
-  }[];
+// Metrik pemantauan mesin (dihitung dari OperationalData Layer 1).
+export interface MachineMetrics {
+  machineId: string;
+  machineNumber: string;
+  availability: number; // persen
+  performance: number; // persen
+  quality: number; // persen
+  oee: number; // persen
+  utilization: number; // persen
+  mtbfHours: number;
+  mttrHours: number;
+  totalDowntimeHours: number;
 }
 
-export interface PenyewaDashboard {
-  activeRentals: {
-    rentalId: string;
-    machineNumber: string;
-    endDate: ISODateString;
-  }[];
-  efficiencyByBatch: {
-    batchId: string;
-    machineNumber: string;
-    date: ISODateString;
-    efficiency: number;
-  }[];
-  rejectRate: number; // persen
-  machineIssueBatches: ProductionBatch[];
-}
-
-export interface AdminDashboard {
-  totalUsers: number;
+export interface SundayaDashboard {
+  runningMachines: number;
   totalMachines: number;
-  machineStatusCounts: MachineStatusCount[];
-  totalActiveRentals: number;
-  flaggedPendingReview: number;
+  avgOee: number;
+  utilization: number;
+  activeBookings: number;
+  operationalStatusCounts: MachineStatusCount[];
+}
+
+export interface ManagerDashboard {
+  moldsAtSundaya: number;
+  ongoing: number;
+  totalGoodProduct: number;
+  avgAchievement: number;
+  onTimeDeliveryRate: number; // persen, dari Log Pengiriman
 }
 
 // =====================================================================
@@ -357,6 +502,6 @@ export interface AppNotification {
 // KONSTANTA
 // =====================================================================
 
-// Ambang efisiensi default untuk flagging masalah mesin (persen).
-// Backend boleh menimpa lewat env atau tabel setting.
-export const DEFAULT_EFFICIENCY_THRESHOLD = 85;
+// Warning jika sisa sewa <= 3 hari, Critical jika <= 1 hari (aturan rental SSIP).
+export const RENTAL_WARNING_DAYS = 3;
+export const RENTAL_CRITICAL_DAYS = 1;

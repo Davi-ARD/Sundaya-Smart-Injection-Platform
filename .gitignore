@@ -30,9 +30,5 @@ Thumbs.db
 # File upload user (avatar dll.) - tidak dilacak, disimpan lokal saja
 apps/api/uploads/
 
-# Panduan & konfigurasi tooling AI lokal (tidak dibagikan ke repo tim,
-# rekan memakai tool AI berbeda). Lihat masing-masing panduan tool.
-CLAUDE.md
-Playbook-Backend.md
-Playbook-Frontend.md
+# Konfigurasi tooling AI lokal per developer (tidak dibagikan ke repo tim).
 .claude/
