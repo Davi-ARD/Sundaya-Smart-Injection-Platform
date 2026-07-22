@@ -89,6 +89,30 @@ Role: PENYEWA (pemilik). Menghapus permanen sub-akun Operator miliknya. Ditolak 
 
 ---
 
+## Modul Cetakan (Mold)
+
+CRUD cetakan milik Manager Penyewa. Scoping tenant di server: Manager hanya melihat dan mengubah cetakan miliknya sendiri; cetakan milik tenant lain dibalas 404 (tidak dibocorkan keberadaannya). Transisi `trackingStatus` tidak lewat modul ini melainkan endpoint tracking terpisah (service-guarded); cetakan baru selalu berstatus `PLANNING`.
+
+### GET /molds
+Role: MANAGER_PENYEWA. Daftar cetakan milik Manager (terbaru dulu).
+- Response 200: `Mold[]`
+
+### GET /molds/:id
+Role: MANAGER_PENYEWA (pemilik). Cetakan milik Manager lain dibalas 404.
+- Response 200: `Mold`
+
+### POST /molds
+Role: MANAGER_PENYEWA. Membuat cetakan (status `PLANNING`, `managerId` di-set dari token). `kodeMold` unik global (409 bila bentrok).
+- Request: `CreateMoldRequest` { kodeMold, namaProduk, cavity, tonaseTon, deskripsi?, planMaterialUtama?, estimasiKg?, targetOutput? }
+- Response 201: `Mold`
+
+### PATCH /molds/:id
+Role: MANAGER_PENYEWA (pemilik). Ubah field plan saja; `kodeMold` dan `trackingStatus` tidak dapat diubah di sini. Cetakan milik Manager lain dibalas 404.
+- Request: `UpdateMoldRequest` { namaProduk?, cavity?, tonaseTon?, deskripsi?, planMaterialUtama?, estimasiKg?, targetOutput? }
+- Response 200: `Mold`
+
+---
+
 ## Modul Mesin
 
 Modul internal Sundaya. Single-provider: semua mesin milik Sundaya, jadi staf melihat semua. Penyewa (Manager/Admin Penyewa) tidak mengakses modul ini; booking dilakukan lewat mold tanpa memilih mesin. Mesin punya dua sumbu status terpisah: `status` (ketersediaan/rental) dan `operationalStatus` (realtime Layer 1). Kedua sumbu tidak diubah lewat create/update: ketersediaan hanya lewat lifecycle job, realtime hanya lewat Operational Data (Layer 1).
