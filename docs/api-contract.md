@@ -214,6 +214,24 @@ Role: ADMIN_SUNDAYA. DIKEMBALIKAN -> SELESAI (mesin lewat PENGECEKAN kembali ke 
 
 ---
 
+## Modul Log Produksi (SSIP, Layer 2)
+
+Timeline event produksi per job (Layer 2), diinput Admin Penyewa di lokasi Sundaya. **Append-only**: tidak ada PATCH/DELETE; koreksi lewat event baru. Tiga jenis event (`LogProduksiEventType`) berbagi satu timeline; tiap event hanya menyimpan field milik tipenya. `occurredAt` event `MATERIAL_DATANG` dipakai sebagai aktual-tiba material di Log Pengiriman. Scoping tenant di server: job harus milik tenant pengakses (Admin Penyewa lewat `parentId`, Manager lewat dirinya); job tenant lain dibalas 404.
+
+### GET /jobs/:jobId/logs
+Role: ADMIN_PENYEWA, MANAGER_PENYEWA, ADMIN_SUNDAYA, SUPER_ADMIN. Timeline event job (urut `occurredAt` menaik).
+- Response 200: `LogProduksi[]`
+
+### POST /jobs/:jobId/logs
+Role: ADMIN_PENYEWA. Append satu event; `byId` di-set dari token. Field wajib per `eventType` (400 bila kurang):
+- `MATERIAL_DATANG`: wajib `materialName`, `jumlahKg` (opsional `noSuratJalan`)
+- `PRODUKSI_HARIAN`: wajib `goodProduct`, `rejectCount` (opsional `materialRemainingKg`)
+- `PROGRESS_MOLDING`: wajib `progressMolding` (opsional `keteranganProgress`)
+- Request: `CreateLogProduksiRequest` { eventType, occurredAt, catatan?, dan field sesuai tipe di atas }
+- Response 201: `LogProduksi`
+
+---
+
 ## Modul Sewa (legacy, digantikan Modul Job)
 
 Bagian di bawah ini adalah kontrak modul Sewa lama (rentals, model PENYEWA/PENYEDIA) yang sudah dikarantina dan digantikan Modul Job SSIP di atas. Dipertahankan sebagai referensi sampai dokumen dirapikan.

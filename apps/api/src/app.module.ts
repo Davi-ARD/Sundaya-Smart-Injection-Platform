@@ -6,6 +6,7 @@ import { MachinesModule } from './machines/machines.module';
 import { MoldsModule } from './molds/molds.module';
 import { MaintenanceModule } from './maintenance/maintenance.module';
 import { JobsModule } from './jobs/jobs.module';
+import { LogProduksiModule } from './log-produksi/log-produksi.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { HealthController } from './health.controller';
 
@@ -21,6 +22,7 @@ import { HealthController } from './health.controller';
     MoldsModule,
     MaintenanceModule,
     JobsModule,
+    LogProduksiModule,
     DashboardModule,
   ],
   controllers: [HealthController],
