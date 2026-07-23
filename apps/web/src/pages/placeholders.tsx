@@ -1,5 +1,4 @@
 import {
-  Boxes,
   CalendarPlus,
   Factory,
   Gauge,
@@ -22,14 +21,6 @@ export const ManagerDashboardPage = () => (
     icon={LayoutDashboard}
     title="Dashboard Manager"
     description="Ringkasan cetakan di Sundaya, produksi berjalan, dan ketepatan pengiriman."
-  />
-)
-
-export const MoldsPage = () => (
-  <PagePlaceholder
-    icon={Boxes}
-    title="Cetakan"
-    description="Kelola master cetakan (mold) beserta rencana material dan target."
   />
 )
 
