@@ -485,6 +485,19 @@ export interface ManagerDashboard {
   onTimeDeliveryRate: number; // persen, dari Log Pengiriman
 }
 
+// Dashboard job di lokasi (Admin Penyewa). Ringkasan per job aktif tenant.
+export interface JobDashboard {
+  jobId: string;
+  jobNumber: string;
+  lifecycle: JobLifecycle;
+  machineNumber: string | null;
+  progressMolding: ProgressMolding | null; // progress molding terakhir
+  totalGoodProduct: number;
+  totalReject: number;
+  materialRemainingKg: number | null; // sisa material terakhir dilaporkan
+  latestLogAt: ISODateString | null;
+}
+
 // =====================================================================
 // NOTIFIKASI
 // =====================================================================

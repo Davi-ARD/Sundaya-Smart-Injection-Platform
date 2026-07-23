@@ -5,5 +5,6 @@ import { PengirimanController } from './pengiriman.controller';
 @Module({
   controllers: [PengirimanController],
   providers: [PengirimanService],
+  exports: [PengirimanService],
 })
 export class PengirimanModule {}
