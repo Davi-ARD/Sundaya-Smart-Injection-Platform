@@ -232,6 +232,19 @@ Role: ADMIN_PENYEWA. Append satu event; `byId` di-set dari token. Field wajib pe
 
 ---
 
+## Modul Log Pengiriman (SSIP, turunan read-only)
+
+Membandingkan **rencana** kirim (dari Job) vs **aktual** tiba (dari Layer 2 + Mold Tracking). Turunan murni: **tanpa tabel, tanpa endpoint tulis**. Rencana = `Job.rencanaKirimMold`; aktual mold = event `MoldTrackingEvent` RECEIVED; aktual material = event `LogProduksi` MATERIAL_DATANG paling awal. Sistem menghitung `selisihHari` + `DeliveryStatus`. Per job muncul baris mold dan (bila ada plan/event material) baris material. Hanya job dengan `rencanaKirimMold` atau `planMaterialUtama` yang memunculkan baris.
+
+`DeliveryStatus` dihitung: aktual ada + selisih <= 0 -> `TIBA_ONTIME`; aktual ada + selisih > 0 -> `TIBA_TERLAMBAT`; belum tiba + mold masih dikirim (READY_DELIVERY/DELIVERY) -> `DIKIRIM`; belum tiba + rencana lewat -> `BELUM_TIBA`; selain itu -> `DIRENCANAKAN`.
+
+### GET /pengiriman
+Role: MANAGER_PENYEWA, ADMIN_SUNDAYA, SUPER_ADMIN. Manager melihat baris job miliknya; staf Sundaya melihat semua (opsional filter `?managerId=`).
+- Query opsional: `managerId` (hanya berpengaruh untuk staf Sundaya)
+- Response 200: `DeliveryRow[]`
+
+---
+
 ## Modul Sewa (legacy, digantikan Modul Job)
 
 Bagian di bawah ini adalah kontrak modul Sewa lama (rentals, model PENYEWA/PENYEDIA) yang sudah dikarantina dan digantikan Modul Job SSIP di atas. Dipertahankan sebagai referensi sampai dokumen dirapikan.
