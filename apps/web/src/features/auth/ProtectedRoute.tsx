@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import type { Role } from '@mold-tracker/shared'
 import { useAuth } from './authContextValue'
+import { homePathForRole } from './roleLabels'
 
 export function ProtectedRoute({
   allowedRoles,
@@ -21,12 +22,12 @@ export function ProtectedRoute({
     )
   }
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated || !user) {
     return <Navigate to="/login" replace state={{ from: location }} />
   }
 
-  if (allowedRoles && user && !allowedRoles.includes(user.role)) {
-    return <Navigate to="/dashboard" replace />
+  if (allowedRoles && !allowedRoles.includes(user.role)) {
+    return <Navigate to={homePathForRole(user.role)} replace />
   }
 
   return children ?? <Outlet />

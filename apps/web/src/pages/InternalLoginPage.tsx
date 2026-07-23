@@ -6,13 +6,11 @@ import { AuthShell, AuthField } from '../features/auth/AuthShell'
 import { Button } from '../components/ui/Button'
 import { errorMessage } from '../lib/errorMessage'
 
-// Registrasi publik hanya untuk Manager Penyewa (tenant root perusahaan).
-// Admin Penyewa dibuat oleh Manager dari dalam aplikasi, bukan di sini.
-export function RegisterPage() {
-  const { isAuthenticated, user, register } = useAuth()
+// Portal internal staf Sundaya (Super Admin, Admin Sundaya, Teknisi). Tidak ada
+// self-register; akun dibuat internal oleh Super Admin. Backend auth sama.
+export function InternalLoginPage() {
+  const { isAuthenticated, user, login } = useAuth()
   const navigate = useNavigate()
-  const [nama, setNama] = useState('')
-  const [companyName, setCompanyName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -27,10 +25,10 @@ export function RegisterPage() {
     setError(null)
     setIsSubmitting(true)
     try {
-      const response = await register({ nama, email, password, companyName })
+      const response = await login({ identifier: email, password })
       navigate(homePathForRole(response.user.role), { replace: true })
     } catch (caught) {
-      setError(errorMessage(caught, 'Registrasi gagal. Coba lagi.'))
+      setError(errorMessage(caught, 'Login gagal. Periksa email dan kata sandi.'))
     } finally {
       setIsSubmitting(false)
     }
@@ -38,15 +36,13 @@ export function RegisterPage() {
 
   return (
     <AuthShell
-      eyebrow="Daftar Perusahaan"
-      title="Buat akun Manager"
-      subtitle="Satu akun Manager mewakili satu perusahaan penyewa."
+      eyebrow="Portal Internal Sundaya"
+      title="Masuk staf Sundaya"
+      subtitle="Khusus Super Admin, Admin Sundaya, dan Teknisi."
     >
       <form onSubmit={handleSubmit} className="space-y-4">
-        <AuthField label="Nama lengkap" value={nama} onChange={setNama} autoComplete="name" placeholder="Nama Anda" />
-        <AuthField label="Nama perusahaan" value={companyName} onChange={setCompanyName} autoComplete="organization" placeholder="PT Contoh Manufaktur" />
-        <AuthField label="Email" type="email" value={email} onChange={setEmail} autoComplete="email" placeholder="nama@perusahaan.com" />
-        <AuthField label="Kata sandi" type="password" value={password} onChange={setPassword} autoComplete="new-password" placeholder="Minimal 6 karakter" />
+        <AuthField label="Email" type="email" value={email} onChange={setEmail} autoComplete="email" placeholder="nama@sundaya.com" />
+        <AuthField label="Kata sandi" type="password" value={password} onChange={setPassword} autoComplete="current-password" placeholder="••••••••" />
 
         {error ? (
           <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 ring-1 ring-inset ring-rose-600/15">
@@ -55,14 +51,14 @@ export function RegisterPage() {
         ) : null}
 
         <Button type="submit" disabled={isSubmitting} className="w-full">
-          {isSubmitting ? 'Memproses...' : 'Daftar'}
+          {isSubmitting ? 'Memproses...' : 'Masuk'}
         </Button>
       </form>
 
-      <p className="mt-6 text-sm text-slate-500">
-        Sudah punya akun?{' '}
-        <Link to="/login" className="font-semibold text-brand-600 hover:text-brand-700">
-          Masuk
+      <p className="mt-6 text-xs text-slate-400">
+        Penyewa?{' '}
+        <Link to="/login" className="font-medium text-slate-500 hover:text-slate-700">
+          Masuk lewat portal Penyewa
         </Link>
       </p>
     </AuthShell>
