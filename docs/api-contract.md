@@ -157,7 +157,59 @@ Role: TEKNISI_SUNDAYA. Append event status realtime mesin (Layer 1, append-only)
 
 ---
 
-## Modul Sewa
+## Modul Job (SSIP)
+
+Evolusi dari modul Sewa lama. Satu booking menghasilkan satu Production Job. Mesin di-assign Admin Sundaya (bukan dipilih saat booking), `machineId` null sampai assign. Lifecycle (`JobLifecycle`) hanya berpindah lewat service layer (peta `JOB_LIFECYCLE_FLOW`); sumbu ketersediaan mesin (`Machine.status`) berjalan lockstep lewat `MACHINE_FLOW`. `jobStatus` (ON_SCHEDULE/WARNING/CRITICAL/COMPLETED) dihitung saat baca dari sisa sewa, bukan disimpan. Scoping tenant di server: staf Sundaya lihat semua; Manager lihat miliknya; Admin Penyewa lihat tenant induknya.
+
+### GET /jobs
+Semua terautentikasi, disaring per tenant di server.
+- Query opsional: `lifecycle` (JobLifecycle)
+- Response 200: `Job[]`
+
+### GET /jobs/:id
+Pihak terkait (tenant pemilik) atau staf Sundaya. Tenant lain dibalas 403.
+- Response 200: `Job`
+
+### POST /jobs
+Role: MANAGER_PENYEWA. Booking tanpa memilih mesin (lifecycle DIAJUKAN). **Dikerjakan Dev B (B2), belum tersedia di rilis A2.**
+- Request: `CreateJobRequest` { moldId, requestedDurationDays, destinationLocation, startDate, planMaterialUtama?, estimasiMaterialKg?, materialTambahan?, targetOutput?, rencanaKirimMold? }
+- Response 201: `Job`
+
+### PATCH /jobs/:id/assign
+Role: ADMIN_SUNDAYA. Approve + assign mesin: DIAJUKAN -> DIKONFIRMASI, set `machineId`/`assignedById`/`confirmedAt`. Mesin harus TERSEDIA (409 bila tidak) dan tonasenya cocok mold (400 bila tidak). Mesin berjalan TERSEDIA -> DIKONFIRMASI.
+- Request: `AssignJobRequest` { machineId }
+- Response 200: `Job`
+
+### PATCH /jobs/:id/reject
+Role: ADMIN_SUNDAYA. DIAJUKAN -> DITOLAK dengan alasan.
+- Request: `RejectJobRequest` { reason }
+- Response 200: `Job`
+
+### PATCH /jobs/:id/ship
+Role: ADMIN_SUNDAYA. DIKONFIRMASI -> DIKIRIM (mesin -> DIKIRIM).
+- Response 200: `Job`
+
+### PATCH /jobs/:id/activate
+Role: ADMIN_SUNDAYA. DIKIRIM -> AKTIF (mesin -> AKTIF). `startDate`/`endDate` dihitung ulang dari momen aktif memakai `requestedDurationDays`.
+- Response 200: `Job`
+
+### PATCH /jobs/:id/return
+Role: ADMIN_SUNDAYA. AKTIF -> SELESAI_SEWA (mesin -> SELESAI_SEWA), set `returnedAt`.
+- Response 200: `Job`
+
+### PATCH /jobs/:id/collect
+Role: ADMIN_SUNDAYA. SELESAI_SEWA -> DIKEMBALIKAN (mesin -> DIKEMBALIKAN).
+- Response 200: `Job`
+
+### PATCH /jobs/:id/complete
+Role: ADMIN_SUNDAYA. DIKEMBALIKAN -> SELESAI (mesin lewat PENGECEKAN kembali ke TERSEDIA).
+- Response 200: `Job`
+
+---
+
+## Modul Sewa (legacy, digantikan Modul Job)
+
+Bagian di bawah ini adalah kontrak modul Sewa lama (rentals, model PENYEWA/PENYEDIA) yang sudah dikarantina dan digantikan Modul Job SSIP di atas. Dipertahankan sebagai referensi sampai dokumen dirapikan.
 
 ### POST /rentals
 Role: PENYEWA. Mengajukan sewa. Mesin harus TERSEDIA. Status rental menjadi DIAJUKAN.
