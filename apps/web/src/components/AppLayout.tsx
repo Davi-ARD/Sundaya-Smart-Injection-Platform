@@ -2,22 +2,24 @@ import { useEffect, useRef, useState, type ComponentType } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import {
   Bell,
+  Boxes,
+  CalendarPlus,
   ChevronDown,
-  ClipboardEdit,
+  ClipboardList,
   Factory,
-  FileBarChart,
-  Kanban,
+  Gauge,
   LayoutDashboard,
   LogOut,
   PanelLeft,
   Pencil,
-  Store,
+  Route as RouteIcon,
+  Truck,
   UserCog,
   Users,
+  Wrench,
 } from 'lucide-react'
 import { Role, type AppNotification } from '@mold-tracker/shared'
 import sundayaIcon from '../assets/icon-sundaya.png'
-import { GlobalSearch } from './GlobalSearch'
 import { useAuth } from '../features/auth/authContextValue'
 import { initialsFromName, roleLabels, roleTagline } from '../features/auth/roleLabels'
 import { useNotifications } from '../features/notifications/useNotifications'
@@ -30,79 +32,62 @@ type MenuItem = {
   roles: Role[]
 }
 
-const operationalItems: MenuItem[] = [
+// Menu Penyewa (Manager + Admin Penyewa) dan staf Sundaya. Disaring per role.
+const penyewaItems: MenuItem[] = [
+  { label: 'Dashboard', to: '/manager', icon: LayoutDashboard, roles: [Role.MANAGER_PENYEWA] },
+  { label: 'Cetakan', to: '/molds', icon: Boxes, roles: [Role.MANAGER_PENYEWA] },
+  { label: 'Booking Mesin', to: '/booking', icon: CalendarPlus, roles: [Role.MANAGER_PENYEWA] },
+  { label: 'Log Pengiriman', to: '/pengiriman', icon: Truck, roles: [Role.MANAGER_PENYEWA] },
+  { label: 'Dashboard Job', to: '/job', icon: Gauge, roles: [Role.ADMIN_PENYEWA] },
+  { label: 'Log Produksi', to: '/logs', icon: ClipboardList, roles: [Role.ADMIN_PENYEWA] },
+]
+
+const sundayaItems: MenuItem[] = [
   {
     label: 'Dashboard',
-    to: '/dashboard',
+    to: '/staff',
     icon: LayoutDashboard,
-    roles: [Role.ADMIN, Role.PENYEDIA, Role.PENYEWA, Role.OPERATOR],
+    roles: [Role.SUPER_ADMIN, Role.ADMIN_SUNDAYA, Role.TEKNISI_SUNDAYA],
   },
   {
-    label: 'Daftar Mesin',
+    label: 'Mesin',
     to: '/machines',
     icon: Factory,
-    roles: [Role.ADMIN, Role.PENYEDIA],
+    roles: [Role.SUPER_ADMIN, Role.ADMIN_SUNDAYA, Role.TEKNISI_SUNDAYA],
   },
   {
-    label: 'Katalog Sewa',
-    to: '/catalog',
-    icon: Store,
-    roles: [Role.ADMIN, Role.PENYEWA],
+    label: 'Mold Tracking',
+    to: '/tracking',
+    icon: RouteIcon,
+    roles: [Role.SUPER_ADMIN, Role.ADMIN_SUNDAYA, Role.TEKNISI_SUNDAYA],
   },
   {
-    label: 'Status Sewa',
-    to: '/rentals',
-    icon: Kanban,
-    roles: [Role.PENYEWA],
-  },
-  {
-    label: 'Panel Siklus',
-    to: '/rental-cycle',
-    icon: Kanban,
-    roles: [Role.ADMIN, Role.PENYEDIA],
-  },
-  {
-    label: 'Input Produksi',
-    to: '/production',
-    icon: ClipboardEdit,
-    roles: [Role.ADMIN, Role.PENYEDIA, Role.PENYEWA, Role.OPERATOR],
-  },
-  {
-    label: 'Laporan',
-    to: '/reports',
-    icon: FileBarChart,
-    roles: [Role.ADMIN, Role.PENYEWA],
+    label: 'Maintenance',
+    to: '/maintenance',
+    icon: Wrench,
+    roles: [Role.SUPER_ADMIN, Role.ADMIN_SUNDAYA, Role.TEKNISI_SUNDAYA],
   },
 ]
 
 const administrationItems: MenuItem[] = [
-  {
-    label: 'Pengguna',
-    to: '/users',
-    icon: Users,
-    roles: [Role.ADMIN],
-  },
-  {
-    label: 'Operator',
-    to: '/operators',
-    icon: UserCog,
-    roles: [Role.PENYEWA],
-  },
+  { label: 'Akun Admin', to: '/penyewa-admins', icon: UserCog, roles: [Role.MANAGER_PENYEWA] },
+  { label: 'Pengguna', to: '/users', icon: Users, roles: [Role.SUPER_ADMIN] },
 ]
 
 const menuSections = [
-  { label: 'Operasional', items: operationalItems },
+  { label: 'Penyewa', items: penyewaItems },
+  { label: 'Sundaya', items: sundayaItems },
   { label: 'Administrasi', items: administrationItems },
 ]
+
+const SIDEBAR_BG = '#0f1e3d'
 
 export function AppLayout() {
   const { user, logout } = useAuth()
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false)
 
-  if (!user) {
-    return null
-  }
+  if (!user) return null
 
   const visibleSections = menuSections
     .map((section) => ({
@@ -125,18 +110,20 @@ export function AppLayout() {
 
       <aside
         className={[
-          'fixed inset-y-0 left-0 z-40 hidden border-r border-slate-800/80 bg-slate-950 text-white shadow-2xl shadow-slate-900/25 transition-[width] duration-300 ease-out lg:block',
+          'fixed inset-y-0 left-0 z-40 hidden text-white shadow-2xl shadow-slate-900/25 transition-[width] duration-300 ease-out lg:block',
           isSidebarOpen ? 'w-72' : 'w-20',
         ].join(' ')}
+        style={{ backgroundColor: SIDEBAR_BG }}
       >
         <SidebarContent isOpen={isSidebarOpen} sections={visibleSections} onNavigate={() => undefined} />
       </aside>
 
       <aside
         className={[
-          'fixed inset-y-0 left-0 z-40 w-72 bg-slate-950 text-white shadow-2xl shadow-slate-900/30 transition-transform duration-300 ease-out lg:hidden',
+          'fixed inset-y-0 left-0 z-40 w-72 text-white shadow-2xl shadow-slate-900/30 transition-transform duration-300 ease-out lg:hidden',
           isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full',
         ].join(' ')}
+        style={{ backgroundColor: SIDEBAR_BG }}
       >
         <SidebarContent isOpen sections={visibleSections} onNavigate={() => setIsMobileSidebarOpen(false)} />
       </aside>
@@ -166,8 +153,9 @@ export function AppLayout() {
               >
                 <PanelLeft className="h-4 w-4" />
               </button>
-
-              <GlobalSearch />
+              <p className="hidden truncate text-sm font-medium text-slate-500 sm:block">
+                Selamat datang, <span className="font-semibold text-slate-900">{user.nama}</span>
+              </p>
             </div>
 
             <div className="flex shrink-0 items-center gap-2">
@@ -219,13 +207,9 @@ function NotificationBell() {
   }, [])
 
   const openNotification = (notification: AppNotification) => {
-    if (!notification.isRead) {
-      void markRead(notification.id)
-    }
+    if (!notification.isRead) void markRead(notification.id)
     setIsOpen(false)
-    if (notification.link) {
-      navigate(notification.link)
-    }
+    if (notification.link) navigate(notification.link)
   }
 
   return (
@@ -236,7 +220,7 @@ function NotificationBell() {
         onClick={() => setIsOpen((current) => !current)}
         className="relative grid h-10 w-10 place-items-center rounded-lg text-slate-500 transition-colors duration-150 hover:bg-slate-100"
       >
-        <Bell className="h-4.5 w-4.5" />
+        <Bell className="h-4 w-4" />
         {unreadCount > 0 ? (
           <span className="absolute right-1.5 top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white ring-2 ring-white">
             {unreadCount > 9 ? '9+' : unreadCount}
@@ -394,9 +378,9 @@ function SidebarContent({
             isOpen ? 'translate-x-0 opacity-100' : 'pointer-events-none w-0 -translate-x-2 opacity-0',
           ].join(' ')}
         >
-          <p className="truncate text-sm font-bold text-white">Mold Tracker</p>
-          <p className="truncate text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-            Rental &amp; Production
+          <p className="truncate text-sm font-bold text-white">SSIP</p>
+          <p className="truncate text-[10px] font-semibold uppercase tracking-wider text-brand-300">
+            Smart Injection Platform
           </p>
         </div>
       </div>
@@ -406,7 +390,7 @@ function SidebarContent({
           <div key={section.label}>
             <p
               className={[
-                'px-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500 transition-opacity duration-200',
+                'px-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400 transition-opacity duration-200',
                 isOpen ? 'opacity-100' : 'opacity-0',
               ].join(' ')}
             >
@@ -424,12 +408,12 @@ function SidebarContent({
                       'group flex h-11 items-center rounded-xl text-sm font-medium transition duration-200',
                       isOpen ? 'gap-3 px-3' : 'justify-center px-0',
                       isActive
-                        ? 'bg-slate-800 text-brand-300 shadow-lg shadow-slate-900/20'
+                        ? 'bg-white/10 text-brand-200 shadow-lg shadow-slate-900/20'
                         : 'text-slate-300 hover:-translate-y-0.5 hover:bg-white/10 hover:text-white',
                     ].join(' ')
                   }
                 >
-                  <item.icon className="h-4.5 w-4.5 shrink-0" />
+                  <item.icon className="h-4 w-4 shrink-0" />
                   <span
                     className={[
                       'whitespace-nowrap transition duration-200',

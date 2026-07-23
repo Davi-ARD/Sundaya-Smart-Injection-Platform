@@ -1,10 +1,9 @@
 import type { ReactNode } from 'react'
 import {
-  CauseCategory,
-  ConditionResult,
+  DeliveryStatus,
+  JobLifecycle,
   MachineStatus,
-  RentalStatus,
-  ReviewStatus,
+  MoldTrackingStatus,
   WarrantyStatus,
 } from '@mold-tracker/shared'
 
@@ -42,6 +41,7 @@ export function Badge({ tone = 'slate', children }: { tone?: BadgeTone; children
   )
 }
 
+// --- Mesin (ketersediaan/rental) ---
 const machineStatusTone: Record<MachineStatus, BadgeTone> = {
   [MachineStatus.TERSEDIA]: 'emerald',
   [MachineStatus.DIAJUKAN]: 'amber',
@@ -70,82 +70,95 @@ export function MachineStatusBadge({ status }: { status: MachineStatus }) {
   return <Badge tone={machineStatusTone[status]}>{machineStatusLabel[status]}</Badge>
 }
 
-const rentalStatusTone: Record<RentalStatus, BadgeTone> = {
-  [RentalStatus.DIAJUKAN]: 'amber',
-  [RentalStatus.DITOLAK]: 'rose',
-  [RentalStatus.DIKONFIRMASI]: 'sky',
-  [RentalStatus.DIKIRIM]: 'sky',
-  [RentalStatus.AKTIF]: 'brand',
-  [RentalStatus.SELESAI_SEWA]: 'amber',
-  [RentalStatus.DIKEMBALIKAN]: 'amber',
-  [RentalStatus.SELESAI]: 'emerald',
+// --- Job lifecycle (booking) ---
+const jobLifecycleTone: Record<JobLifecycle, BadgeTone> = {
+  [JobLifecycle.DIAJUKAN]: 'amber',
+  [JobLifecycle.DITOLAK]: 'rose',
+  [JobLifecycle.DIKONFIRMASI]: 'sky',
+  [JobLifecycle.DIKIRIM]: 'sky',
+  [JobLifecycle.AKTIF]: 'brand',
+  [JobLifecycle.SELESAI_SEWA]: 'amber',
+  [JobLifecycle.DIKEMBALIKAN]: 'amber',
+  [JobLifecycle.SELESAI]: 'emerald',
 }
 
-const rentalStatusLabel: Record<RentalStatus, string> = {
-  [RentalStatus.DIAJUKAN]: 'Diajukan',
-  [RentalStatus.DITOLAK]: 'Ditolak',
-  [RentalStatus.DIKONFIRMASI]: 'Dikonfirmasi',
-  [RentalStatus.DIKIRIM]: 'Dikirim',
-  [RentalStatus.AKTIF]: 'Aktif',
-  [RentalStatus.SELESAI_SEWA]: 'Selesai Sewa',
-  [RentalStatus.DIKEMBALIKAN]: 'Dikembalikan',
-  [RentalStatus.SELESAI]: 'Selesai',
+export const jobLifecycleLabel: Record<JobLifecycle, string> = {
+  [JobLifecycle.DIAJUKAN]: 'Diajukan',
+  [JobLifecycle.DITOLAK]: 'Ditolak',
+  [JobLifecycle.DIKONFIRMASI]: 'Dikonfirmasi',
+  [JobLifecycle.DIKIRIM]: 'Dikirim',
+  [JobLifecycle.AKTIF]: 'Aktif',
+  [JobLifecycle.SELESAI_SEWA]: 'Selesai Sewa',
+  [JobLifecycle.DIKEMBALIKAN]: 'Dikembalikan',
+  [JobLifecycle.SELESAI]: 'Selesai',
 }
 
-export function RentalStatusBadge({ status }: { status: RentalStatus }) {
-  return <Badge tone={rentalStatusTone[status]}>{rentalStatusLabel[status]}</Badge>
+export function JobLifecycleBadge({ status }: { status: JobLifecycle }) {
+  return <Badge tone={jobLifecycleTone[status]}>{jobLifecycleLabel[status]}</Badge>
 }
 
+// --- Mold tracking (fisik cetakan) ---
+const moldTrackingTone: Record<MoldTrackingStatus, BadgeTone> = {
+  [MoldTrackingStatus.PLANNING]: 'slate',
+  [MoldTrackingStatus.READY_DELIVERY]: 'amber',
+  [MoldTrackingStatus.DELIVERY]: 'sky',
+  [MoldTrackingStatus.RECEIVED]: 'sky',
+  [MoldTrackingStatus.WAITING_PRODUCTION]: 'amber',
+  [MoldTrackingStatus.ON_MACHINE]: 'brand',
+  [MoldTrackingStatus.PRODUCTION]: 'brand',
+  [MoldTrackingStatus.REPAIR]: 'rose',
+  [MoldTrackingStatus.SEND_BACK]: 'amber',
+  [MoldTrackingStatus.COMPLETED]: 'emerald',
+}
+
+export const moldTrackingLabel: Record<MoldTrackingStatus, string> = {
+  [MoldTrackingStatus.PLANNING]: 'Planning',
+  [MoldTrackingStatus.READY_DELIVERY]: 'Ready Delivery',
+  [MoldTrackingStatus.DELIVERY]: 'Delivery',
+  [MoldTrackingStatus.RECEIVED]: 'Received',
+  [MoldTrackingStatus.WAITING_PRODUCTION]: 'Waiting Production',
+  [MoldTrackingStatus.ON_MACHINE]: 'On Machine',
+  [MoldTrackingStatus.PRODUCTION]: 'Production',
+  [MoldTrackingStatus.REPAIR]: 'Repair',
+  [MoldTrackingStatus.SEND_BACK]: 'Send Back',
+  [MoldTrackingStatus.COMPLETED]: 'Completed',
+}
+
+export function MoldTrackingBadge({ status }: { status: MoldTrackingStatus }) {
+  return <Badge tone={moldTrackingTone[status]}>{moldTrackingLabel[status]}</Badge>
+}
+
+// --- Delivery status (Log Pengiriman, dihitung) ---
+const deliveryTone: Record<DeliveryStatus, BadgeTone> = {
+  [DeliveryStatus.DIRENCANAKAN]: 'slate',
+  [DeliveryStatus.DIKIRIM]: 'sky',
+  [DeliveryStatus.TIBA_ONTIME]: 'emerald',
+  [DeliveryStatus.TIBA_TERLAMBAT]: 'amber',
+  [DeliveryStatus.BELUM_TIBA]: 'rose',
+}
+
+export const deliveryLabel: Record<DeliveryStatus, string> = {
+  [DeliveryStatus.DIRENCANAKAN]: 'Direncanakan',
+  [DeliveryStatus.DIKIRIM]: 'Dikirim',
+  [DeliveryStatus.TIBA_ONTIME]: 'Tiba On-time',
+  [DeliveryStatus.TIBA_TERLAMBAT]: 'Tiba Terlambat',
+  [DeliveryStatus.BELUM_TIBA]: 'Belum Tiba',
+}
+
+export function DeliveryStatusBadge({ status }: { status: DeliveryStatus }) {
+  return <Badge tone={deliveryTone[status]}>{deliveryLabel[status]}</Badge>
+}
+
+// --- Garansi mesin ---
 const warrantyStatusTone: Record<WarrantyStatus, BadgeTone> = {
   [WarrantyStatus.AKTIF]: 'emerald',
   [WarrantyStatus.HABIS]: 'rose',
 }
 
-const warrantyStatusLabel: Record<WarrantyStatus, string> = {
-  [WarrantyStatus.AKTIF]: 'Aktif',
-  [WarrantyStatus.HABIS]: 'Habis',
-}
-
 export function WarrantyStatusBadge({ status }: { status: WarrantyStatus }) {
-  return <Badge tone={warrantyStatusTone[status]}>{warrantyStatusLabel[status]}</Badge>
-}
-
-const conditionResultTone: Record<ConditionResult, BadgeTone> = {
-  [ConditionResult.BAIK]: 'emerald',
-  [ConditionResult.BUTUH_MAINTENANCE]: 'amber',
-  [ConditionResult.RUSAK]: 'rose',
-}
-
-const conditionResultLabel: Record<ConditionResult, string> = {
-  [ConditionResult.BAIK]: 'Baik',
-  [ConditionResult.BUTUH_MAINTENANCE]: 'Butuh Maintenance',
-  [ConditionResult.RUSAK]: 'Rusak',
-}
-
-export function ConditionResultBadge({ result }: { result: ConditionResult }) {
-  return <Badge tone={conditionResultTone[result]}>{conditionResultLabel[result]}</Badge>
-}
-
-const reviewStatusTone: Record<ReviewStatus, BadgeTone> = {
-  [ReviewStatus.PENDING]: 'amber',
-  [ReviewStatus.APPROVED]: 'emerald',
-  [ReviewStatus.REJECTED]: 'rose',
-}
-
-const reviewStatusLabel: Record<ReviewStatus, string> = {
-  [ReviewStatus.PENDING]: 'Menunggu Review',
-  [ReviewStatus.APPROVED]: 'Disetujui',
-  [ReviewStatus.REJECTED]: 'Ditolak',
-}
-
-export function ReviewStatusBadge({ status }: { status: ReviewStatus }) {
-  return <Badge tone={reviewStatusTone[status]}>{reviewStatusLabel[status]}</Badge>
-}
-
-// Label kategori penyebab selisih produksi. Dipakai di tabel Produksi dan Laporan.
-export const causeCategoryLabel: Record<CauseCategory, string> = {
-  [CauseCategory.SETTING_OPERATOR]: 'Setting Operator',
-  [CauseCategory.KUALITAS_MATERIAL]: 'Kualitas Material',
-  [CauseCategory.KONDISI_MESIN]: 'Kondisi Mesin/Mold',
-  [CauseCategory.LAIN]: 'Faktor Lain',
+  return (
+    <Badge tone={warrantyStatusTone[status]}>
+      {status === WarrantyStatus.AKTIF ? 'Aktif' : 'Habis'}
+    </Badge>
+  )
 }

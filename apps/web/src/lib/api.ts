@@ -1,36 +1,39 @@
 import type {
-  AdminDashboard,
   AppNotification,
+  AssignJobRequest,
   AuthResponse,
-  ConditionCheck,
-  CreateBatchRequest,
-  CreateConditionCheckRequest,
-  CreateExtensionRequest,
+  CreateJobRequest,
+  CreateLogProduksiRequest,
   CreateMachineRequest,
-  CreateOperatorRequest,
-  CreateRentalRequest,
-  CreateUserRequest,
-  DecideExtensionRequest,
-  LoginRequest,
+  CreateMaintenanceRequest,
+  CreateMoldRequest,
+  CreateOperationalDataRequest,
+  CreatePenyewaAdminRequest,
+  CreateStaffRequest,
+  DeliveryRow,
+  Job,
+  JobDashboard,
+  JobLifecycle,
+  LogProduksi,
   Machine,
-  MachineEfficiency,
-  MachineHistory,
+  MachineMetrics,
   MachineStatus,
-  OperatorEfficiency,
-  PenyediaDashboard,
-  PenyewaDashboard,
-  ProductionBatch,
-  RegisterRequest,
-  RejectRentalRequest,
-  Rental,
-  RentalExtension,
-  RentalStatus,
-  ReviewBatchRequest,
+  Maintenance,
+  MaintenanceStatus,
+  ManagerDashboard,
+  Mold,
+  RejectJobRequest,
   Role,
+  SundayaDashboard,
   UpdateMachineRequest,
+  UpdateMaintenanceStatusRequest,
+  UpdateMoldRequest,
+  UpdateMoldTrackingRequest,
   UpdateProfileRequest,
   UpdateUserRequest,
   User,
+  LoginRequest,
+  RegisterRequest,
 } from '@mold-tracker/shared'
 
 export const API_BASE_URL = import.meta.env.VITE_API_URL ?? '/api'
@@ -53,22 +56,17 @@ const handleResponse = async (response: Response) => {
       errorData.message || `HTTP ${response.status}: ${response.statusText}`,
     )
   }
-  if (response.status === 204) {
-    return undefined
-  }
+  if (response.status === 204) return undefined
   return response.json()
 }
 
-// Header JSON + Authorization Bearer bila token ada.
 const authHeaders = (token: string | null): Record<string, string> => {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-  if (token) {
-    headers.Authorization = `Bearer ${token}`
-  }
+  if (token) headers.Authorization = `Bearer ${token}`
   return headers
 }
 
-// Wrapper request generik untuk endpoint yang butuh token (semua kecuali auth publik).
+// Wrapper request generik untuk endpoint yang butuh token.
 const request = async <T>(
   method: string,
   path: string,
@@ -86,32 +84,28 @@ const request = async <T>(
 const buildQuery = (params: Record<string, string | boolean | undefined>) => {
   const search = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined) {
-      search.set(key, String(value))
-    }
+    if (value !== undefined) search.set(key, String(value))
   }
   const query = search.toString()
   return query ? `?${query}` : ''
 }
 
 export const api = {
-  // ===================================================================
-  // Auth
-  // ===================================================================
-  async register(request: RegisterRequest): Promise<AuthResponse> {
+  // ===================== Auth (publik) =====================
+  async register(body: RegisterRequest): Promise<AuthResponse> {
     const response = await fetch(`${API_BASE_URL}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(request),
+      body: JSON.stringify(body),
     })
     return handleResponse(response)
   },
 
-  async login(request: LoginRequest): Promise<AuthResponse> {
+  async login(body: LoginRequest): Promise<AuthResponse> {
     const response = await fetch(`${API_BASE_URL}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(request),
+      body: JSON.stringify(body),
     })
     return handleResponse(response)
   },
@@ -124,7 +118,6 @@ export const api = {
     return request<User>('PATCH', '/auth/me', token, body)
   },
 
-  // multipart/form-data: jangan pakai wrapper request() (itu selalu set Content-Type JSON).
   async uploadAvatar(token: string | null, file: File): Promise<User> {
     const formData = new FormData()
     formData.append('avatar', file)
@@ -136,9 +129,7 @@ export const api = {
     return handleResponse(response)
   },
 
-  // ===================================================================
-  // Users (ADMIN)
-  // ===================================================================
+  // ===================== Users (SUPER_ADMIN) =====================
   async listUsers(
     token: string | null,
     filters?: { role?: Role; isActive?: boolean },
@@ -147,7 +138,7 @@ export const api = {
     return request<User[]>('GET', `/users${query}`, token)
   },
 
-  async createUser(token: string | null, body: CreateUserRequest): Promise<User> {
+  async createStaff(token: string | null, body: CreateStaffRequest): Promise<User> {
     return request<User>('POST', '/users', token, body)
   },
 
@@ -163,24 +154,127 @@ export const api = {
     return request<void>('DELETE', `/users/${userId}`, token)
   },
 
-  // ===================================================================
-  // Operators (PENYEWA)
-  // ===================================================================
-  async listOperators(token: string | null): Promise<User[]> {
-    return request<User[]>('GET', '/operators', token)
+  // ===================== Admin Penyewa (MANAGER_PENYEWA) =====================
+  async listPenyewaAdmins(token: string | null): Promise<User[]> {
+    return request<User[]>('GET', '/penyewa-admins', token)
   },
 
-  async createOperator(token: string | null, body: CreateOperatorRequest): Promise<User> {
-    return request<User>('POST', '/operators', token, body)
+  async createPenyewaAdmin(token: string | null, body: CreatePenyewaAdminRequest): Promise<User> {
+    return request<User>('POST', '/penyewa-admins', token, body)
   },
 
-  async deleteOperator(token: string | null, operatorId: string): Promise<void> {
-    return request<void>('DELETE', `/operators/${operatorId}`, token)
+  async deactivatePenyewaAdmin(token: string | null, id: string): Promise<User> {
+    return request<User>('PATCH', `/penyewa-admins/${id}/deactivate`, token)
   },
 
-  // ===================================================================
-  // Mesin
-  // ===================================================================
+  async deletePenyewaAdmin(token: string | null, id: string): Promise<void> {
+    return request<void>('DELETE', `/penyewa-admins/${id}`, token)
+  },
+
+  // ===================== Cetakan (Mold) =====================
+  async listMolds(token: string | null): Promise<Mold[]> {
+    return request<Mold[]>('GET', '/molds', token)
+  },
+
+  async getMold(token: string | null, id: string): Promise<Mold> {
+    return request<Mold>('GET', `/molds/${id}`, token)
+  },
+
+  async createMold(token: string | null, body: CreateMoldRequest): Promise<Mold> {
+    return request<Mold>('POST', '/molds', token, body)
+  },
+
+  async updateMold(token: string | null, id: string, body: UpdateMoldRequest): Promise<Mold> {
+    return request<Mold>('PATCH', `/molds/${id}`, token, body)
+  },
+
+  async updateMoldTracking(
+    token: string | null,
+    id: string,
+    body: UpdateMoldTrackingRequest,
+  ): Promise<Mold> {
+    return request<Mold>('PATCH', `/molds/${id}/tracking`, token, body)
+  },
+
+  // ===================== Job (Booking + lifecycle) =====================
+  async createJob(token: string | null, body: CreateJobRequest): Promise<Job> {
+    return request<Job>('POST', '/jobs', token, body)
+  },
+
+  async listJobs(token: string | null, filters?: { lifecycle?: JobLifecycle }): Promise<Job[]> {
+    const query = buildQuery({ lifecycle: filters?.lifecycle })
+    return request<Job[]>('GET', `/jobs${query}`, token)
+  },
+
+  async getJob(token: string | null, id: string): Promise<Job> {
+    return request<Job>('GET', `/jobs/${id}`, token)
+  },
+
+  async assignJob(token: string | null, id: string, body: AssignJobRequest): Promise<Job> {
+    return request<Job>('PATCH', `/jobs/${id}/assign`, token, body)
+  },
+
+  async rejectJob(token: string | null, id: string, body: RejectJobRequest): Promise<Job> {
+    return request<Job>('PATCH', `/jobs/${id}/reject`, token, body)
+  },
+
+  async shipJob(token: string | null, id: string): Promise<Job> {
+    return request<Job>('PATCH', `/jobs/${id}/ship`, token)
+  },
+
+  async activateJob(token: string | null, id: string): Promise<Job> {
+    return request<Job>('PATCH', `/jobs/${id}/activate`, token)
+  },
+
+  async returnJob(token: string | null, id: string): Promise<Job> {
+    return request<Job>('PATCH', `/jobs/${id}/return`, token)
+  },
+
+  async collectJob(token: string | null, id: string): Promise<Job> {
+    return request<Job>('PATCH', `/jobs/${id}/collect`, token)
+  },
+
+  async completeJob(token: string | null, id: string): Promise<Job> {
+    return request<Job>('PATCH', `/jobs/${id}/complete`, token)
+  },
+
+  // ===================== Log Produksi (Layer 2) =====================
+  async listLogs(token: string | null, jobId: string): Promise<LogProduksi[]> {
+    return request<LogProduksi[]>('GET', `/jobs/${jobId}/logs`, token)
+  },
+
+  async createLog(
+    token: string | null,
+    jobId: string,
+    body: CreateLogProduksiRequest,
+  ): Promise<LogProduksi> {
+    return request<LogProduksi>('POST', `/jobs/${jobId}/logs`, token, body)
+  },
+
+  // ===================== Log Pengiriman (read-only) =====================
+  async listPengiriman(token: string | null, managerId?: string): Promise<DeliveryRow[]> {
+    const query = buildQuery({ managerId })
+    return request<DeliveryRow[]>('GET', `/pengiriman${query}`, token)
+  },
+
+  // ===================== Dashboard =====================
+  async getSundayaDashboard(token: string | null): Promise<SundayaDashboard> {
+    return request<SundayaDashboard>('GET', '/dashboard/sundaya', token)
+  },
+
+  async getManagerDashboard(token: string | null): Promise<ManagerDashboard> {
+    return request<ManagerDashboard>('GET', '/dashboard/manager', token)
+  },
+
+  async getJobDashboard(token: string | null): Promise<JobDashboard[]> {
+    return request<JobDashboard[]>('GET', '/dashboard/job', token)
+  },
+
+  async getMachineMetrics(token: string | null, machineId: string): Promise<MachineMetrics> {
+    return request<MachineMetrics>('GET', `/machines/${machineId}/metrics`, token)
+  },
+
+  // ===================== Mesin (staf Sundaya) =====================
   async listMachines(
     token: string | null,
     filters?: { status?: MachineStatus; archived?: boolean },
@@ -189,8 +283,12 @@ export const api = {
     return request<Machine[]>('GET', `/machines${query}`, token)
   },
 
-  async getMachine(token: string | null, machineId: string): Promise<Machine> {
-    return request<Machine>('GET', `/machines/${machineId}`, token)
+  async listOperationalMachines(token: string | null): Promise<Machine[]> {
+    return request<Machine[]>('GET', '/machines/operational', token)
+  },
+
+  async getMachine(token: string | null, id: string): Promise<Machine> {
+    return request<Machine>('GET', `/machines/${id}`, token)
   },
 
   async createMachine(token: string | null, body: CreateMachineRequest): Promise<Machine> {
@@ -199,183 +297,54 @@ export const api = {
 
   async updateMachine(
     token: string | null,
-    machineId: string,
+    id: string,
     body: UpdateMachineRequest,
   ): Promise<Machine> {
-    return request<Machine>('PATCH', `/machines/${machineId}`, token, body)
+    return request<Machine>('PATCH', `/machines/${id}`, token, body)
   },
 
-  async archiveMachine(token: string | null, machineId: string): Promise<Machine> {
-    return request<Machine>('PATCH', `/machines/${machineId}/archive`, token)
+  async archiveMachine(token: string | null, id: string): Promise<Machine> {
+    return request<Machine>('PATCH', `/machines/${id}/archive`, token)
   },
 
-  async unarchiveMachine(token: string | null, machineId: string): Promise<Machine> {
-    return request<Machine>('PATCH', `/machines/${machineId}/unarchive`, token)
+  async unarchiveMachine(token: string | null, id: string): Promise<Machine> {
+    return request<Machine>('PATCH', `/machines/${id}/unarchive`, token)
   },
 
-  async completeMachineMaintenance(token: string | null, machineId: string): Promise<Machine> {
-    return request<Machine>('PATCH', `/machines/${machineId}/complete-maintenance`, token)
-  },
-
-  async getMachineHistory(token: string | null, machineId: string): Promise<MachineHistory> {
-    return request<MachineHistory>('GET', `/machines/${machineId}/history`, token)
-  },
-
-  // ===================================================================
-  // Sewa
-  // ===================================================================
-  async createRental(token: string | null, body: CreateRentalRequest): Promise<Rental> {
-    return request<Rental>('POST', '/rentals', token, body)
-  },
-
-  async listRentals(token: string | null, filters?: { status?: RentalStatus }): Promise<Rental[]> {
-    const query = buildQuery({ status: filters?.status })
-    return request<Rental[]>('GET', `/rentals${query}`, token)
-  },
-
-  async getRental(token: string | null, rentalId: string): Promise<Rental> {
-    return request<Rental>('GET', `/rentals/${rentalId}`, token)
-  },
-
-  async confirmRental(token: string | null, rentalId: string): Promise<Rental> {
-    return request<Rental>('PATCH', `/rentals/${rentalId}/confirm`, token)
-  },
-
-  async rejectRental(token: string | null, rentalId: string, body: RejectRentalRequest): Promise<Rental> {
-    return request<Rental>('PATCH', `/rentals/${rentalId}/reject`, token, body)
-  },
-
-  async shipRental(token: string | null, rentalId: string): Promise<Rental> {
-    return request<Rental>('PATCH', `/rentals/${rentalId}/ship`, token)
-  },
-
-  async receiveRental(token: string | null, rentalId: string): Promise<Rental> {
-    return request<Rental>('PATCH', `/rentals/${rentalId}/receive`, token)
-  },
-
-  async returnRental(token: string | null, rentalId: string): Promise<Rental> {
-    return request<Rental>('PATCH', `/rentals/${rentalId}/return`, token)
-  },
-
-  async createConditionCheck(
+  async addOperationalData(
     token: string | null,
-    rentalId: string,
-    body: CreateConditionCheckRequest,
-  ): Promise<ConditionCheck> {
-    return request<ConditionCheck>('POST', `/rentals/${rentalId}/condition-check`, token, body)
+    machineId: string,
+    body: CreateOperationalDataRequest,
+  ): Promise<Machine> {
+    return request<Machine>('POST', `/machines/${machineId}/operational`, token, body)
   },
 
-  async createExtension(
+  // ===================== Maintenance =====================
+  async listMaintenance(
     token: string | null,
-    rentalId: string,
-    body: CreateExtensionRequest,
-  ): Promise<RentalExtension> {
-    return request<RentalExtension>('POST', `/rentals/${rentalId}/extensions`, token, body)
+    filters?: { machineId?: string; status?: MaintenanceStatus },
+  ): Promise<Maintenance[]> {
+    const query = buildQuery({ machineId: filters?.machineId, status: filters?.status })
+    return request<Maintenance[]>('GET', `/maintenance${query}`, token)
   },
 
-  async decideExtension(
+  async createMaintenance(token: string | null, body: CreateMaintenanceRequest): Promise<Maintenance> {
+    return request<Maintenance>('POST', '/maintenance', token, body)
+  },
+
+  async updateMaintenanceStatus(
     token: string | null,
-    extensionId: string,
-    body: DecideExtensionRequest,
-  ): Promise<RentalExtension> {
-    return request<RentalExtension>('PATCH', `/extensions/${extensionId}/decide`, token, body)
+    id: string,
+    body: UpdateMaintenanceStatusRequest,
+  ): Promise<Maintenance> {
+    return request<Maintenance>('PATCH', `/maintenance/${id}/status`, token, body)
   },
 
-  // ===================================================================
-  // Produksi
-  // ===================================================================
-  async createBatch(token: string | null, body: CreateBatchRequest): Promise<ProductionBatch> {
-    return request<ProductionBatch>('POST', '/batches', token, body)
-  },
-
-  async listBatches(
+  // ===================== Notifikasi =====================
+  async listNotifications(
     token: string | null,
-    filters?: { rentalId?: string; machineId?: string; operatorId?: string; flagged?: boolean },
-  ): Promise<ProductionBatch[]> {
-    const query = buildQuery({
-      rentalId: filters?.rentalId,
-      machineId: filters?.machineId,
-      operatorId: filters?.operatorId,
-      flagged: filters?.flagged,
-    })
-    return request<ProductionBatch[]>('GET', `/batches${query}`, token)
-  },
-
-  async getBatch(token: string | null, batchId: string): Promise<ProductionBatch> {
-    return request<ProductionBatch>('GET', `/batches/${batchId}`, token)
-  },
-
-  async reviewBatch(
-    token: string | null,
-    batchId: string,
-    body: ReviewBatchRequest,
-  ): Promise<ProductionBatch> {
-    return request<ProductionBatch>('PATCH', `/batches/${batchId}/review`, token, body)
-  },
-
-  async getOperatorEfficiency(
-    token: string | null,
-    filters?: { rentalId?: string; machineId?: string },
-  ): Promise<OperatorEfficiency[]> {
-    const query = buildQuery({ rentalId: filters?.rentalId, machineId: filters?.machineId })
-    return request<OperatorEfficiency[]>('GET', `/batches/efficiency/by-operator${query}`, token)
-  },
-
-  async getMachineEfficiency(token: string | null): Promise<MachineEfficiency[]> {
-    return request<MachineEfficiency[]>('GET', '/batches/efficiency/by-machine', token)
-  },
-
-  // ===================================================================
-  // Laporan dan Dashboard
-  // ===================================================================
-  async getPenyediaDashboard(token: string | null): Promise<PenyediaDashboard> {
-    return request<PenyediaDashboard>('GET', '/dashboard/penyedia', token)
-  },
-
-  async getPenyewaDashboard(token: string | null): Promise<PenyewaDashboard> {
-    return request<PenyewaDashboard>('GET', '/dashboard/penyewa', token)
-  },
-
-  async getAdminDashboard(token: string | null): Promise<AdminDashboard> {
-    return request<AdminDashboard>('GET', '/dashboard/admin', token)
-  },
-
-  async getMachineIssueReports(
-    token: string | null,
-    filters?: { rentalId?: string; machineId?: string },
-  ): Promise<ProductionBatch[]> {
-    const query = buildQuery({ rentalId: filters?.rentalId, machineId: filters?.machineId })
-    return request<ProductionBatch[]>('GET', `/reports/machine-issues${query}`, token)
-  },
-
-  // Endpoint export butuh header Authorization, jadi tidak bisa dipakai sebagai <a href> polos
-  // (browser tidak mengirim bearer token pada navigasi biasa) — fetch manual lalu blob download.
-  async downloadMachineIssueReport(
-    token: string | null,
-    filters: { format: 'csv' | 'pdf'; rentalId?: string; machineId?: string },
-  ): Promise<Blob> {
-    const query = buildQuery({
-      format: filters.format,
-      rentalId: filters.rentalId,
-      machineId: filters.machineId,
-    })
-    const response = await fetch(`${API_BASE_URL}/reports/machine-issues/export${query}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-    })
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}))
-      throw new ApiError(
-        response.status,
-        errorData.message || `HTTP ${response.status}: ${response.statusText}`,
-      )
-    }
-    return response.blob()
-  },
-
-  // ===================================================================
-  // Notifikasi
-  // ===================================================================
-  async listNotifications(token: string | null, filters?: { unreadOnly?: boolean }): Promise<AppNotification[]> {
+    filters?: { unreadOnly?: boolean },
+  ): Promise<AppNotification[]> {
     const query = buildQuery({ unreadOnly: filters?.unreadOnly })
     return request<AppNotification[]>('GET', `/notifications${query}`, token)
   },

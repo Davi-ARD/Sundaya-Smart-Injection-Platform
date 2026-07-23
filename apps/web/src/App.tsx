@@ -1,75 +1,76 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
-import { Role } from '@mold-tracker/shared';
-import { AppLayout } from './components/AppLayout';
-import { ProtectedRoute } from './features/auth/ProtectedRoute';
-import { CatalogPage } from './pages/CatalogPage';
-import { DashboardPage } from './pages/DashboardPage';
-import { LoginPage } from './pages/LoginPage';
-import { MachinesPage } from './pages/MachinesPage';
-import { OperatorsPage } from './pages/OperatorsPage';
-import { ProductionPage } from './pages/ProductionPage';
-import { ProfilePage } from './pages/ProfilePage';
-import { RegisterPage } from './pages/RegisterPage';
-import { ReportsPage } from './pages/ReportsPage';
-import { RentalCyclePage } from './pages/RentalCyclePage';
-import { RentalsPage } from './pages/RentalsPage';
-import { UsersPage } from './pages/UsersPage';
+import { Navigate, Route, Routes } from 'react-router-dom'
+import { Role } from '@mold-tracker/shared'
+import { AppLayout } from './components/AppLayout'
+import { ProtectedRoute } from './features/auth/ProtectedRoute'
+import { LandingPage } from './pages/LandingPage'
+import { LoginPage } from './pages/LoginPage'
+import { RegisterPage } from './pages/RegisterPage'
+import { InternalLoginPage } from './pages/InternalLoginPage'
+import { ProfilePage } from './pages/ProfilePage'
+import {
+  BookingPage,
+  JobDashboardPage,
+  LogProduksiPage,
+  MachinesPage,
+  MaintenancePage,
+  ManagerDashboardPage,
+  MoldsPage,
+  MoldTrackingPage,
+  PengirimanPage,
+  PenyewaAdminsPage,
+  SundayaDashboardPage,
+  UsersPage,
+} from './pages/placeholders'
+
+const MANAGER = [Role.MANAGER_PENYEWA]
+const ADMIN_PENYEWA = [Role.ADMIN_PENYEWA]
+const STAF = [Role.SUPER_ADMIN, Role.ADMIN_SUNDAYA, Role.TEKNISI_SUNDAYA]
 
 export default function App() {
   return (
     <Routes>
+      {/* Publik */}
+      <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/internal" element={<InternalLoginPage />} />
 
-      {/* Wrapper utama untuk semua route yang butuh login */}
+      {/* Butuh login */}
       <Route element={<ProtectedRoute />}>
         <Route element={<AppLayout />}>
-          <Route index element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/profile" element={<ProfilePage />} />
 
-          {/* Proteksi khusus untuk Role ADMIN */}
-          <Route element={<ProtectedRoute allowedRoles={[Role.ADMIN]} />}>
-            <Route path="/users" element={<UsersPage />} />
+          {/* Manager Penyewa */}
+          <Route element={<ProtectedRoute allowedRoles={MANAGER} />}>
+            <Route path="/manager" element={<ManagerDashboardPage />} />
+            <Route path="/molds" element={<MoldsPage />} />
+            <Route path="/booking" element={<BookingPage />} />
+            <Route path="/pengiriman" element={<PengirimanPage />} />
+            <Route path="/penyewa-admins" element={<PenyewaAdminsPage />} />
           </Route>
 
-          {/* Proteksi khusus untuk Role PENYEWA */}
-          <Route element={<ProtectedRoute allowedRoles={[Role.PENYEWA]} />}>
-            <Route path="/operators" element={<OperatorsPage />} />
+          {/* Admin Penyewa */}
+          <Route element={<ProtectedRoute allowedRoles={ADMIN_PENYEWA} />}>
+            <Route path="/job" element={<JobDashboardPage />} />
+            <Route path="/logs" element={<LogProduksiPage />} />
           </Route>
 
-          {/* Proteksi khusus untuk Role ADMIN & PENYEDIA */}
-          <Route element={<ProtectedRoute allowedRoles={[Role.ADMIN, Role.PENYEDIA]} />}>
+          {/* Staf Sundaya (diisi Dev A) */}
+          <Route element={<ProtectedRoute allowedRoles={STAF} />}>
+            <Route path="/staff" element={<SundayaDashboardPage />} />
             <Route path="/machines" element={<MachinesPage />} />
+            <Route path="/tracking" element={<MoldTrackingPage />} />
+            <Route path="/maintenance" element={<MaintenancePage />} />
           </Route>
 
-          {/* Katalog: ADMIN lihat saja, PENYEWA bisa mengajukan sewa */}
-          <Route element={<ProtectedRoute allowedRoles={[Role.ADMIN, Role.PENYEWA]} />}>
-            <Route path="/catalog" element={<CatalogPage />} />
-          </Route>
-
-          {/* Proteksi khusus untuk Role PENYEWA: status sewa */}
-          <Route element={<ProtectedRoute allowedRoles={[Role.PENYEWA]} />}>
-            <Route path="/rentals" element={<RentalsPage />} />
-          </Route>
-
-          {/* Panel siklus sewa: ADMIN dan PENYEDIA sama-sama berwenang penuh (lihat @Roles di rentals.controller) */}
-          <Route element={<ProtectedRoute allowedRoles={[Role.ADMIN, Role.PENYEDIA]} />}>
-            <Route path="/rental-cycle" element={<RentalCyclePage />} />
-          </Route>
-
-          {/* Batch produksi: semua role bisa lihat (disaring server), hanya OPERATOR bisa input */}
-          <Route path="/production" element={<ProductionPage />} />
-
-          {/* Laporan: sama seperti backend @Roles di ReportsController (PENYEWA, ADMIN) */}
-          <Route element={<ProtectedRoute allowedRoles={[Role.PENYEWA, Role.ADMIN]} />}>
-            <Route path="/reports" element={<ReportsPage />} />
+          {/* Pengguna: Super Admin */}
+          <Route element={<ProtectedRoute allowedRoles={[Role.SUPER_ADMIN]} />}>
+            <Route path="/users" element={<UsersPage />} />
           </Route>
         </Route>
       </Route>
 
-      {/* Fallback route */}
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
-  );
+  )
 }

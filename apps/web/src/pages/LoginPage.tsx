@@ -1,231 +1,72 @@
 import { useState, type FormEvent } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
-import type { LoginRequest } from '@mold-tracker/shared'
 import { useAuth } from '../features/auth/authContextValue'
-import logo from '../assets/sundaya-Logo.png'
+import { homePathForRole } from '../features/auth/roleLabels'
+import { AuthShell, AuthField } from '../features/auth/AuthShell'
+import { Button } from '../components/ui/Button'
+import { errorMessage } from '../lib/errorMessage'
 
+// Login Penyewa (Manager + Admin Penyewa) di landing publik. Staf Sundaya masuk
+// lewat /internal.
 export function LoginPage() {
-  const { login, isAuthenticated } = useAuth()
+  const { isAuthenticated, user, login } = useAuth()
   const navigate = useNavigate()
-  const [mode, setMode] = useState<'email' | 'operator'>('email')
-  const [form, setForm] = useState<LoginRequest>({
-    identifier: '',
-    password: '',
-  })
-  const [error, setError] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const switchMode = (nextMode: 'email' | 'operator') => {
-    setMode(nextMode)
-    setError('')
-    setForm({ identifier: '', password: '' })
+  if (isAuthenticated && user) {
+    return <Navigate to={homePathForRole(user.role)} replace />
   }
 
-  if (isAuthenticated) {
-    return <Navigate to="/dashboard" replace />
-  }
-
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
-    setError('')
+    setError(null)
     setIsSubmitting(true)
-
-    login(form)
-      .then(() => {
-        // Selalu ke dashboard setelah login, jangan kembali ke path terakhir sebelum logout.
-        navigate('/dashboard', { replace: true })
-      })
-      .catch((caughtError) => {
-        setIsSubmitting(false)
-        setError(
-          caughtError instanceof Error
-            ? caughtError.message
-            : 'Login tidak dapat diproses.',
-        )
-      })
+    try {
+      const response = await login({ identifier: email, password })
+      navigate(homePathForRole(response.user.role), { replace: true })
+    } catch (caught) {
+      setError(errorMessage(caught, 'Login gagal. Periksa email dan kata sandi.'))
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,#dbeafe_0,#f8fafc_36%,#eef2f7_100%)] px-4 py-6 sm:px-6 lg:px-8">
-      <section className="mx-auto grid min-h-[calc(100vh-3rem)] max-w-6xl overflow-hidden rounded-[28px] border border-white/70 bg-white/75 shadow-2xl shadow-slate-300/40 backdrop-blur lg:grid-cols-[1.08fr_0.92fr]">
-        <div className="relative flex min-h-[44vh] flex-col justify-between overflow-hidden bg-slate-950 px-6 py-8 text-white sm:px-10 lg:min-h-full">
-          <div className="absolute inset-0 opacity-70">
-            <div className="auth-scanline absolute inset-0"></div>
-            <div className="absolute -left-20 top-20 h-60 w-60 rounded-full bg-brand-500/25 blur-3xl"></div>
-            <div className="absolute bottom-10 right-0 h-72 w-72 rounded-full bg-emerald-400/20 blur-3xl"></div>
-          </div>
+    <AuthShell
+      eyebrow="Portal Penyewa"
+      title="Masuk ke akun Anda"
+      subtitle="Kelola cetakan, booking, dan produksi perusahaan Anda."
+    >
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <AuthField label="Email" type="email" value={email} onChange={setEmail} autoComplete="email" placeholder="nama@perusahaan.com" />
+        <AuthField label="Kata sandi" type="password" value={password} onChange={setPassword} autoComplete="current-password" placeholder="••••••••" />
 
-          <div className="relative">
-            <img
-              src={logo}
-              alt="Mold Tracker"
-              className="mb-6 h-16 w-auto"
-            />
+        {error ? (
+          <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 ring-1 ring-inset ring-rose-600/15">
+            {error}
+          </p>
+        ) : null}
 
-            <p className="text-sm font-semibold uppercase tracking-wide text-brand-300">
-              Mold Tracker
-            </p>
+        <Button type="submit" disabled={isSubmitting} className="w-full">
+          {isSubmitting ? 'Memproses...' : 'Masuk'}
+        </Button>
+      </form>
 
-            <h1 className="mt-5 max-w-2x text-4xl font-bold leading-tight sm:text-5xl">
-              Ruang kontrol akses untuk produksi molding
-            </h1>
-            <p className="mt-5 max-w-xl text-base leading-7 text-slate-300">
-              Pantau penyewaan, operator, dan akses pengguna dari satu pintu
-              masuk yang rapi.
-            </p>
-          </div>
-
-          <div className="relative mt-10 grid gap-3 sm:grid-cols-3">
-            {[
-              ['4', 'Role aktif'],
-              ['24', 'Jam monitoring'],
-              ['1', 'Akses terpadu'],
-            ].map(([value, label]) => (
-              <div
-                key={label}
-                className="group rounded-lg border border-white/10 bg-white/10 p-4 transition duration-300 hover:-translate-y-1 hover:bg-white/15"
-              >
-                <p className="text-3xl font-bold text-white">{value}</p>
-                <p className="mt-1 text-xs font-medium uppercase tracking-wide text-slate-300">
-                  {label}
-                </p>
-              </div>
-            ))}
-          </div>
-
-          <div className="relative mt-8 rounded-xl border border-white/10 bg-white/10 p-4">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-sm font-semibold text-white">
-                  Masuk ke Mold Tracker
-                </p>
-                <p className="mt-1 text-sm text-slate-300">
-                  Masukkan kredensial Anda untuk mengakses ruang kontrol produksi molding.
-                </p>
-              </div>
-              <span className="relative flex h-3 w-3">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-300 opacity-75"></span>
-                <span className="relative inline-flex h-3 w-3 rounded-full bg-emerald-400"></span>
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <section className="flex items-center justify-center px-4 py-8 sm:px-8 lg:px-10">
-          <div className="w-full max-w-md">
-            <div className="rounded-2xl border border-white bg-white p-6 shadow-xl shadow-slate-200/70 transition duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-slate-300/60 sm:p-8">
-              <div>
-                <p className="text-sm font-semibold uppercase tracking-wide text-brand-600">
-                  Selamat datang
-                </p>
-                <h2 className="mt-2 text-3xl font-bold text-slate-950">
-                  Masuk ke akun
-                </h2>
-                <p className="mt-2 text-sm text-slate-500">
-                  Gunakan akun yang sudah terdaftar untuk membuka dashboard.
-                </p>
-              </div>
-
-              <form className="mt-7 space-y-5" onSubmit={submit}>
-                <label className="group block">
-                  <span className="text-sm font-semibold text-slate-700">
-                    {mode === 'operator' ? 'Nama operator' : 'Email'}
-                  </span>
-                  <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 transition group-focus-within:border-brand-500 group-focus-within:bg-white group-focus-within:ring-4 group-focus-within:ring-brand-100">
-                    <input
-                      type={mode === 'operator' ? 'text' : 'email'}
-                      value={form.identifier}
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          identifier: event.target.value,
-                        }))
-                      }
-                      className="w-full bg-transparent text-slate-950 outline-none placeholder:text-slate-400"
-                      placeholder={mode === 'operator' ? 'Nama operator' : 'nama@perusahaan.com'}
-                      required
-                    />
-                  </div>
-                </label>
-
-                <label className="group block">
-                  <span className="text-sm font-semibold text-slate-700">
-                    Kata sandi
-                  </span>
-                  <div className="mt-2 flex rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 transition group-focus-within:border-brand-500 group-focus-within:bg-white group-focus-within:ring-4 group-focus-within:ring-brand-100">
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      value={form.password}
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          password: event.target.value,
-                        }))
-                      }
-                      className="w-full bg-transparent text-slate-950 outline-none placeholder:text-slate-400"
-                      placeholder="Masukkan kata sandi"
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword((current) => !current)}
-                      className="ml-3 shrink-0 text-sm font-semibold text-brand-700 hover:text-brand-600"
-                    >
-                      {showPassword ? 'Sembunyikan' : 'Lihat'}
-                    </button>
-                  </div>
-                </label>
-
-                {error ? (
-                  <p className="rounded-lg border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                    {error}
-                  </p>
-                ) : null}
-
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="group flex w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-slate-300 transition hover:-translate-y-0.5 hover:bg-brand-700 disabled:cursor-wait disabled:opacity-70"
-                >
-                  <span>{isSubmitting ? 'Memproses...' : 'Masuk'}</span>
-                  <span className="transition group-hover:translate-x-1">
-                    {isSubmitting ? '' : '>'}
-                  </span>
-                </button>
-              </form>
-
-              {mode === 'email' ? (
-                <p className="mt-7 text-center text-sm text-slate-600">
-                  Belum punya akun?{' '}
-                  <Link
-                    className="font-semibold text-brand-700 hover:text-brand-600"
-                    to="/register"
-                  >
-                    Daftar mandiri
-                  </Link>
-                </p>
-              ) : null}
-
-              <div className="mt-4 flex items-center gap-3">
-                <span className="h-px flex-1 bg-slate-200" />
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                  atau
-                </span>
-                <span className="h-px flex-1 bg-slate-200" />
-              </div>
-
-              <button
-                type="button"
-                onClick={() => switchMode(mode === 'operator' ? 'email' : 'operator')}
-                className="mt-4 w-full rounded-lg border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:-translate-y-0.5 hover:border-brand-500 hover:text-brand-700"
-              >
-                {mode === 'operator' ? 'Masuk dengan email' : 'Masuk sebagai Operator'}
-              </button>
-            </div>
-          </div>
-        </section>
-      </section>
-    </main>
+      <p className="mt-6 text-sm text-slate-500">
+        Belum punya akun perusahaan?{' '}
+        <Link to="/register" className="font-semibold text-brand-600 hover:text-brand-700">
+          Daftar sebagai Manager
+        </Link>
+      </p>
+      <p className="mt-2 text-xs text-slate-400">
+        Staf Sundaya?{' '}
+        <Link to="/internal" className="font-medium text-slate-500 hover:text-slate-700">
+          Masuk lewat portal internal
+        </Link>
+      </p>
+    </AuthShell>
   )
 }
