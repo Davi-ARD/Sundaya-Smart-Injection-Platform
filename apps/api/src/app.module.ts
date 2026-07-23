@@ -9,6 +9,7 @@ import { JobsModule } from './jobs/jobs.module';
 import { LogProduksiModule } from './log-produksi/log-produksi.module';
 import { PengirimanModule } from './pengiriman/pengiriman.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { DashboardPenyewaModule } from './dashboard-penyewa/dashboard-penyewa.module';
 import { HealthController } from './health.controller';
 
 // Modul domain SSIP ditulis ulang per fase (lihat docs/ssip-spec.md). Modul lama
@@ -26,6 +27,7 @@ import { HealthController } from './health.controller';
     LogProduksiModule,
     PengirimanModule,
     DashboardModule,
+    DashboardPenyewaModule,
   ],
   controllers: [HealthController],
 })

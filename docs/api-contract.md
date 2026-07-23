@@ -413,3 +413,19 @@ Role: SUPER_ADMIN, ADMIN_SUNDAYA, TEKNISI_SUNDAYA. Ringkasan armada.
 ### GET /machines/:id/metrics
 Role: SUPER_ADMIN, ADMIN_SUNDAYA, TEKNISI_SUNDAYA. Metrik OEE satu mesin dari event Layer 1-nya. Mesin tidak ada 404.
 - Response 200: `MachineMetrics` { machineId, machineNumber, availability, performance, quality, oee, utilization, mtbfHours, mttrHours, totalDowntimeHours }
+
+---
+
+## Modul Dashboard Penyewa (SSIP)
+
+Dashboard sisi Penyewa. Berbagi prefix `/dashboard` dengan Dashboard Sundaya tapi modul terpisah. Semua angka diturunkan dari data yang sudah ada (mold tracking, Job, Log Produksi, Log Pengiriman), bukan input manual. Scoping tenant di server.
+
+### GET /dashboard/manager
+Role: MANAGER_PENYEWA. Ringkasan tenant sendiri.
+- Response 200: `ManagerDashboard` { moldsAtSundaya, ongoing, totalGoodProduct, avgAchievement, onTimeDeliveryRate }
+- `moldsAtSundaya` = mold milik Manager yang fisik ada di Sundaya (trackingStatus RECEIVED/WAITING_PRODUCTION/ON_MACHINE/PRODUCTION/REPAIR). `ongoing` = job lifecycle AKTIF. `totalGoodProduct` = jumlah good dari Log Produksi. `avgAchievement` = rata-rata (good / targetOutput) job bertarget, persen. `onTimeDeliveryRate` = persen kedatangan on-time dari Log Pengiriman (B4), 100 bila belum ada kedatangan.
+
+### GET /dashboard/job
+Role: ADMIN_PENYEWA. Ringkasan tiap job aktif tenant induknya (lewat `parentId`).
+- Response 200: `JobDashboard[]` { jobId, jobNumber, lifecycle, machineNumber, progressMolding, totalGoodProduct, totalReject, materialRemainingKg, latestLogAt }
+- Diturunkan dari Log Produksi job: `progressMolding`/`materialRemainingKg` = nilai terakhir dilaporkan; `latestLogAt` = waktu event terbaru.
