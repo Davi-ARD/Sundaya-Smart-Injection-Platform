@@ -178,7 +178,7 @@ Pihak terkait (tenant pemilik) atau staf Sundaya. Tenant lain dibalas 403.
 - Response 200: `Job`
 
 ### POST /jobs
-Role: MANAGER_PENYEWA. Booking tanpa memilih mesin (lifecycle DIAJUKAN). **Dikerjakan Dev B (B2), belum tersedia di rilis A2.**
+Role: MANAGER_PENYEWA. Booking tanpa memilih mesin (`machineId` null, lifecycle DIAJUKAN). `moldId` harus cetakan milik Manager (404 bila bukan miliknya atau tidak ada, tidak dibocorkan). Satu cetakan hanya boleh satu job: booking cetakan yang sudah dibooking dibalas 409. `jobNumber` dibuat server; `startDate` yang dikirim adalah rencana (durasi sewa penuh baru dihitung saat job aktif).
 - Request: `CreateJobRequest` { moldId, requestedDurationDays, destinationLocation, startDate, planMaterialUtama?, estimasiMaterialKg?, materialTambahan?, targetOutput?, rencanaKirimMold? }
 - Response 201: `Job`
 

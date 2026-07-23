@@ -1,18 +1,20 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { JobLifecycle, MachineStatus, Role } from '@mold-tracker/shared';
-import { User as PrismaUser } from '@prisma/client';
+import { Prisma, User as PrismaUser } from '@prisma/client';
 import { JobsService } from './jobs.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 function prismaMock() {
   return {
-    job: { findUnique: jest.fn(), findMany: jest.fn(), update: jest.fn() },
+    job: { findUnique: jest.fn(), findMany: jest.fn(), update: jest.fn(), create: jest.fn() },
     machine: { findUnique: jest.fn(), update: jest.fn() },
+    mold: { findUnique: jest.fn() },
     $transaction: jest.fn().mockImplementation((ops: unknown[]) => Promise.resolve(ops)),
   };
 }
 
 const adminSundaya = { id: 'admin-1', role: Role.ADMIN_SUNDAYA } as unknown as PrismaUser;
+const manager = { id: 'mgr-1', role: Role.MANAGER_PENYEWA } as unknown as PrismaUser;
 
 function jobRow(o: Record<string, unknown> = {}) {
   return {
@@ -51,6 +53,51 @@ const machineTersedia = {
   status: 'TERSEDIA',
   tonaseTon: 150,
 };
+
+describe('JobsService.create (booking)', () => {
+  const dto = {
+    moldId: 'mold-1',
+    requestedDurationDays: 30,
+    destinationLocation: 'Sundaya, Bandung',
+    startDate: '2026-08-01T00:00:00.000Z',
+  };
+
+  it('booking sukses: managerId actor, lifecycle DIAJUKAN, tanpa mesin', async () => {
+    const prisma = prismaMock();
+    prisma.mold.findUnique.mockResolvedValue({ id: 'mold-1', managerId: 'mgr-1' });
+    prisma.job.create.mockResolvedValue(jobRow({ startDate: new Date('2026-08-01') }));
+
+    const service = new JobsService(prisma as unknown as PrismaService);
+    const result = await service.create(manager, dto);
+
+    const data = prisma.job.create.mock.calls[0][0].data;
+    expect(data.managerId).toBe('mgr-1');
+    expect(data.machineId).toBeUndefined();
+    expect(data.lifecycle).toBeUndefined(); // default DIAJUKAN dari schema
+    expect(String(data.jobNumber)).toMatch(/^SSIP-/);
+    expect(result.lifecycle).toBe(JobLifecycle.DIAJUKAN);
+  });
+
+  it('404 bila mold bukan milik Manager (tidak bocorkan tenant lain)', async () => {
+    const prisma = prismaMock();
+    prisma.mold.findUnique.mockResolvedValue({ id: 'mold-1', managerId: 'other' });
+
+    const service = new JobsService(prisma as unknown as PrismaService);
+    await expect(service.create(manager, dto)).rejects.toBeInstanceOf(NotFoundException);
+    expect(prisma.job.create).not.toHaveBeenCalled();
+  });
+
+  it('409 bila mold sudah dibooking (moldId unik, P2002)', async () => {
+    const prisma = prismaMock();
+    prisma.mold.findUnique.mockResolvedValue({ id: 'mold-1', managerId: 'mgr-1' });
+    prisma.job.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('dup', { code: 'P2002', clientVersion: 'x' }),
+    );
+
+    const service = new JobsService(prisma as unknown as PrismaService);
+    await expect(service.create(manager, dto)).rejects.toBeInstanceOf(ConflictException);
+  });
+});
 
 describe('JobsService.assign', () => {
   it('assign sukses: set mesin, DIKONFIRMASI, dan mesin keluar dari TERSEDIA', async () => {
