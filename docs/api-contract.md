@@ -111,6 +111,13 @@ Role: MANAGER_PENYEWA (pemilik). Ubah field plan saja; `kodeMold` dan `trackingS
 - Request: `UpdateMoldRequest` { namaProduk?, cavity?, tonaseTon?, deskripsi?, planMaterialUtama?, estimasiKg?, targetOutput? }
 - Response 200: `Mold`
 
+### PATCH /molds/:id/tracking
+Role: ADMIN_SUNDAYA (semua transisi), TEKNISI_SUNDAYA (hanya setup/produksi: WAITING_PRODUCTION->ON_MACHINE, ON_MACHINE->PRODUCTION, PRODUCTION->REPAIR, REPAIR->ON_MACHINE). Transisi tracking fisik mold 10-state linear (cabang REPAIR) lewat service layer (`MOLD_TRACKING_FLOW`). Dalam satu transaksi: update `Mold.trackingStatus` + append `MoldTrackingEvent` (byId, at). Manager/Admin Penyewa hanya membaca status, tidak mengubah.
+- Transisi tidak sah ditolak 409 (mis. PLANNING langsung ke COMPLETED); Teknisi pada transisi logistik ditolak 403; mold tidak ada 404.
+- Event RECEIVED yang tersimpan dipakai Log Pengiriman (aktual-tiba mold).
+- Request: `UpdateMoldTrackingRequest` { status (MoldTrackingStatus) }
+- Response 200: `Mold`
+
 ---
 
 ## Modul Mesin
