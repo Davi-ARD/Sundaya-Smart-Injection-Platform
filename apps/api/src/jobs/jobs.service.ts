@@ -11,7 +11,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { machineWalk } from '../machines/machine-state';
 import { nextJobLifecycle } from './job-state';
 import { toJob } from './job.mapper';
-import { AssignJobDto, RejectJobDto } from './dto';
+import { AssignJobDto, CreateJobDto, RejectJobDto } from './dto';
 
 // ponytail: enum shared dan Prisma nominal berbeda, cast di batang DB saja.
 const asLifecycle = (s: JobLifecycle) => s as unknown as $Enums.JobLifecycle;
@@ -34,6 +34,43 @@ type JobWithDetails = Prisma.JobGetPayload<typeof withDetails>;
 @Injectable()
 export class JobsService {
   constructor(private prisma: PrismaService) {}
+
+  // Booking (MANAGER_PENYEWA): pilih mold miliknya + plan waktu/material, tanpa
+  // memilih mesin. Lifecycle mulai DIAJUKAN (default schema); mesin di-assign
+  // Admin Sundaya belakangan. Satu mold hanya boleh satu job (moldId @unique).
+  async create(user: PrismaUser, dto: CreateJobDto): Promise<Job> {
+    const mold = await this.prisma.mold.findUnique({ where: { id: dto.moldId } });
+    if (!mold || mold.managerId !== user.id) {
+      throw new NotFoundException('Cetakan tidak ditemukan');
+    }
+    // ponytail: jobNumber base36 timestamp, unik cukup untuk laju booking manusia;
+    // naikkan ke sekuens rapi SSIP-0001 bila butuh nomor berurutan.
+    const jobNumber = `SSIP-${Date.now().toString(36).toUpperCase()}`;
+    try {
+      const job = await this.prisma.job.create({
+        data: {
+          jobNumber,
+          moldId: dto.moldId,
+          managerId: user.id,
+          requestedDurationDays: dto.requestedDurationDays,
+          destinationLocation: dto.destinationLocation,
+          startDate: new Date(dto.startDate),
+          planMaterialUtama: dto.planMaterialUtama,
+          estimasiMaterialKg: dto.estimasiMaterialKg,
+          materialTambahan: dto.materialTambahan,
+          targetOutput: dto.targetOutput,
+          rencanaKirimMold: dto.rencanaKirimMold ? new Date(dto.rencanaKirimMold) : undefined,
+        },
+        ...withDetails,
+      });
+      return toJob(job, job.machine?.machineNumber, job.extensions);
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictException('Cetakan ini sudah dibooking');
+      }
+      throw error;
+    }
+  }
 
   // Scoping tenant di service: staf Sundaya lihat semua; Manager lihat miliknya;
   // Admin Penyewa lihat tenant induknya (lewat parentId). Single-provider.

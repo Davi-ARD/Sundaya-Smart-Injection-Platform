@@ -1,9 +1,9 @@
-import { Body, Controller, Get, Param, Patch, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { User as PrismaUser } from '@prisma/client';
 import { Job, JobLifecycle, Role } from '@mold-tracker/shared';
 import { CurrentUser, Roles } from '../auth/decorators';
 import { JobsService } from './jobs.service';
-import { AssignJobDto, RejectJobDto } from './dto';
+import { AssignJobDto, CreateJobDto, RejectJobDto } from './dto';
 
 // Modul jobs dipakai berdua (koordinasi Dev A/Dev B). Pemilik file = Dev A
 // (assign + lifecycle). Endpoint booking `POST /jobs` (MANAGER_PENYEWA, tanpa
@@ -11,6 +11,13 @@ import { AssignJobDto, RejectJobDto } from './dto';
 @Controller('jobs')
 export class JobsController {
   constructor(private jobs: JobsService) {}
+
+  // Booking: MANAGER_PENYEWA mengajukan job tanpa memilih mesin (Dev B).
+  @Roles(Role.MANAGER_PENYEWA)
+  @Post()
+  create(@CurrentUser() user: PrismaUser, @Body() dto: CreateJobDto): Promise<Job> {
+    return this.jobs.create(user, dto);
+  }
 
   // Semua terautentikasi; scoping tenant per role dilakukan di service.
   @Get()
