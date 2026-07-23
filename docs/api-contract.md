@@ -367,3 +367,18 @@ Role: TEKNISI_SUNDAYA. Menjadwalkan maintenance. `byId` di-set ke teknisi pembua
 Role: TEKNISI_SUNDAYA. Transisi status lewat service (409 bila transisi tidak sah, misalnya TERJADWAL langsung ke SELESAI). `notes` opsional memperbarui catatan.
 - Request: `UpdateMaintenanceStatusRequest` { status (MaintenanceStatus), notes? }
 - Response 200: `Maintenance`
+
+---
+
+## Modul Dashboard Sundaya (SSIP)
+
+Monitoring OEE Sundaya. Semua angka dihitung dari OperationalData Layer 1 (event status + reason code Teknisi), bukan input manual. Model OEE berbasis six big losses: RUNNING = waktu produktif; MAINTENANCE = downtime terencana (di luar Planned Production Time); reason code dipetakan ke Availability (BREAKDOWN, SETUP_ADJUSTMENT), Performance (MINOR_STOP, REDUCED_SPEED), dan Quality (STARTUP_REJECT, PRODUCTION_REJECT). OEE = A x P x Q. Karena model murni berbasis waktu, OEE dan Utilization bisa berdekatan sampai data shot count (IoT, future scope) tersedia.
+
+### GET /dashboard/sundaya
+Role: SUPER_ADMIN, ADMIN_SUNDAYA, TEKNISI_SUNDAYA. Ringkasan armada.
+- Response 200: `SundayaDashboard` { runningMachines, totalMachines, avgOee, utilization, activeBookings, operationalStatusCounts: MachineStatusCount[] }
+- `activeBookings` = job dengan lifecycle non-terminal (bukan DITOLAK/SELESAI). `avgOee`/`utilization` = rata-rata atas mesin yang punya event Layer 1.
+
+### GET /machines/:id/metrics
+Role: SUPER_ADMIN, ADMIN_SUNDAYA, TEKNISI_SUNDAYA. Metrik OEE satu mesin dari event Layer 1-nya. Mesin tidak ada 404.
+- Response 200: `MachineMetrics` { machineId, machineNumber, availability, performance, quality, oee, utilization, mtbfHours, mttrHours, totalDowntimeHours }
