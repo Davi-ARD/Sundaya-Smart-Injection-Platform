@@ -7,6 +7,7 @@ import { LoginPage } from './pages/LoginPage'
 import { RegisterPage } from './pages/RegisterPage'
 import { InternalLoginPage } from './pages/InternalLoginPage'
 import { ProfilePage } from './pages/ProfilePage'
+import { MoldsPage } from './features/molds/MoldsPage'
 import {
   BookingPage,
   JobDashboardPage,
@@ -14,7 +15,6 @@ import {
   MachinesPage,
   MaintenancePage,
   ManagerDashboardPage,
-  MoldsPage,
   MoldTrackingPage,
   PengirimanPage,
   PenyewaAdminsPage,
