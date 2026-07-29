@@ -1,16 +1,30 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowRight, Boxes, CalendarPlus } from 'lucide-react'
-import { JobLifecycle, type Job, type ManagerDashboard, type Mold } from '@mold-tracker/shared'
+import {
+  JobLifecycle,
+  ProgressMolding,
+  type Job,
+  type ManagerDashboard,
+  type Mold,
+  type MoldPlanRow,
+} from '@mold-tracker/shared'
 import { useAuth } from '../auth/authContextValue'
 import { api } from '../../lib/api'
+import { Button } from '../../components/ui/Button'
 import { Card, StatCard } from '../../components/ui/Card'
 import { DataTable, type Column } from '../../components/ui/DataTable'
-import { JobLifecycleBadge } from '../../components/ui/Badge'
+import {
+  JobLifecycleBadge,
+  MoldTrackingBadge,
+  ProgressMoldingBadge,
+  progressMoldingLabel,
+} from '../../components/ui/Badge'
 import { CardSkeleton, TableSkeleton } from '../../components/ui/Skeleton'
 import { useToast } from '../../components/ui/Toast'
 import { errorMessage } from '../../lib/errorMessage'
-import { formatDate } from '../../lib/format'
+import { formatDate, formatNumber } from '../../lib/format'
+import { MoldPlanDetail } from '../molds/MoldPlanDetail'
 
 // Lifecycle yang dianggap masih berjalan (bukan terminal).
 const ACTIVE_LIFECYCLES = [
@@ -31,19 +45,23 @@ export function ManagerDashboardPage() {
   const [summary, setSummary] = useState<ManagerDashboard | null>(null)
   const [jobs, setJobs] = useState<Job[]>([])
   const [molds, setMolds] = useState<Mold[]>([])
+  const [plan, setPlan] = useState<MoldPlanRow[]>([])
+  const [detailMoldId, setDetailMoldId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
   const load = useCallback(async () => {
     setIsLoading(true)
     try {
-      const [dashboard, jobList, moldList] = await Promise.all([
+      const [dashboard, jobList, moldList, planList] = await Promise.all([
         api.getManagerDashboard(accessToken),
         api.listJobs(accessToken),
         api.listMolds(accessToken),
+        api.getMoldPlan(accessToken),
       ])
       setSummary(dashboard)
       setJobs(jobList)
       setMolds(moldList)
+      setPlan(planList)
     } catch (caught) {
       toast.error(errorMessage(caught, 'Gagal memuat dashboard'))
     } finally {
@@ -60,6 +78,78 @@ export function ManagerDashboardPage() {
     () => jobs.filter((job) => ACTIVE_LIFECYCLES.includes(job.lifecycle)),
     [jobs],
   )
+
+  // Baris pertama dipilih otomatis supaya detail cepat langsung terisi.
+  const detailRow = useMemo(
+    () => plan.find((row) => row.moldId === detailMoldId) ?? plan[0] ?? null,
+    [plan, detailMoldId],
+  )
+
+  const moldingCounts = useMemo(() => {
+    const counts = { [ProgressMolding.PLANNING]: 0, [ProgressMolding.ONGOING]: 0, [ProgressMolding.SUDAH_DIPRODUKSI]: 0 }
+    for (const row of plan) counts[row.progressMolding ?? ProgressMolding.PLANNING] += 1
+    return counts
+  }, [plan])
+
+  const planTotals = useMemo(
+    () =>
+      plan.reduce(
+        (acc, row) => ({
+          target: acc.target + (row.targetOutput ?? 0),
+          good: acc.good + row.totalGoodProduct,
+          reject: acc.reject + row.totalReject,
+        }),
+        { target: 0, good: 0, reject: 0 },
+      ),
+    [plan],
+  )
+
+  const planColumns: Column<MoldPlanRow>[] = [
+    { header: 'Mold', cell: (r) => <span className="font-semibold text-slate-900">{r.kodeMold}</span> },
+    { header: 'Produk', cell: (r) => r.namaProduk },
+    { header: 'Job', cell: (r) => r.jobNumber ?? <span className="text-slate-400">-</span> },
+    { header: 'Mesin', cell: (r) => r.machineNumber ?? <span className="text-slate-400">Belum assign</span> },
+    { header: 'Tracking', cell: (r) => <MoldTrackingBadge status={r.trackingStatus} /> },
+    {
+      header: 'Progress molding',
+      cell: (r) =>
+        r.progressMolding ? (
+          <ProgressMoldingBadge status={r.progressMolding} />
+        ) : (
+          <span className="text-slate-400">{progressMoldingLabel[ProgressMolding.PLANNING]}</span>
+        ),
+    },
+    { header: 'Target', cell: (r) => (r.targetOutput != null ? formatNumber(r.targetOutput) : '-') },
+    { header: 'Good', cell: (r) => formatNumber(r.totalGoodProduct) },
+    { header: 'Reject', cell: (r) => formatNumber(r.totalReject) },
+    {
+      header: 'Achievement',
+      cell: (r) => (
+        <div className="min-w-24">
+          <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+            <div
+              className="h-full rounded-full bg-brand-600 transition-[width] duration-500"
+              style={{ width: `${Math.min(r.achievement, 100)}%` }}
+            />
+          </div>
+          <span className="mt-1 block text-xs text-slate-500">{r.achievement}%</span>
+        </div>
+      ),
+    },
+    {
+      header: 'ETA',
+      cell: (r) => (r.etaHari == null ? '-' : r.etaHari === 0 ? 'Selesai' : `${r.etaHari} hari`),
+    },
+    {
+      header: '',
+      className: 'text-right',
+      cell: (r) => (
+        <Button size="sm" variant="secondary" onClick={() => setDetailMoldId(r.moldId)}>
+          Detail cepat
+        </Button>
+      ),
+    },
+  ]
 
   const columns: Column<Job>[] = [
     { header: 'No. Job', cell: (j) => <span className="font-semibold text-slate-900">{j.jobNumber}</span> },
@@ -166,6 +256,73 @@ export function ManagerDashboardPage() {
           <DataTable columns={columns} rows={activeJobs} rowKey={(j) => j.id} />
         )}
       </Card>
+
+      <Card
+        className="mt-5"
+        title="Perkembangan plan mold"
+        subtitle="Satu baris per cetakan: posisi fisik, mesin, dan capaian produksi yang dijalankan Admin Penyewa di lokasi."
+      >
+        {isLoading ? (
+          <TableSkeleton rows={4} columns={7} />
+        ) : plan.length === 0 ? (
+          <div className="grid place-items-center py-12 text-center">
+            <span className="grid h-12 w-12 place-items-center rounded-xl bg-brand-50 text-brand-700">
+              <Boxes className="h-6 w-6" />
+            </span>
+            <p className="mt-3 text-sm font-semibold text-slate-800">Belum ada cetakan</p>
+            <p className="mt-1 text-sm text-slate-500">
+              Daftarkan cetakan di halaman Cetakan agar perkembangannya terpantau di sini.
+            </p>
+          </div>
+        ) : (
+          <DataTable columns={planColumns} rows={plan} rowKey={(r) => r.moldId} />
+        )}
+      </Card>
+
+      {plan.length > 0 ? (
+        <div className="mt-5 grid gap-4 lg:grid-cols-2">
+          <Card title="Ringkasan status molding">
+            <dl className="divide-y divide-slate-100">
+              <SummaryRow label="Planning" value={`${moldingCounts.PLANNING} mold`} />
+              <SummaryRow label="Ongoing" value={`${moldingCounts.ONGOING} mold`} />
+              <SummaryRow label="Sudah diproduksi" value={`${moldingCounts.SUDAH_DIPRODUKSI} mold`} />
+            </dl>
+          </Card>
+
+          <Card title="Produksi vs target (agregat)">
+            <dl className="divide-y divide-slate-100">
+              <SummaryRow label="Total target" value={`${formatNumber(planTotals.target)} pcs`} />
+              <SummaryRow label="Total good" value={`${formatNumber(planTotals.good)} pcs`} />
+              <SummaryRow label="Total reject" value={`${formatNumber(planTotals.reject)} pcs`} />
+              <SummaryRow
+                label="Sisa target"
+                value={`${formatNumber(Math.max(planTotals.target - planTotals.good, 0))} pcs`}
+              />
+            </dl>
+          </Card>
+        </div>
+      ) : null}
+
+      {detailRow ? (
+        <section className="mt-5">
+          <h2 className="text-sm font-semibold text-slate-500">
+            Detail cepat - {detailRow.kodeMold}
+            {detailRow.progressMolding ? ` (${progressMoldingLabel[detailRow.progressMolding]})` : ''}
+          </h2>
+          <div className="mt-3">
+            <MoldPlanDetail row={detailRow} />
+          </div>
+        </section>
+      ) : null}
+    </div>
+  )
+}
+
+function SummaryRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 py-3">
+      <dt className="text-sm text-slate-500">{label}</dt>
+      <dd className="text-sm font-semibold text-slate-900">{value}</dd>
     </div>
   )
 }

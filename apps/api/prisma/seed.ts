@@ -157,6 +157,12 @@ async function main() {
     },
   });
 
+  // Pengajuan perpanjangan sewa yang masih menunggu keputusan, supaya rental
+  // monitoring di dashboard Sundaya dan antrean di tab Booking terisi.
+  await prisma.rentalExtension.create({
+    data: { jobId: job.id, additionalDays: 7, requestedAt: new Date('2026-07-28T09:00:00Z') },
+  });
+
   // Log Produksi (Layer 2, diinput Admin Penyewa). Timeline event append-only.
   await prisma.logProduksi.create({
     data: {

@@ -1,5 +1,10 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
-import { JobLifecycle, MachineStatus, Role } from '@mold-tracker/shared';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
+import { ExtensionStatus, JobLifecycle, MachineStatus, Role } from '@mold-tracker/shared';
 import { Prisma, User as PrismaUser } from '@prisma/client';
 import { JobsService } from './jobs.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -9,6 +14,13 @@ function prismaMock() {
     job: { findUnique: jest.fn(), findMany: jest.fn(), update: jest.fn(), create: jest.fn() },
     machine: { findUnique: jest.fn(), update: jest.fn() },
     mold: { findUnique: jest.fn() },
+    rentalExtension: {
+      count: jest.fn(),
+      create: jest.fn(),
+      findUnique: jest.fn(),
+      update: jest.fn(),
+      findMany: jest.fn(),
+    },
     $transaction: jest.fn().mockImplementation((ops: unknown[]) => Promise.resolve(ops)),
   };
 }
@@ -222,5 +234,116 @@ describe('JobsService.ship (transisi pasca-assign)', () => {
 
     const service = new JobsService(prisma as unknown as PrismaService);
     await expect(service.ship(adminSundaya, 'job-1')).rejects.toBeInstanceOf(ConflictException);
+  });
+});
+
+const extensionRow = (o: Record<string, unknown> = {}) => ({
+  id: 'ext-1',
+  jobId: 'job-1',
+  additionalDays: 7,
+  status: 'DIAJUKAN',
+  requestedAt: new Date('2026-07-20'),
+  decidedAt: null,
+  ...o,
+});
+
+describe('JobsService.requestExtension', () => {
+  it('menolak bila job belum AKTIF (409)', async () => {
+    const prisma = prismaMock();
+    prisma.job.findUnique.mockResolvedValue(jobRow({ lifecycle: 'DIKIRIM' }));
+
+    const service = new JobsService(prisma as unknown as PrismaService);
+    await expect(
+      service.requestExtension(manager, 'job-1', { additionalDays: 7 }),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('menolak bila masih ada pengajuan yang menunggu keputusan (409)', async () => {
+    const prisma = prismaMock();
+    prisma.job.findUnique.mockResolvedValue(jobRow({ lifecycle: 'AKTIF' }));
+    prisma.rentalExtension.count.mockResolvedValue(1);
+
+    const service = new JobsService(prisma as unknown as PrismaService);
+    await expect(
+      service.requestExtension(manager, 'job-1', { additionalDays: 7 }),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('menolak job milik tenant lain (403)', async () => {
+    const prisma = prismaMock();
+    prisma.job.findUnique.mockResolvedValue(jobRow({ lifecycle: 'AKTIF', managerId: 'mgr-lain' }));
+
+    const service = new JobsService(prisma as unknown as PrismaService);
+    await expect(
+      service.requestExtension(manager, 'job-1', { additionalDays: 7 }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('membuat pengajuan berstatus DIAJUKAN', async () => {
+    const prisma = prismaMock();
+    prisma.job.findUnique.mockResolvedValue(jobRow({ lifecycle: 'AKTIF' }));
+    prisma.rentalExtension.count.mockResolvedValue(0);
+    prisma.rentalExtension.create.mockResolvedValue(extensionRow());
+
+    const service = new JobsService(prisma as unknown as PrismaService);
+    const result = await service.requestExtension(manager, 'job-1', { additionalDays: 7 });
+
+    expect(prisma.rentalExtension.create).toHaveBeenCalledWith({
+      data: { jobId: 'job-1', additionalDays: 7 },
+    });
+    expect(result.status).toBe(ExtensionStatus.DIAJUKAN);
+  });
+});
+
+describe('JobsService.decideExtension', () => {
+  it('DITERIMA menggeser endDate dan menambah durasi sewa', async () => {
+    const prisma = prismaMock();
+    prisma.rentalExtension.findUnique.mockResolvedValue(
+      extensionRow({
+        job: { id: 'job-1', endDate: new Date('2026-08-01'), requestedDurationDays: 14 },
+      }),
+    );
+    prisma.rentalExtension.update.mockReturnValue(
+      extensionRow({ status: 'DITERIMA', decidedAt: new Date('2026-07-21') }),
+    );
+
+    const service = new JobsService(prisma as unknown as PrismaService);
+    const result = await service.decideExtension('ext-1', {
+      decision: ExtensionStatus.DITERIMA,
+    });
+
+    expect(prisma.job.update).toHaveBeenCalledWith({
+      where: { id: 'job-1' },
+      data: { requestedDurationDays: 21, endDate: new Date('2026-08-08') },
+    });
+    expect(result.status).toBe(ExtensionStatus.DITERIMA);
+  });
+
+  it('DITOLAK tidak menyentuh job', async () => {
+    const prisma = prismaMock();
+    prisma.rentalExtension.findUnique.mockResolvedValue(
+      extensionRow({
+        job: { id: 'job-1', endDate: new Date('2026-08-01'), requestedDurationDays: 14 },
+      }),
+    );
+    prisma.rentalExtension.update.mockResolvedValue(
+      extensionRow({ status: 'DITOLAK', decidedAt: new Date('2026-07-21') }),
+    );
+
+    const service = new JobsService(prisma as unknown as PrismaService);
+    const result = await service.decideExtension('ext-1', { decision: ExtensionStatus.DITOLAK });
+
+    expect(prisma.job.update).not.toHaveBeenCalled();
+    expect(result.status).toBe(ExtensionStatus.DITOLAK);
+  });
+
+  it('menolak pengajuan yang sudah diputuskan (409)', async () => {
+    const prisma = prismaMock();
+    prisma.rentalExtension.findUnique.mockResolvedValue(extensionRow({ status: 'DITERIMA' }));
+
+    const service = new JobsService(prisma as unknown as PrismaService);
+    await expect(
+      service.decideExtension('ext-1', { decision: ExtensionStatus.DITERIMA }),
+    ).rejects.toBeInstanceOf(ConflictException);
   });
 });

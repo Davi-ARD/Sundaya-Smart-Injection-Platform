@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import {
   DeliveryStatus,
+  ExtensionStatus,
   JobLifecycle,
   MachineOperationalStatus,
   MachineStatus,
@@ -136,6 +137,23 @@ export const jobLifecycleLabel: Record<JobLifecycle, string> = {
 
 export function JobLifecycleBadge({ status }: { status: JobLifecycle }) {
   return <Badge tone={jobLifecycleTone[status]}>{jobLifecycleLabel[status]}</Badge>
+}
+
+// --- Perpanjangan sewa ---
+const extensionTone: Record<ExtensionStatus, BadgeTone> = {
+  [ExtensionStatus.DIAJUKAN]: 'amber',
+  [ExtensionStatus.DITERIMA]: 'emerald',
+  [ExtensionStatus.DITOLAK]: 'rose',
+}
+
+export const extensionStatusLabel: Record<ExtensionStatus, string> = {
+  [ExtensionStatus.DIAJUKAN]: 'Menunggu approval',
+  [ExtensionStatus.DITERIMA]: 'Disetujui',
+  [ExtensionStatus.DITOLAK]: 'Ditolak',
+}
+
+export function ExtensionStatusBadge({ status }: { status: ExtensionStatus }) {
+  return <Badge tone={extensionTone[status]}>{extensionStatusLabel[status]}</Badge>
 }
 
 // --- Mold tracking (fisik cetakan) ---

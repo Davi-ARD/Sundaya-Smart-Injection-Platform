@@ -6,16 +6,31 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { $Enums, Prisma, User as PrismaUser } from '@prisma/client';
-import { Job, JobLifecycle, MachineStatus, Role } from '@mold-tracker/shared';
+import {
+  ExtensionRequestRow,
+  ExtensionStatus,
+  Job,
+  JobLifecycle,
+  MachineStatus,
+  Role,
+} from '@mold-tracker/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { machineWalk } from '../machines/machine-state';
 import { nextJobLifecycle } from './job-state';
-import { toJob } from './job.mapper';
-import { AssignJobDto, CreateJobDto, RejectJobDto } from './dto';
+import { remainingDays } from './job-status';
+import { toJob, toRentalExtension } from './job.mapper';
+import {
+  AssignJobDto,
+  CreateExtensionDto,
+  CreateJobDto,
+  DecideExtensionDto,
+  RejectJobDto,
+} from './dto';
 
 // ponytail: enum shared dan Prisma nominal berbeda, cast di batang DB saja.
 const asLifecycle = (s: JobLifecycle) => s as unknown as $Enums.JobLifecycle;
 const asMachineStatus = (s: MachineStatus) => s as unknown as $Enums.MachineStatus;
+const asExtensionStatus = (s: ExtensionStatus) => s as unknown as $Enums.ExtensionStatus;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const addDays = (d: Date, days: number) => new Date(d.getTime() + days * DAY_MS);
@@ -25,6 +40,7 @@ const STAF_SUNDAYA: Role[] = [Role.SUPER_ADMIN, Role.ADMIN_SUNDAYA, Role.TEKNISI
 const withDetails = {
   include: {
     machine: { select: { machineNumber: true, status: true } },
+    manager: { select: { companyName: true } },
     extensions: { orderBy: { requestedAt: 'desc' as const } },
   },
 } as const;
@@ -198,6 +214,97 @@ export class JobsService {
       to: JobLifecycle.SELESAI,
       machinePath: [MachineStatus.PENGECEKAN, MachineStatus.TERSEDIA],
     });
+  }
+
+  // MANAGER_PENYEWA mengajukan perpanjangan sewa. Hanya job yang mesinnya sedang
+  // dipakai (AKTIF) yang relevan, dan satu pengajuan terbuka pada satu waktu agar
+  // antrean di tab Booking Sundaya tidak ambigu.
+  async requestExtension(user: PrismaUser, jobId: string, dto: CreateExtensionDto) {
+    const job = await this.prisma.job.findUnique({ where: { id: jobId } });
+    if (!job) throw new NotFoundException('Job tidak ditemukan');
+    this.assertParty(user, job);
+    this.assertLifecycle(job.lifecycle, JobLifecycle.AKTIF);
+
+    const pending = await this.prisma.rentalExtension.count({
+      where: { jobId, status: asExtensionStatus(ExtensionStatus.DIAJUKAN) },
+    });
+    if (pending > 0) {
+      throw new ConflictException('Masih ada pengajuan perpanjangan yang menunggu keputusan');
+    }
+
+    const created = await this.prisma.rentalExtension.create({
+      data: { jobId, additionalDays: dto.additionalDays },
+    });
+    return toRentalExtension(created);
+  }
+
+  // ADMIN_SUNDAYA memutuskan perpanjangan. DITERIMA menambah durasi dan endDate
+  // job dalam satu transaksi supaya sisa masa sewa langsung ikut bergeser.
+  async decideExtension(extensionId: string, dto: DecideExtensionDto) {
+    const extension = await this.prisma.rentalExtension.findUnique({
+      where: { id: extensionId },
+      include: { job: { select: { id: true, endDate: true, requestedDurationDays: true } } },
+    });
+    if (!extension) throw new NotFoundException('Pengajuan perpanjangan tidak ditemukan');
+    if (extension.status !== asExtensionStatus(ExtensionStatus.DIAJUKAN)) {
+      throw new ConflictException('Pengajuan perpanjangan sudah diputuskan');
+    }
+
+    const decided = this.prisma.rentalExtension.update({
+      where: { id: extensionId },
+      data: { status: asExtensionStatus(dto.decision), decidedAt: new Date() },
+    });
+    if (dto.decision === ExtensionStatus.DITOLAK) return toRentalExtension(await decided);
+
+    const [updated] = await this.prisma.$transaction([
+      decided,
+      this.prisma.job.update({
+        where: { id: extension.jobId },
+        data: {
+          requestedDurationDays:
+            extension.job.requestedDurationDays + extension.additionalDays,
+          // endDate baru dihitung dari endDate berjalan; job AKTIF selalu punya endDate.
+          endDate: extension.job.endDate
+            ? addDays(extension.job.endDate, extension.additionalDays)
+            : undefined,
+        },
+      }),
+    ]);
+    return toRentalExtension(updated);
+  }
+
+  // Antrean perpanjangan untuk tab Booking Sundaya. Semua status disertakan agar
+  // Admin bisa melihat riwayat keputusan, bukan hanya yang menunggu.
+  async listExtensions(): Promise<ExtensionRequestRow[]> {
+    const rows = await this.prisma.rentalExtension.findMany({
+      orderBy: [{ status: 'asc' }, { requestedAt: 'desc' }],
+      include: {
+        job: {
+          select: {
+            id: true,
+            jobNumber: true,
+            endDate: true,
+            manager: { select: { companyName: true } },
+            mold: { select: { kodeMold: true } },
+            machine: { select: { machineNumber: true } },
+          },
+        },
+      },
+    });
+    const now = new Date();
+    return rows.map((e) => ({
+      extensionId: e.id,
+      jobId: e.jobId,
+      jobNumber: e.job.jobNumber,
+      companyName: e.job.manager.companyName,
+      moldKode: e.job.mold.kodeMold,
+      machineNumber: e.job.machine?.machineNumber ?? null,
+      additionalDays: e.additionalDays,
+      status: e.status as unknown as ExtensionStatus,
+      requestedAt: e.requestedAt.toISOString(),
+      endDate: e.job.endDate?.toISOString() ?? null,
+      sisaHariSewa: remainingDays(e.job.endDate, now),
+    }));
   }
 
   // Jalur bersama transisi lifecycle + mesin dalam satu transaksi. data boleh fungsi

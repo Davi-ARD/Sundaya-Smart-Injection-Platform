@@ -2,7 +2,13 @@ import type {
   AppNotification,
   AssignJobRequest,
   AuthResponse,
+  CreateExtensionRequest,
   CreateJobRequest,
+  DecideExtensionRequest,
+  ExtensionRequestRow,
+  JobLogEntry,
+  MoldPlanRow,
+  RentalExtension,
   CreateLogProduksiRequest,
   CreateMachineRequest,
   CreateMaintenanceRequest,
@@ -238,6 +244,32 @@ export const api = {
     return request<Job>('PATCH', `/jobs/${id}/complete`, token)
   },
 
+  // ===================== Perpanjangan sewa =====================
+  async listExtensions(token: string | null): Promise<ExtensionRequestRow[]> {
+    return request<ExtensionRequestRow[]>('GET', '/jobs/extensions', token)
+  },
+
+  async requestExtension(
+    token: string | null,
+    jobId: string,
+    body: CreateExtensionRequest,
+  ): Promise<RentalExtension> {
+    return request<RentalExtension>('POST', `/jobs/${jobId}/extensions`, token, body)
+  },
+
+  async decideExtension(
+    token: string | null,
+    extensionId: string,
+    body: DecideExtensionRequest,
+  ): Promise<RentalExtension> {
+    return request<RentalExtension>(
+      'PATCH',
+      `/jobs/extensions/${extensionId}/decide`,
+      token,
+      body,
+    )
+  },
+
   // ===================== Log Produksi (Layer 2) =====================
   async listLogs(token: string | null, jobId: string): Promise<LogProduksi[]> {
     return request<LogProduksi[]>('GET', `/jobs/${jobId}/logs`, token)
@@ -268,6 +300,16 @@ export const api = {
 
   async getJobDashboard(token: string | null): Promise<JobDashboard[]> {
     return request<JobDashboard[]>('GET', '/dashboard/job', token)
+  },
+
+  // Log utama Admin Penyewa: seluruh event dari semua job tenant.
+  async getJobLogs(token: string | null): Promise<JobLogEntry[]> {
+    return request<JobLogEntry[]>('GET', '/dashboard/job/logs', token)
+  },
+
+  // Perkembangan plan mold Manager: dipakai dashboard dan detail cetakan.
+  async getMoldPlan(token: string | null): Promise<MoldPlanRow[]> {
+    return request<MoldPlanRow[]>('GET', '/dashboard/manager/mold-plan', token)
   },
 
   async getMachineMetrics(token: string | null, machineId: string): Promise<MachineMetrics> {

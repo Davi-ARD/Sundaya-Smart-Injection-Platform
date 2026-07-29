@@ -11,6 +11,7 @@ export function TextField({
   required = true,
   step,
   min,
+  max,
 }: {
   label: string
   value: string | number
@@ -19,6 +20,7 @@ export function TextField({
   required?: boolean
   step?: string | number
   min?: string | number
+  max?: string | number
 }) {
   return (
     <label className="block">
@@ -29,6 +31,7 @@ export function TextField({
         required={required}
         step={step}
         min={min}
+        max={max}
         onChange={(event) => onChange(event.target.value)}
         className={fieldClass}
       />

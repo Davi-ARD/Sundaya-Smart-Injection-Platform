@@ -1,9 +1,21 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { User as PrismaUser } from '@prisma/client';
-import { Job, JobLifecycle, Role } from '@mold-tracker/shared';
+import {
+  ExtensionRequestRow,
+  Job,
+  JobLifecycle,
+  RentalExtension,
+  Role,
+} from '@mold-tracker/shared';
 import { CurrentUser, Roles } from '../auth/decorators';
 import { JobsService } from './jobs.service';
-import { AssignJobDto, CreateJobDto, RejectJobDto } from './dto';
+import {
+  AssignJobDto,
+  CreateExtensionDto,
+  CreateJobDto,
+  DecideExtensionDto,
+  RejectJobDto,
+} from './dto';
 
 // Modul jobs dipakai berdua (koordinasi Dev A/Dev B). Pemilik file = Dev A
 // (assign + lifecycle). Endpoint booking `POST /jobs` (MANAGER_PENYEWA, tanpa
@@ -29,9 +41,37 @@ export class JobsController {
     return this.jobs.findAll(user, filter);
   }
 
+  // Antrean perpanjangan sewa (rental monitoring, tab Booking Sundaya).
+  // Dideklarasikan sebelum GET :id supaya 'extensions' tidak tertangkap sebagai id.
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_SUNDAYA, Role.TEKNISI_SUNDAYA)
+  @Get('extensions')
+  listExtensions(): Promise<ExtensionRequestRow[]> {
+    return this.jobs.listExtensions();
+  }
+
+  @Roles(Role.ADMIN_SUNDAYA)
+  @Patch('extensions/:extensionId/decide')
+  decideExtension(
+    @Param('extensionId') extensionId: string,
+    @Body() dto: DecideExtensionDto,
+  ): Promise<RentalExtension> {
+    return this.jobs.decideExtension(extensionId, dto);
+  }
+
   @Get(':id')
   findOne(@CurrentUser() user: PrismaUser, @Param('id') id: string): Promise<Job> {
     return this.jobs.findOne(user, id);
+  }
+
+  // Manager Penyewa mengajukan perpanjangan sewa untuk job miliknya yang AKTIF.
+  @Roles(Role.MANAGER_PENYEWA)
+  @Post(':id/extensions')
+  requestExtension(
+    @CurrentUser() user: PrismaUser,
+    @Param('id') id: string,
+    @Body() dto: CreateExtensionDto,
+  ): Promise<RentalExtension> {
+    return this.jobs.requestExtension(user, id, dto);
   }
 
   @Roles(Role.ADMIN_SUNDAYA)
