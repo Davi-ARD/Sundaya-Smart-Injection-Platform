@@ -53,10 +53,6 @@ export class CreateJobDto implements CreateJobRequest {
   @IsNumber()
   @IsPositive()
   targetOutput?: number;
-
-  @IsOptional()
-  @IsDateString()
-  rencanaKirimMold?: string;
 }
 
 export class AssignJobDto implements AssignJobRequest {

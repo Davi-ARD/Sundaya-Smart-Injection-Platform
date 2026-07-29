@@ -1,7 +1,13 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { $Enums, Prisma, User as PrismaUser } from '@prisma/client';
-import { LogProduksi, LogProduksiEventType, Role } from '@mold-tracker/shared';
+import {
+  LogProduksi,
+  LogProduksiEventType,
+  MoldTrackingStatus,
+  Role,
+} from '@mold-tracker/shared';
 import { PrismaService } from '../prisma/prisma.service';
+import { MoldTrackingService } from '../molds/mold-tracking.service';
 import { CreateLogProduksiDto } from './dto';
 import { toLogProduksi } from './log-produksi.mapper';
 
@@ -9,7 +15,10 @@ const STAF_SUNDAYA: Role[] = [Role.SUPER_ADMIN, Role.ADMIN_SUNDAYA, Role.TEKNISI
 
 @Injectable()
 export class LogProduksiService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private moldTracking: MoldTrackingService,
+  ) {}
 
   // Timeline event Layer 2 satu job (urut kejadian). Semua pihak tenant + staf baca.
   async findAll(user: PrismaUser, jobId: string): Promise<LogProduksi[]> {
@@ -23,20 +32,30 @@ export class LogProduksiService {
 
   // Append-only (Admin Penyewa): hanya field milik eventType yang disimpan.
   // Koreksi dilakukan lewat event baru, bukan update/delete.
+  //
+  // Event PRODUKSI_HARIAN menandai mold benar-benar dipakai di mesin, jadi tracking
+  // mold ikut maju ke PRODUCTION (idempoten: event kedua dan seterusnya tidak
+  // mengubah apa pun karena advance() hanya bergerak maju).
   async append(user: PrismaUser, jobId: string, dto: CreateLogProduksiDto): Promise<LogProduksi> {
-    await this.getJobInTenant(user, jobId);
+    const job = await this.getJobInTenant(user, jobId);
     const eventData = this.buildEventData(dto);
-    const log = await this.prisma.logProduksi.create({
-      data: {
-        jobId,
-        byId: user.id,
-        eventType: dto.eventType as unknown as $Enums.LogProduksiEventType,
-        occurredAt: new Date(dto.occurredAt),
-        catatan: dto.catatan,
-        ...eventData,
-      },
+
+    return this.prisma.$transaction(async (tx) => {
+      const log = await tx.logProduksi.create({
+        data: {
+          jobId,
+          byId: user.id,
+          eventType: dto.eventType as unknown as $Enums.LogProduksiEventType,
+          occurredAt: new Date(dto.occurredAt),
+          catatan: dto.catatan,
+          ...eventData,
+        },
+      });
+      if (dto.eventType === LogProduksiEventType.PRODUKSI_HARIAN) {
+        await this.moldTracking.advance(tx, job.moldId, MoldTrackingStatus.PRODUCTION, user.id);
+      }
+      return toLogProduksi(log);
     });
-    return toLogProduksi(log);
   }
 
   // Field wajib per eventType ditegakkan di sini; hanya field milik tipe yang lolos
@@ -81,7 +100,7 @@ export class LogProduksiService {
   private async getJobInTenant(user: PrismaUser, jobId: string) {
     const job = await this.prisma.job.findUnique({
       where: { id: jobId },
-      select: { id: true, managerId: true },
+      select: { id: true, managerId: true, moldId: true },
     });
     if (!job) throw new NotFoundException('Job tidak ditemukan');
     if (STAF_SUNDAYA.includes(user.role as Role)) return job;

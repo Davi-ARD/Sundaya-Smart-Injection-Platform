@@ -8,7 +8,6 @@ export function toOperationalData(o: PrismaOperationalData): OperationalData {
     id: o.id,
     machineId: o.machineId,
     status: o.status as unknown as OperationalData['status'],
-    downtimeReason: o.downtimeReason as unknown as OperationalData['downtimeReason'],
     cycleTimeSec: o.cycleTimeSec,
     occurredAt: o.occurredAt.toISOString(),
     byId: o.byId,

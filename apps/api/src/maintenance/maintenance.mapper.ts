@@ -10,6 +10,8 @@ export function toMaintenance(m: PrismaMaintenance): Maintenance {
     type: m.type as unknown as Maintenance['type'],
     status: m.status as unknown as Maintenance['status'],
     scheduledAt: m.scheduledAt.toISOString(),
+    startedAt: m.startedAt?.toISOString() ?? null,
+    completedAt: m.completedAt?.toISOString() ?? null,
     notes: m.notes,
     byId: m.byId,
     createdAt: m.createdAt.toISOString(),

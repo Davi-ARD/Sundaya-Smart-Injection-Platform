@@ -43,14 +43,62 @@ export class MaintenanceService {
   }
 
   // Transisi status hanya lewat peta konstan (TERJADWAL -> BERLANGSUNG -> SELESAI).
+  // Sumbu operasional mesin (Layer 1) ikut bergerak otomatis di transaksi yang sama:
+  // BERLANGSUNG menyetel mesin ke MAINTENANCE sambil menyimpan status sebelumnya,
+  // SELESAI memulihkan mesin ke status itu. Teknisi tidak menyetel MAINTENANCE manual.
   async updateStatus(id: string, dto: UpdateMaintenanceStatusDto): Promise<Maintenance> {
     const existing = await this.getOrThrow(id);
     const next = nextMaintenanceStatus(existing.status as unknown as MaintenanceStatus, dto.status);
-    const m = await this.prisma.maintenance.update({
-      where: { id },
-      data: { status: asStatus(next), notes: dto.notes ?? existing.notes },
+
+    const now = new Date();
+    return this.prisma.$transaction(async (tx) => {
+      const m = await tx.maintenance.update({
+        where: { id },
+        data: {
+          status: asStatus(next),
+          notes: dto.notes ?? existing.notes,
+          startedAt: next === MaintenanceStatus.BERLANGSUNG ? now : existing.startedAt,
+          completedAt: next === MaintenanceStatus.SELESAI ? now : existing.completedAt,
+        },
+      });
+
+      if (next === MaintenanceStatus.BERLANGSUNG) {
+        const machine = await tx.machine.findUnique({
+          where: { id: existing.machineId },
+          select: { operationalStatus: true },
+        });
+        // Jangan timpa statusBeforeMaintenance bila mesin sudah MAINTENANCE dari
+        // record lain: status semula yang tersimpan pertama yang harus dipulihkan.
+        if (machine && machine.operationalStatus !== $Enums.MachineOperationalStatus.MAINTENANCE) {
+          await tx.machine.update({
+            where: { id: existing.machineId },
+            data: {
+              statusBeforeMaintenance: machine.operationalStatus,
+              operationalStatus: $Enums.MachineOperationalStatus.MAINTENANCE,
+            },
+          });
+        }
+      }
+
+      if (next === MaintenanceStatus.SELESAI) {
+        const machine = await tx.machine.findUnique({
+          where: { id: existing.machineId },
+          select: { statusBeforeMaintenance: true },
+        });
+        // Tanpa jejak status semula (mis. maintenance dibuat sebelum mesin dipakai),
+        // mesin kembali ke STANDBY sebagai posisi netral.
+        await tx.machine.update({
+          where: { id: existing.machineId },
+          data: {
+            operationalStatus:
+              machine?.statusBeforeMaintenance ?? $Enums.MachineOperationalStatus.STANDBY,
+            statusBeforeMaintenance: null,
+          },
+        });
+      }
+
+      return toMaintenance(m);
     });
-    return toMaintenance(m);
   }
 
   private async getOrThrow(id: string) {

@@ -34,7 +34,6 @@ export function toJob(
     estimasiMaterialKg: j.estimasiMaterialKg,
     materialTambahan: j.materialTambahan,
     targetOutput: j.targetOutput,
-    rencanaKirimMold: j.rencanaKirimMold?.toISOString() ?? null,
     confirmedAt: j.confirmedAt?.toISOString() ?? null,
     shippedAt: j.shippedAt?.toISOString() ?? null,
     receivedAt: j.receivedAt?.toISOString() ?? null,

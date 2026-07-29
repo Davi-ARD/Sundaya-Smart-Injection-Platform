@@ -28,14 +28,21 @@ export enum MachineStatus {
   MAINTENANCE = "MAINTENANCE",
 }
 
-// Sumbu operasional realtime mesin (Layer 1).
+// Sumbu operasional realtime mesin (Layer 1). Teknisi hanya menginput SETUP dan
+// RUNNING (lihat TEKNISI_INPUT_STATUS). STANDBY hanya status awal mesin baru,
+// MAINTENANCE disetel otomatis oleh modul Maintenance.
 export enum MachineOperationalStatus {
-  RUNNING = "RUNNING",
-  SETUP = "SETUP",
   STANDBY = "STANDBY",
-  BREAKDOWN = "BREAKDOWN",
+  SETUP = "SETUP",
+  RUNNING = "RUNNING",
   MAINTENANCE = "MAINTENANCE",
 }
+
+// Status yang boleh diinput Teknisi lewat POST /machines/:id/operational.
+export const TEKNISI_INPUT_STATUS: MachineOperationalStatus[] = [
+  MachineOperationalStatus.SETUP,
+  MachineOperationalStatus.RUNNING,
+];
 
 export enum WarrantyStatus {
   AKTIF = "AKTIF",
@@ -68,18 +75,21 @@ export enum ExtensionStatus {
   DITOLAK = "DITOLAK",
 }
 
-// Tracking fisik mold (10-state linear).
+// Tracking fisik mold (6-state linear). Empat transisi pertama otomatis dari
+// event domain, dua terakhir manual lewat tombol Admin Sundaya.
 export enum MoldTrackingStatus {
   PLANNING = "PLANNING",
-  READY_DELIVERY = "READY_DELIVERY",
   DELIVERY = "DELIVERY",
   RECEIVED = "RECEIVED",
-  WAITING_PRODUCTION = "WAITING_PRODUCTION",
-  ON_MACHINE = "ON_MACHINE",
   PRODUCTION = "PRODUCTION",
-  REPAIR = "REPAIR",
   SEND_BACK = "SEND_BACK",
   COMPLETED = "COMPLETED",
+}
+
+// Jenis barang di Log Pengiriman (Manager) dan Log Penerimaan (Admin Sundaya).
+export enum ItemPengiriman {
+  MOLD = "MOLD",
+  MATERIAL = "MATERIAL",
 }
 
 // Progress molding (Layer 2).
@@ -96,16 +106,6 @@ export enum LogProduksiEventType {
   PROGRESS_MOLDING = "PROGRESS_MOLDING",
 }
 
-// Reason code downtime (six big losses).
-export enum DowntimeReason {
-  BREAKDOWN = "BREAKDOWN",
-  SETUP_ADJUSTMENT = "SETUP_ADJUSTMENT",
-  MINOR_STOP = "MINOR_STOP",
-  REDUCED_SPEED = "REDUCED_SPEED",
-  STARTUP_REJECT = "STARTUP_REJECT",
-  PRODUCTION_REJECT = "PRODUCTION_REJECT",
-}
-
 export enum MaintenanceType {
   PREVENTIVE = "PREVENTIVE",
   CORRECTIVE = "CORRECTIVE",
@@ -115,15 +115,6 @@ export enum MaintenanceStatus {
   TERJADWAL = "TERJADWAL",
   BERLANGSUNG = "BERLANGSUNG",
   SELESAI = "SELESAI",
-}
-
-// Status pengiriman (dihitung di view Log Pengiriman, tidak disimpan di DB).
-export enum DeliveryStatus {
-  DIRENCANAKAN = "DIRENCANAKAN",
-  DIKIRIM = "DIKIRIM",
-  TIBA_ONTIME = "TIBA_ONTIME",
-  TIBA_TERLAMBAT = "TIBA_TERLAMBAT",
-  BELUM_TIBA = "BELUM_TIBA",
 }
 
 // Tanggal dikirim sebagai ISO 8601 string di JSON.
@@ -153,6 +144,8 @@ export interface Machine {
   standardRatio: number; // output standar per kg material
   status: MachineStatus; // sumbu ketersediaan
   operationalStatus: MachineOperationalStatus; // sumbu realtime Layer 1
+  // Status sebelum maintenance, dipakai memulihkan mesin saat maintenance selesai.
+  statusBeforeMaintenance: MachineOperationalStatus | null;
   ownerId: string; // user sistem Sundaya
   warrantyStart: ISODateString;
   warrantyDurationMonths: number;
@@ -204,7 +197,6 @@ export interface Job {
   estimasiMaterialKg: number | null;
   materialTambahan: string | null;
   targetOutput: number | null;
-  rencanaKirimMold: ISODateString | null;
   confirmedAt: ISODateString | null;
   shippedAt: ISODateString | null;
   receivedAt: ISODateString | null;
@@ -248,7 +240,8 @@ export interface OperationalData {
   id: string;
   machineId: string;
   status: MachineOperationalStatus;
-  downtimeReason: DowntimeReason | null;
+  // Durasi satu siklus molding penuh, kanonik dalam detik. UI memakai
+  // secondsToHms/hmsToSeconds untuk input dan tampilan jam + menit + detik.
   cycleTimeSec: number | null;
   occurredAt: ISODateString;
   byId: string;
@@ -262,22 +255,47 @@ export interface Maintenance {
   type: MaintenanceType;
   status: MaintenanceStatus;
   scheduledAt: ISODateString;
+  // Diisi saat transisi status. Durasi pada maintenance CORRECTIVE jadi sumber
+  // MTBF dan MTTR di dashboard Sundaya.
+  startedAt: ISODateString | null;
+  completedAt: ISODateString | null;
   notes: string | null;
   byId: string;
   createdAt: ISODateString;
 }
 
-// Baris Log Pengiriman (dihitung, tanpa tabel). Rencana dari Job, aktual dari
-// LogProduksi (MATERIAL_DATANG) dan MoldTrackingEvent (RECEIVED).
-export interface DeliveryRow {
+// Log Pengiriman (Manager Penyewa): kapan mold atau material akan dikirim ke
+// Sundaya. Log informasi, bukan pembanding rencana vs aktual.
+export interface LogPengiriman {
+  id: string;
   jobId: string;
-  jobNumber: string;
-  item: string;
-  sumberRencana: string; // mis. "Booking BK-1042"
-  rencanaTiba: ISODateString | null;
-  aktualTiba: ISODateString | null;
-  selisihHari: number | null;
-  status: DeliveryStatus;
+  jobNumber?: string;
+  item: ItemPengiriman;
+  rencanaKirim: ISODateString;
+  // Khusus item MATERIAL.
+  materialName: string | null;
+  jumlahKg: number | null;
+  noSuratJalan: string | null;
+  catatan: string | null;
+  byId: string;
+  createdAt: ISODateString;
+}
+
+// Log Penerimaan (Admin Sundaya): konfirmasi mold atau material tiba di Sundaya.
+export interface LogPenerimaan {
+  id: string;
+  jobId: string;
+  jobNumber?: string;
+  item: ItemPengiriman;
+  diterimaAt: ISODateString;
+  // Khusus item MATERIAL.
+  materialName: string | null;
+  jumlahKg: number | null;
+  noSuratJalan: string | null;
+  kondisi: string | null;
+  catatan: string | null;
+  byId: string;
+  createdAt: ISODateString;
 }
 
 // =====================================================================
@@ -345,9 +363,10 @@ export interface UpdateMachineRequest {
 }
 
 // Operational Data (Layer 1, Teknisi). Append event, bukan update mesin langsung.
+// status hanya SETUP atau RUNNING (TEKNISI_INPUT_STATUS); MAINTENANCE lewat modul
+// Maintenance. cycleTimeSec dikirim dalam detik (UI merakitnya dari jam+menit+detik).
 export interface CreateOperationalDataRequest {
   status: MachineOperationalStatus;
-  downtimeReason?: DowntimeReason;
   cycleTimeSec?: number;
   occurredAt: ISODateString;
   catatan?: string;
@@ -393,7 +412,8 @@ export interface UpdateMoldTrackingRequest {
   status: MoldTrackingStatus;
 }
 
-// Booking / Job. Manager mengajukan tanpa memilih mesin.
+// Booking / Job. Manager mengajukan tanpa memilih mesin. Rencana kirim mold
+// tidak lagi di sini: Manager mencatatnya lewat Log Pengiriman.
 export interface CreateJobRequest {
   moldId: string;
   requestedDurationDays: number;
@@ -403,7 +423,6 @@ export interface CreateJobRequest {
   estimasiMaterialKg?: number;
   materialTambahan?: string;
   targetOutput?: number;
-  rencanaKirimMold?: ISODateString;
 }
 
 // Admin Sundaya approve dan assign mesin sekaligus.
@@ -439,6 +458,30 @@ export interface CreateLogProduksiRequest {
   // PROGRESS_MOLDING
   progressMolding?: ProgressMolding;
   keteranganProgress?: string;
+}
+
+// Log Pengiriman (Manager Penyewa). Item MOLD memindahkan tracking ke DELIVERY.
+// Field material hanya untuk item MATERIAL.
+export interface CreateLogPengirimanRequest {
+  jobId: string;
+  item: ItemPengiriman;
+  rencanaKirim: ISODateString;
+  materialName?: string;
+  jumlahKg?: number;
+  noSuratJalan?: string;
+  catatan?: string;
+}
+
+// Log Penerimaan (Admin Sundaya). Item MOLD memindahkan tracking ke RECEIVED.
+export interface CreateLogPenerimaanRequest {
+  jobId: string;
+  item: ItemPengiriman;
+  diterimaAt: ISODateString;
+  materialName?: string;
+  jumlahKg?: number;
+  noSuratJalan?: string;
+  kondisi?: string;
+  catatan?: string;
 }
 
 // =====================================================================
@@ -508,7 +551,6 @@ export interface ManagerDashboard {
   ongoing: number;
   totalGoodProduct: number;
   avgAchievement: number;
-  onTimeDeliveryRate: number; // persen, dari Log Pengiriman
 }
 
 // Dashboard job di lokasi (Admin Penyewa). Ringkasan per job aktif tenant.
@@ -566,7 +608,6 @@ export interface MoldPlanRow {
   materialTerpakaiKg: number | null;
   materialRemainingKg: number | null;
   materialTambahan: string | null;
-  rencanaKirimMold: ISODateString | null;
   endDate: ISODateString | null;
 }
 
@@ -591,27 +632,56 @@ export interface AppNotification {
 export const RENTAL_WARNING_DAYS = 3;
 export const RENTAL_CRITICAL_DAYS = 1;
 
-// Peta transisi tracking fisik mold (10-state linear, cabang REPAIR). Sumber
-// kebenaran tunggal dipakai apps/api (validasi + guard) dan apps/web (tombol
-// transisi yang tampil). Transisi hanya lewat sisi terdaftar di sini.
+// Peta transisi tracking fisik mold (6-state linear). Sumber kebenaran tunggal
+// dipakai apps/api (validasi) dan apps/web (tombol yang tampil).
 export const MOLD_TRACKING_FLOW: Record<MoldTrackingStatus, MoldTrackingStatus[]> = {
-  [MoldTrackingStatus.PLANNING]: [MoldTrackingStatus.READY_DELIVERY],
-  [MoldTrackingStatus.READY_DELIVERY]: [MoldTrackingStatus.DELIVERY],
+  [MoldTrackingStatus.PLANNING]: [MoldTrackingStatus.DELIVERY],
   [MoldTrackingStatus.DELIVERY]: [MoldTrackingStatus.RECEIVED],
-  [MoldTrackingStatus.RECEIVED]: [MoldTrackingStatus.WAITING_PRODUCTION],
-  [MoldTrackingStatus.WAITING_PRODUCTION]: [MoldTrackingStatus.ON_MACHINE],
-  [MoldTrackingStatus.ON_MACHINE]: [MoldTrackingStatus.PRODUCTION],
-  [MoldTrackingStatus.PRODUCTION]: [MoldTrackingStatus.REPAIR, MoldTrackingStatus.SEND_BACK],
-  [MoldTrackingStatus.REPAIR]: [MoldTrackingStatus.ON_MACHINE],
+  [MoldTrackingStatus.RECEIVED]: [MoldTrackingStatus.PRODUCTION],
+  [MoldTrackingStatus.PRODUCTION]: [MoldTrackingStatus.SEND_BACK],
   [MoldTrackingStatus.SEND_BACK]: [MoldTrackingStatus.COMPLETED],
   [MoldTrackingStatus.COMPLETED]: [],
 };
 
-// Subset transisi setup/produksi yang boleh dijalankan TEKNISI_SUNDAYA. Sisanya
-// (delivery, received, send back, completed) khusus ADMIN_SUNDAYA.
-export const MOLD_TEKNISI_ALLOWED: ReadonlyArray<readonly [MoldTrackingStatus, MoldTrackingStatus]> = [
-  [MoldTrackingStatus.WAITING_PRODUCTION, MoldTrackingStatus.ON_MACHINE],
-  [MoldTrackingStatus.ON_MACHINE, MoldTrackingStatus.PRODUCTION],
-  [MoldTrackingStatus.PRODUCTION, MoldTrackingStatus.REPAIR],
-  [MoldTrackingStatus.REPAIR, MoldTrackingStatus.ON_MACHINE],
+// Transisi yang dipicu otomatis oleh event domain, bukan tombol. DELIVERY dari
+// Log Pengiriman mold (Manager), RECEIVED dari Log Penerimaan mold (Admin
+// Sundaya), PRODUCTION dari produksi harian pertama (Admin Penyewa).
+export const MOLD_AUTO_TRANSITIONS: MoldTrackingStatus[] = [
+  MoldTrackingStatus.DELIVERY,
+  MoldTrackingStatus.RECEIVED,
+  MoldTrackingStatus.PRODUCTION,
 ];
+
+// Transisi yang tetap manual (tombol Admin Sundaya di tab Mold Tracking).
+export const MOLD_MANUAL_TRANSITIONS: MoldTrackingStatus[] = [
+  MoldTrackingStatus.SEND_BACK,
+  MoldTrackingStatus.COMPLETED,
+];
+
+// Cycle time disimpan kanonik dalam detik tapi diinput dan ditampilkan sebagai
+// jam + menit + detik. Dua helper ini dipakai api (validasi) dan web (form).
+export function hmsToSeconds(jam: number, menit: number, detik: number): number {
+  return jam * 3600 + menit * 60 + detik;
+}
+
+export function secondsToHms(total: number): { jam: number; menit: number; detik: number } {
+  const jam = Math.floor(total / 3600);
+  const menit = Math.floor((total % 3600) / 60);
+  // Detik disisakan 1 desimal: siklus molding sering di bawah satu menit.
+  const detik = Math.round((total % 60) * 10) / 10;
+  return { jam, menit, detik };
+}
+
+// Label ringkas cycle time, mis. "1j 2m 30s" atau "32s".
+export function formatCycleTime(total: number | null): string {
+  if (total == null) return "-";
+  const { jam, menit, detik } = secondsToHms(total);
+  return [jam ? `${jam}j` : "", menit ? `${menit}m` : "", detik ? `${detik}s` : ""]
+    .filter(Boolean)
+    .join(" ") || "0s";
+}
+
+// Cycle time ideal per mesin belum jadi master data; Performance dihitung dari
+// rasio cycle time ideal terhadap rata-rata aktual. ponytail: satu konstanta env
+// belum perlu, angka ini cuma dipakai satu tempat (metrics OEE).
+export const IDEAL_CYCLE_TIME_SEC = 30;

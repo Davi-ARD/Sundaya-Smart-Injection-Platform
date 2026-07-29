@@ -10,6 +10,12 @@ function prismaMock() {
   return {
     machine: { findUnique: jest.fn(), findMany: jest.fn() },
     operationalData: { findMany: jest.fn() },
+    // Maintenance korektif jadi sumber MTBF/MTTR, Log Produksi jadi sumber Quality.
+    maintenance: { findMany: jest.fn().mockResolvedValue([]) },
+    logProduksi: {
+      groupBy: jest.fn().mockResolvedValue([]),
+      aggregate: jest.fn().mockResolvedValue({ _sum: { goodProduct: null, rejectCount: null } }),
+    },
     job: { count: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
     rentalExtension: { count: jest.fn().mockResolvedValue(0) },
   };
@@ -24,7 +30,12 @@ describe('DashboardService.sundaya', () => {
     ]);
     // Hanya m1 punya event (satu RUNNING -> OEE & utilization 100). m2 tanpa event.
     prisma.operationalData.findMany.mockResolvedValue([
-      { machineId: 'm1', status: 'RUNNING', downtimeReason: null, occurredAt: new Date('2026-07-23T00:00:00Z') },
+      {
+        machineId: 'm1',
+        status: 'RUNNING',
+        cycleTimeSec: null,
+        occurredAt: new Date('2026-07-23T00:00:00Z'),
+      },
     ]);
     prisma.job.count.mockResolvedValue(3);
 
@@ -40,7 +51,7 @@ describe('DashboardService.sundaya', () => {
     const byStatus = Object.fromEntries(d.operationalStatusCounts.map((c) => [c.status, c.count]));
     expect(byStatus[MachineOperationalStatus.RUNNING]).toBe(1);
     expect(byStatus[MachineOperationalStatus.STANDBY]).toBe(1);
-    expect(byStatus[MachineOperationalStatus.BREAKDOWN]).toBe(0);
+    expect(byStatus[MachineOperationalStatus.SETUP]).toBe(0);
     expect(d.operationalStatusCounts).toHaveLength(Object.values(MachineOperationalStatus).length);
   });
 
@@ -103,7 +114,7 @@ describe('DashboardService.machineMetrics', () => {
     const prisma = prismaMock();
     prisma.machine.findUnique.mockResolvedValue({ id: 'm1', machineNumber: 'IM-03' });
     prisma.operationalData.findMany.mockResolvedValue([
-      { status: 'RUNNING', downtimeReason: null, occurredAt: new Date('2026-07-23T00:00:00Z') },
+      { status: 'RUNNING', cycleTimeSec: null, occurredAt: new Date('2026-07-23T00:00:00Z') },
     ]);
 
     const service = new DashboardService(prisma as unknown as PrismaService);

@@ -1,5 +1,4 @@
 import {
-  DeliveryStatus,
   JobLifecycle,
   LogProduksiEventType,
   MoldTrackingStatus,
@@ -9,7 +8,6 @@ import {
 import { User as PrismaUser } from '@prisma/client';
 import { DashboardPenyewaService } from './dashboard-penyewa.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { PengirimanService } from '../pengiriman/pengiriman.service';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const inDays = (days: number) => new Date(Date.now() + days * DAY_MS);
@@ -25,13 +23,12 @@ function prismaMock() {
 const manager = { id: 'mgr-1', role: Role.MANAGER_PENYEWA } as unknown as PrismaUser;
 const adminPenyewa = { id: 'ap-1', role: Role.ADMIN_PENYEWA, parentId: 'mgr-1' } as unknown as PrismaUser;
 
-function svc(prisma: ReturnType<typeof prismaMock>, rows: unknown[] = []) {
-  const pengiriman = { list: jest.fn().mockResolvedValue(rows) } as unknown as PengirimanService;
-  return new DashboardPenyewaService(prisma as unknown as PrismaService, pengiriman);
+function svc(prisma: ReturnType<typeof prismaMock>) {
+  return new DashboardPenyewaService(prisma as unknown as PrismaService);
 }
 
 describe('DashboardPenyewaService.manager', () => {
-  it('agregasi + onTimeDeliveryRate dari Log Pengiriman + avgAchievement', async () => {
+  it('agregasi mold di Sundaya, job berjalan, produk baik, dan avgAchievement', async () => {
     const prisma = prismaMock();
     prisma.mold.count.mockResolvedValue(3);
     prisma.job.count.mockResolvedValue(2);
@@ -44,34 +41,42 @@ describe('DashboardPenyewaService.manager', () => {
       { jobId: 'j1', _sum: { goodProduct: 500 } }, // 50%
       { jobId: 'j2', _sum: { goodProduct: 500 } }, // 100%
     ]);
-    // 3 tiba: 2 ontime, 1 terlambat -> 66.7%
-    const rows = [
-      { status: DeliveryStatus.TIBA_ONTIME },
-      { status: DeliveryStatus.TIBA_ONTIME },
-      { status: DeliveryStatus.TIBA_TERLAMBAT },
-      { status: DeliveryStatus.BELUM_TIBA }, // belum tiba tidak dihitung
-    ];
 
-    const result = await svc(prisma, rows).manager(manager);
+    const result = await svc(prisma).manager(manager);
 
     expect(result.moldsAtSundaya).toBe(3);
     expect(result.ongoing).toBe(2);
     expect(result.totalGoodProduct).toBe(900);
     expect(result.avgAchievement).toBe(75); // (50 + 100) / 2
-    expect(result.onTimeDeliveryRate).toBe(66.7);
   });
 
-  it('tanpa kedatangan -> onTimeDeliveryRate 100; tanpa target -> avgAchievement 0', async () => {
+  it('mold di Sundaya hanya menghitung status RECEIVED dan PRODUCTION', async () => {
+    const prisma = prismaMock();
+    prisma.mold.count.mockResolvedValue(1);
+    prisma.job.count.mockResolvedValue(0);
+    prisma.logProduksi.aggregate.mockResolvedValue({ _sum: { goodProduct: null } });
+    prisma.job.findMany.mockResolvedValue([]);
+
+    await svc(prisma).manager(manager);
+
+    const where = prisma.mold.count.mock.calls[0][0].where;
+    expect(where.trackingStatus.in).toEqual([
+      MoldTrackingStatus.RECEIVED,
+      MoldTrackingStatus.PRODUCTION,
+    ]);
+    expect(where.managerId).toBe('mgr-1');
+  });
+
+  it('tanpa target -> avgAchievement 0', async () => {
     const prisma = prismaMock();
     prisma.mold.count.mockResolvedValue(0);
     prisma.job.count.mockResolvedValue(0);
     prisma.logProduksi.aggregate.mockResolvedValue({ _sum: { goodProduct: null } });
     prisma.job.findMany.mockResolvedValue([]);
 
-    const result = await svc(prisma, []).manager(manager);
+    const result = await svc(prisma).manager(manager);
     expect(result.totalGoodProduct).toBe(0);
     expect(result.avgAchievement).toBe(0);
-    expect(result.onTimeDeliveryRate).toBe(100);
   });
 });
 
@@ -162,7 +167,7 @@ describe('DashboardPenyewaService.moldPlan', () => {
         namaProduk: 'Housing cover',
         cavity: 4,
         tonaseTon: 150,
-        trackingStatus: MoldTrackingStatus.ON_MACHINE,
+        trackingStatus: MoldTrackingStatus.PRODUCTION,
         planMaterialUtama: 'ABS Resin',
         estimasiKg: 800,
         targetOutput: 1000,

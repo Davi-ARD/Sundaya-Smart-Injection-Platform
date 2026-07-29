@@ -75,7 +75,6 @@ export class JobsService {
           estimasiMaterialKg: dto.estimasiMaterialKg,
           materialTambahan: dto.materialTambahan,
           targetOutput: dto.targetOutput,
-          rencanaKirimMold: dto.rencanaKirimMold ? new Date(dto.rencanaKirimMold) : undefined,
         },
         ...withDetails,
       });

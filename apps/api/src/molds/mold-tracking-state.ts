@@ -1,30 +1,41 @@
 import { ConflictException, ForbiddenException } from '@nestjs/common';
 import {
-  MOLD_TEKNISI_ALLOWED,
+  MOLD_MANUAL_TRANSITIONS,
   MOLD_TRACKING_FLOW,
   MoldTrackingStatus as MT,
   Role,
 } from '@mold-tracker/shared';
 
-// Peta transisi (MOLD_TRACKING_FLOW) dan subset Teknisi (MOLD_TEKNISI_ALLOWED)
-// tinggal di packages/shared: satu sumber kebenaran dipakai api (guard) dan web
-// (tombol transisi). Sumbu ini independen dari lifecycle job dan status mesin.
+// Urutan linear 6-state. Indeks dipakai untuk membandingkan maju/mundur pada
+// transisi otomatis (idempoten: event domain yang terulang tidak menurunkan status).
+export const MOLD_ORDER: MT[] = [
+  MT.PLANNING,
+  MT.DELIVERY,
+  MT.RECEIVED,
+  MT.PRODUCTION,
+  MT.SEND_BACK,
+  MT.COMPLETED,
+];
 
-// Validasi transisi struktural (409 bila tidak sah menurut peta).
+export const moldRank = (status: MT): number => MOLD_ORDER.indexOf(status);
+
+// Validasi transisi manual: hanya satu langkah maju sesuai MOLD_TRACKING_FLOW.
 export function assertMoldTransition(from: MT, to: MT): void {
   if (!MOLD_TRACKING_FLOW[from].includes(to)) {
     throw new ConflictException(`Transisi mold ${from} -> ${to} tidak sah`);
   }
 }
 
-// Otorisasi per transisi: Admin Sundaya semua; Teknisi hanya subset setup/produksi.
-export function assertRoleMayTransition(role: Role, from: MT, to: MT): void {
-  if (role === Role.ADMIN_SUNDAYA) return;
-  if (
-    role === Role.TEKNISI_SUNDAYA &&
-    MOLD_TEKNISI_ALLOWED.some(([f, t]) => f === from && t === to)
-  ) {
-    return;
+// Empat status pertama hanya boleh berpindah lewat event domain (Log Pengiriman,
+// Log Penerimaan, Log Produksi), bukan tombol. Tombol hanya untuk SEND_BACK dan
+// COMPLETED, dan hanya Admin Sundaya yang berwenang.
+export function assertManualTransition(role: Role, to: MT): void {
+  if (!MOLD_MANUAL_TRANSITIONS.includes(to)) {
+    throw new ConflictException(
+      `Status ${to} disetel otomatis dari event domain, tidak lewat tombol`,
+    );
   }
-  throw new ForbiddenException('Teknisi hanya boleh transisi setup/produksi mold');
+  if (role !== Role.ADMIN_SUNDAYA) {
+    throw new ForbiddenException('Hanya Admin Sundaya boleh menutup siklus mold');
+  }
 }
