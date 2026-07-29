@@ -518,3 +518,28 @@ export interface AppNotification {
 // Warning jika sisa sewa <= 3 hari, Critical jika <= 1 hari (aturan rental SSIP).
 export const RENTAL_WARNING_DAYS = 3;
 export const RENTAL_CRITICAL_DAYS = 1;
+
+// Peta transisi tracking fisik mold (10-state linear, cabang REPAIR). Sumber
+// kebenaran tunggal dipakai apps/api (validasi + guard) dan apps/web (tombol
+// transisi yang tampil). Transisi hanya lewat sisi terdaftar di sini.
+export const MOLD_TRACKING_FLOW: Record<MoldTrackingStatus, MoldTrackingStatus[]> = {
+  [MoldTrackingStatus.PLANNING]: [MoldTrackingStatus.READY_DELIVERY],
+  [MoldTrackingStatus.READY_DELIVERY]: [MoldTrackingStatus.DELIVERY],
+  [MoldTrackingStatus.DELIVERY]: [MoldTrackingStatus.RECEIVED],
+  [MoldTrackingStatus.RECEIVED]: [MoldTrackingStatus.WAITING_PRODUCTION],
+  [MoldTrackingStatus.WAITING_PRODUCTION]: [MoldTrackingStatus.ON_MACHINE],
+  [MoldTrackingStatus.ON_MACHINE]: [MoldTrackingStatus.PRODUCTION],
+  [MoldTrackingStatus.PRODUCTION]: [MoldTrackingStatus.REPAIR, MoldTrackingStatus.SEND_BACK],
+  [MoldTrackingStatus.REPAIR]: [MoldTrackingStatus.ON_MACHINE],
+  [MoldTrackingStatus.SEND_BACK]: [MoldTrackingStatus.COMPLETED],
+  [MoldTrackingStatus.COMPLETED]: [],
+};
+
+// Subset transisi setup/produksi yang boleh dijalankan TEKNISI_SUNDAYA. Sisanya
+// (delivery, received, send back, completed) khusus ADMIN_SUNDAYA.
+export const MOLD_TEKNISI_ALLOWED: ReadonlyArray<readonly [MoldTrackingStatus, MoldTrackingStatus]> = [
+  [MoldTrackingStatus.WAITING_PRODUCTION, MoldTrackingStatus.ON_MACHINE],
+  [MoldTrackingStatus.ON_MACHINE, MoldTrackingStatus.PRODUCTION],
+  [MoldTrackingStatus.PRODUCTION, MoldTrackingStatus.REPAIR],
+  [MoldTrackingStatus.REPAIR, MoldTrackingStatus.ON_MACHINE],
+];

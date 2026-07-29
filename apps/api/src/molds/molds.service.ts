@@ -23,6 +23,19 @@ export class MoldsService {
     return toMold(await this.getOwned(managerId, id));
   }
 
+  // Staf Sundaya: baca semua mold (single-provider, tanpa scoping tenant),
+  // dipakai untuk approval booking dan transisi tracking.
+  async findAllStaff(): Promise<Mold[]> {
+    const molds = await this.prisma.mold.findMany({ orderBy: { createdAt: 'desc' } });
+    return molds.map(toMold);
+  }
+
+  async findOneStaff(id: string): Promise<Mold> {
+    const mold = await this.prisma.mold.findUnique({ where: { id } });
+    if (!mold) throw new NotFoundException('Cetakan tidak ditemukan');
+    return toMold(mold);
+  }
+
   // trackingStatus di-default PLANNING oleh schema; tidak diterima dari client.
   async create(managerId: string, dto: CreateMoldDto): Promise<Mold> {
     try {

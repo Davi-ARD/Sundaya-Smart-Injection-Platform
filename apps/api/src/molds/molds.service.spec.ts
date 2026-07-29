@@ -86,4 +86,25 @@ describe('MoldsService', () => {
       ConflictException,
     );
   });
+
+  it('findAllStaff tanpa filter tenant (baca semua)', async () => {
+    const prisma = mockPrisma();
+    prisma.mold.findMany.mockResolvedValue([moldRow({}), moldRow({ id: 'mold2', managerId: 'other' })]);
+    const result = await svc(prisma).findAllStaff();
+    expect(prisma.mold.findMany.mock.calls[0][0].where).toBeUndefined();
+    expect(result).toHaveLength(2);
+  });
+
+  it('findOneStaff mold manapun tanpa cek managerId', async () => {
+    const prisma = mockPrisma();
+    prisma.mold.findUnique.mockResolvedValue(moldRow({ managerId: 'other' }));
+    const result = await svc(prisma).findOneStaff('mold1');
+    expect(result.id).toBe('mold1');
+  });
+
+  it('findOneStaff mold tidak ada -> NotFound', async () => {
+    const prisma = mockPrisma();
+    prisma.mold.findUnique.mockResolvedValue(null);
+    await expect(svc(prisma).findOneStaff('x')).rejects.toBeInstanceOf(NotFoundException);
+  });
 });

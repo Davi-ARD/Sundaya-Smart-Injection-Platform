@@ -2,7 +2,9 @@ import type { ReactNode } from 'react'
 import {
   DeliveryStatus,
   JobLifecycle,
+  MachineOperationalStatus,
   MachineStatus,
+  MaintenanceStatus,
   MoldTrackingStatus,
   ProgressMolding,
   WarrantyStatus,
@@ -69,6 +71,44 @@ export const machineStatusLabel: Record<MachineStatus, string> = {
 
 export function MachineStatusBadge({ status }: { status: MachineStatus }) {
   return <Badge tone={machineStatusTone[status]}>{machineStatusLabel[status]}</Badge>
+}
+
+// --- Mesin (realtime Layer 1) ---
+const machineOperationalTone: Record<MachineOperationalStatus, BadgeTone> = {
+  [MachineOperationalStatus.RUNNING]: 'emerald',
+  [MachineOperationalStatus.SETUP]: 'sky',
+  [MachineOperationalStatus.STANDBY]: 'slate',
+  [MachineOperationalStatus.BREAKDOWN]: 'rose',
+  [MachineOperationalStatus.MAINTENANCE]: 'amber',
+}
+
+export const machineOperationalLabel: Record<MachineOperationalStatus, string> = {
+  [MachineOperationalStatus.RUNNING]: 'Running',
+  [MachineOperationalStatus.SETUP]: 'Setup',
+  [MachineOperationalStatus.STANDBY]: 'Standby',
+  [MachineOperationalStatus.BREAKDOWN]: 'Breakdown',
+  [MachineOperationalStatus.MAINTENANCE]: 'Maintenance',
+}
+
+export function MachineOperationalBadge({ status }: { status: MachineOperationalStatus }) {
+  return <Badge tone={machineOperationalTone[status]}>{machineOperationalLabel[status]}</Badge>
+}
+
+// --- Maintenance (SSIP) ---
+const maintenanceStatusTone: Record<MaintenanceStatus, BadgeTone> = {
+  [MaintenanceStatus.TERJADWAL]: 'amber',
+  [MaintenanceStatus.BERLANGSUNG]: 'sky',
+  [MaintenanceStatus.SELESAI]: 'emerald',
+}
+
+export const maintenanceStatusLabel: Record<MaintenanceStatus, string> = {
+  [MaintenanceStatus.TERJADWAL]: 'Terjadwal',
+  [MaintenanceStatus.BERLANGSUNG]: 'Berlangsung',
+  [MaintenanceStatus.SELESAI]: 'Selesai',
+}
+
+export function MaintenanceStatusBadge({ status }: { status: MaintenanceStatus }) {
+  return <Badge tone={maintenanceStatusTone[status]}>{maintenanceStatusLabel[status]}</Badge>
 }
 
 // --- Job lifecycle (booking) ---
