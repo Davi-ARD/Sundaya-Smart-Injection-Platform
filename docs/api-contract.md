@@ -94,11 +94,11 @@ Role: PENYEWA (pemilik). Menghapus permanen sub-akun Operator miliknya. Ditolak 
 CRUD cetakan milik Manager Penyewa. Scoping tenant di server: Manager hanya melihat dan mengubah cetakan miliknya sendiri; cetakan milik tenant lain dibalas 404 (tidak dibocorkan keberadaannya). Transisi `trackingStatus` tidak lewat modul ini melainkan endpoint tracking terpisah (service-guarded); cetakan baru selalu berstatus `PLANNING`.
 
 ### GET /molds
-Role: MANAGER_PENYEWA. Daftar cetakan milik Manager (terbaru dulu).
+Role: MANAGER_PENYEWA (miliknya), ADMIN_SUNDAYA, TEKNISI_SUNDAYA. Manager melihat cetakan miliknya (terbaru dulu); staf Sundaya melihat semua (single-provider, tanpa scoping tenant) untuk approval booking dan transisi tracking.
 - Response 200: `Mold[]`
 
 ### GET /molds/:id
-Role: MANAGER_PENYEWA (pemilik). Cetakan milik Manager lain dibalas 404.
+Role: MANAGER_PENYEWA (pemilik, lainnya 404), ADMIN_SUNDAYA, TEKNISI_SUNDAYA (baca semua).
 - Response 200: `Mold`
 
 ### POST /molds

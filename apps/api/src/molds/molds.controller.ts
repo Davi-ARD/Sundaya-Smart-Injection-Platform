@@ -7,19 +7,28 @@ import { CreateMoldDto, UpdateMoldDto } from './dto';
 
 // Cetakan (Mold). CRUD milik Manager Penyewa. Transisi tracking status ada di
 // endpoint terpisah (modul tracking, Dev A).
+// ponytail: GET dibuka juga untuk staf Sundaya (baca semua, single-provider
+// jadi tanpa scoping tenant) karena mereka butuh melihat mold untuk approval
+// booking dan transisi tracking (ADMIN_SUNDAYA semua transisi, TEKNISI setup).
+const STAF_TRACKING = [Role.ADMIN_SUNDAYA, Role.TEKNISI_SUNDAYA] as const;
+
 @Roles(Role.MANAGER_PENYEWA)
 @Controller('molds')
 export class MoldsController {
   constructor(private molds: MoldsService) {}
 
+  @Roles(Role.MANAGER_PENYEWA, ...STAF_TRACKING)
   @Get()
   findAll(@CurrentUser() actor: PrismaUser): Promise<Mold[]> {
-    return this.molds.findAll(actor.id);
+    if (actor.role === Role.MANAGER_PENYEWA) return this.molds.findAll(actor.id);
+    return this.molds.findAllStaff();
   }
 
+  @Roles(Role.MANAGER_PENYEWA, ...STAF_TRACKING)
   @Get(':id')
   findOne(@CurrentUser() actor: PrismaUser, @Param('id') id: string): Promise<Mold> {
-    return this.molds.findOne(actor.id, id);
+    if (actor.role === Role.MANAGER_PENYEWA) return this.molds.findOne(actor.id, id);
+    return this.molds.findOneStaff(id);
   }
 
   @Post()

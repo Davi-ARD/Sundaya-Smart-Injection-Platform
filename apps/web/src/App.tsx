@@ -14,13 +14,11 @@ import { ManagerDashboardPage } from './features/dashboard/ManagerDashboardPage'
 import { PenyewaAdminsPage } from './features/penyewa-admins/PenyewaAdminsPage'
 import { LogProduksiPage } from './features/log-produksi/LogProduksiPage'
 import { JobDashboardPage } from './features/dashboard/JobDashboardPage'
-import {
-  MachinesPage,
-  MaintenancePage,
-  MoldTrackingPage,
-  SundayaDashboardPage,
-  UsersPage,
-} from './pages/placeholders'
+import { SundayaDashboardPage } from './features/dashboard/SundayaDashboardPage'
+import { MachinesPage } from './features/machines/MachinesPage'
+import { MoldTrackingPage } from './features/molds/MoldTrackingPage'
+import { MaintenancePage } from './features/maintenance/MaintenancePage'
+import { UsersPage } from './features/users/UsersPage'
 
 const MANAGER = [Role.MANAGER_PENYEWA]
 const ADMIN_PENYEWA = [Role.ADMIN_PENYEWA]
