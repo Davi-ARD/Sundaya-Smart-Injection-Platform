@@ -8,6 +8,7 @@ import {
 } from '@mold-tracker/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { MoldTrackingService } from '../molds/mold-tracking.service';
+import { assertNotFuture } from '../common/time';
 import { CreateLogProduksiDto } from './dto';
 import { toLogProduksi } from './log-produksi.mapper';
 
@@ -37,6 +38,8 @@ export class LogProduksiService {
   // mold ikut maju ke PRODUCTION (idempoten: event kedua dan seterusnya tidak
   // mengubah apa pun karena advance() hanya bergerak maju).
   async append(user: PrismaUser, jobId: string, dto: CreateLogProduksiDto): Promise<LogProduksi> {
+    // Event Layer 2 mencatat kejadian yang sudah terjadi, bukan rencana.
+    assertNotFuture(dto.occurredAt, 'occurredAt');
     const job = await this.getJobInTenant(user, jobId);
     const eventData = this.buildEventData(dto);
 

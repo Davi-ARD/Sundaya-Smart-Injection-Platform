@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Archive, ArchiveRestore, Factory, Gauge, Pencil, Plus } from 'lucide-react'
 import {
-  DowntimeReason,
   MachineOperationalStatus,
   Role,
+  TEKNISI_INPUT_STATUS,
+  hmsToSeconds,
   type CreateMachineRequest,
   type CreateOperationalDataRequest,
   type Machine,
@@ -26,15 +27,6 @@ import { FieldGroup, SelectField, TextAreaField, TextField } from '../../compone
 import { useToast } from '../../components/ui/Toast'
 import { errorMessage } from '../../lib/errorMessage'
 import { formatDate } from '../../lib/format'
-
-const downtimeReasonLabel: Record<DowntimeReason, string> = {
-  [DowntimeReason.BREAKDOWN]: 'Breakdown',
-  [DowntimeReason.SETUP_ADJUSTMENT]: 'Setup & Adjustment',
-  [DowntimeReason.MINOR_STOP]: 'Minor Stop',
-  [DowntimeReason.REDUCED_SPEED]: 'Reduced Speed',
-  [DowntimeReason.STARTUP_REJECT]: 'Startup Reject',
-  [DowntimeReason.PRODUCTION_REJECT]: 'Production Reject',
-}
 
 const nowLocal = () => {
   const now = new Date()
@@ -324,8 +316,10 @@ function MachineFormPanel({
   )
 }
 
-// Input status realtime (Layer 1, Teknisi). Reason wajib saat non-RUNNING,
-// dilarang saat RUNNING (ditegakkan juga di server).
+// Input status realtime (Layer 1, Teknisi). Pilihan status hanya Setup dan
+// Running: Standby cuma status awal mesin baru, Maintenance disetel otomatis
+// oleh modul Maintenance. Cycle time diinput jam + menit + detik, dikirim ke
+// server sebagai total detik.
 function OperationalFormPanel({
   machine,
   onClose,
@@ -338,13 +332,14 @@ function OperationalFormPanel({
   const { accessToken } = useAuth()
   const toast = useToast()
   const [status, setStatus] = useState<MachineOperationalStatus>(MachineOperationalStatus.RUNNING)
-  const [downtimeReason, setDowntimeReason] = useState<DowntimeReason>(DowntimeReason.BREAKDOWN)
-  const [cycleTimeSec, setCycleTimeSec] = useState('')
+  const [jam, setJam] = useState('')
+  const [menit, setMenit] = useState('')
+  const [detik, setDetik] = useState('')
   const [occurredAt, setOccurredAt] = useState(nowLocal())
   const [catatan, setCatatan] = useState('')
   const [isSaving, setIsSaving] = useState(false)
 
-  const isRunning = status === MachineOperationalStatus.RUNNING
+  const totalDetik = hmsToSeconds(Number(jam || 0), Number(menit || 0), Number(detik || 0))
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
@@ -352,8 +347,7 @@ function OperationalFormPanel({
     try {
       const body: CreateOperationalDataRequest = {
         status,
-        downtimeReason: isRunning ? undefined : downtimeReason,
-        cycleTimeSec: cycleTimeSec.trim() === '' ? undefined : Number(cycleTimeSec),
+        cycleTimeSec: totalDetik > 0 ? totalDetik : undefined,
         occurredAt: new Date(occurredAt).toISOString(),
         catatan: catatan.trim() === '' ? undefined : catatan.trim(),
       }
@@ -378,39 +372,31 @@ function OperationalFormPanel({
           label="Status"
           value={status}
           onChange={setStatus}
-          options={Object.values(MachineOperationalStatus).map((value) => ({
+          options={TEKNISI_INPUT_STATUS.map((value) => ({
             value,
             label: machineOperationalLabel[value],
           }))}
         />
-        {!isRunning ? (
-          <SelectField
-            label="Alasan (reason code)"
-            value={downtimeReason}
-            onChange={setDowntimeReason}
-            options={Object.values(DowntimeReason).map((value) => ({
-              value,
-              label: downtimeReasonLabel[value],
-            }))}
-          />
-        ) : null}
-        <FieldGroup>
-          <TextField
-            label="Waktu kejadian"
-            type="datetime-local"
-            value={occurredAt}
-            onChange={setOccurredAt}
-          />
-          <TextField
-            label="Cycle time (detik)"
-            type="number"
-            min={0}
-            step="0.1"
-            required={false}
-            value={cycleTimeSec}
-            onChange={setCycleTimeSec}
-          />
-        </FieldGroup>
+        <TextField
+          label="Waktu kejadian"
+          type="datetime-local"
+          value={occurredAt}
+          onChange={setOccurredAt}
+        />
+
+        <div>
+          <p className="text-sm font-medium text-slate-700">Cycle time</p>
+          <p className="mt-0.5 text-xs text-slate-500">
+            Durasi satu siklus molding penuh: tutup mold, injeksi, pendinginan, sampai eject.
+            Dibandingkan dengan cycle time ideal untuk menghitung Performance pada OEE.
+          </p>
+          <div className="mt-2 grid grid-cols-3 gap-3">
+            <TextField label="Jam" type="number" min={0} required={false} value={jam} onChange={setJam} />
+            <TextField label="Menit" type="number" min={0} max={59} required={false} value={menit} onChange={setMenit} />
+            <TextField label="Detik" type="number" min={0} step="0.1" required={false} value={detik} onChange={setDetik} />
+          </div>
+        </div>
+
         <TextAreaField label="Catatan" value={catatan} onChange={setCatatan} />
 
         <div className="flex justify-end gap-2 pt-2">

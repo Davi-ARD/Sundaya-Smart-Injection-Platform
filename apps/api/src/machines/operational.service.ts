@@ -6,6 +6,7 @@ import {
   OperationalData,
 } from '@mold-tracker/shared';
 import { PrismaService } from '../prisma/prisma.service';
+import { assertNotFuture } from '../common/time';
 import { CreateOperationalDataDto } from './operational.dto';
 import { toOperationalData } from './operational.mapper';
 
@@ -25,6 +26,10 @@ export class OperationalService {
     machineId: string,
     dto: CreateOperationalDataDto,
   ): Promise<OperationalData> {
+    // Durasi tiap status dihitung dari jarak antar occurredAt, jadi satu event
+    // bertanggal masa depan akan menggelembungkan durasi status sebelumnya.
+    assertNotFuture(dto.occurredAt, 'occurredAt');
+
     const machine = await this.prisma.machine.findUnique({
       where: { id: machineId },
       select: { operationalStatus: true },

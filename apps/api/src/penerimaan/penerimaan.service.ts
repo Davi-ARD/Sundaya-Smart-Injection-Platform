@@ -4,6 +4,7 @@ import { ItemPengiriman, LogPenerimaan, MoldTrackingStatus, Role } from '@mold-t
 import { PrismaService } from '../prisma/prisma.service';
 import { MoldTrackingService } from '../molds/mold-tracking.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { assertNotFuture } from '../common/time';
 import { CreateLogPenerimaanDto } from './dto';
 import { toLogPenerimaan } from './penerimaan.mapper';
 
@@ -28,6 +29,9 @@ export class PenerimaanService {
   // gerbang Sundaya (tanggung jawab Sundaya), yang itu material masuk stok lantai
   // produksi (tanggung jawab Penyewa). Dua kejadian fisik yang berbeda.
   async create(user: PrismaUser, dto: CreateLogPenerimaanDto): Promise<LogPenerimaan> {
+    // Penerimaan mencatat barang yang sudah tiba, bukan rencana kedatangan.
+    assertNotFuture(dto.diterimaAt, 'diterimaAt');
+
     const job = await this.prisma.job.findUnique({
       where: { id: dto.jobId },
       select: { id: true, jobNumber: true, managerId: true, moldId: true },

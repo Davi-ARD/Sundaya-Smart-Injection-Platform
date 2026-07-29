@@ -9,6 +9,8 @@ import type {
   JobLogEntry,
   MoldPlanRow,
   RentalExtension,
+  CreateLogPenerimaanRequest,
+  CreateLogPengirimanRequest,
   CreateLogProduksiRequest,
   CreateMachineRequest,
   CreateMaintenanceRequest,
@@ -16,10 +18,11 @@ import type {
   CreateOperationalDataRequest,
   CreatePenyewaAdminRequest,
   CreateStaffRequest,
-  DeliveryRow,
   Job,
   JobDashboard,
   JobLifecycle,
+  LogPenerimaan,
+  LogPengiriman,
   LogProduksi,
   Machine,
   MachineMetrics,
@@ -283,10 +286,30 @@ export const api = {
     return request<LogProduksi>('POST', `/jobs/${jobId}/logs`, token, body)
   },
 
-  // ===================== Log Pengiriman (read-only) =====================
-  async listPengiriman(token: string | null, managerId?: string): Promise<DeliveryRow[]> {
-    const query = buildQuery({ managerId })
-    return request<DeliveryRow[]>('GET', `/pengiriman${query}`, token)
+  // ===================== Log Pengiriman (Manager Penyewa) =====================
+  async listPengiriman(token: string | null, jobId?: string): Promise<LogPengiriman[]> {
+    const query = buildQuery({ jobId })
+    return request<LogPengiriman[]>('GET', `/pengiriman${query}`, token)
+  },
+
+  async createPengiriman(
+    token: string | null,
+    body: CreateLogPengirimanRequest,
+  ): Promise<LogPengiriman> {
+    return request<LogPengiriman>('POST', '/pengiriman', token, body)
+  },
+
+  // ===================== Log Penerimaan (Admin Sundaya) =====================
+  async listPenerimaan(token: string | null, jobId?: string): Promise<LogPenerimaan[]> {
+    const query = buildQuery({ jobId })
+    return request<LogPenerimaan[]>('GET', `/penerimaan${query}`, token)
+  },
+
+  async createPenerimaan(
+    token: string | null,
+    body: CreateLogPenerimaanRequest,
+  ): Promise<LogPenerimaan> {
+    return request<LogPenerimaan>('POST', '/penerimaan', token, body)
   },
 
   // ===================== Dashboard =====================

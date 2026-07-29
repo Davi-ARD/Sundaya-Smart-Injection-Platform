@@ -26,6 +26,8 @@ function svc(prisma: ReturnType<typeof prismaMock>, advance = jest.fn()) {
   } as unknown as MoldTrackingService);
 }
 
+const PAST_ISO = new Date(Date.now() - 60_000).toISOString();
+
 const adminPenyewa = { id: 'ap-1', role: Role.ADMIN_PENYEWA, parentId: 'mgr-1' } as unknown as PrismaUser;
 
 // Row lengkap: toLogProduksi butuh semua field (tanggal harus Date).
@@ -56,7 +58,7 @@ describe('LogProduksiService.append', () => {
 
     await svc(prisma).append(adminPenyewa, 'job-1', {
       eventType: LogProduksiEventType.MATERIAL_DATANG,
-      occurredAt: '2026-08-01T00:00:00.000Z',
+      occurredAt: PAST_ISO,
       materialName: 'PP Resin',
       jumlahKg: 500,
     } as never);
@@ -76,7 +78,7 @@ describe('LogProduksiService.append', () => {
     await expect(
       svc(prisma).append(adminPenyewa, 'job-1', {
         eventType: LogProduksiEventType.MATERIAL_DATANG,
-        occurredAt: '2026-08-01T00:00:00.000Z',
+        occurredAt: PAST_ISO,
         materialName: 'PP Resin',
       } as never),
     ).rejects.toBeInstanceOf(BadRequestException);
@@ -89,7 +91,7 @@ describe('LogProduksiService.append', () => {
     await expect(
       svc(prisma).append(adminPenyewa, 'job-1', {
         eventType: LogProduksiEventType.PRODUKSI_HARIAN,
-        occurredAt: '2026-08-01T00:00:00.000Z',
+        occurredAt: PAST_ISO,
         rejectCount: 2,
       } as never),
     ).rejects.toBeInstanceOf(BadRequestException);
@@ -101,7 +103,7 @@ describe('LogProduksiService.append', () => {
     await expect(
       svc(prisma).append(adminPenyewa, 'job-1', {
         eventType: LogProduksiEventType.PROGRESS_MOLDING,
-        occurredAt: '2026-08-01T00:00:00.000Z',
+        occurredAt: PAST_ISO,
       } as never),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
@@ -114,7 +116,7 @@ describe('LogProduksiService.append', () => {
     );
     await svc(prisma).append(adminPenyewa, 'job-1', {
       eventType: LogProduksiEventType.PROGRESS_MOLDING,
-      occurredAt: '2026-08-01T00:00:00.000Z',
+      occurredAt: PAST_ISO,
       progressMolding: ProgressMolding.ONGOING,
     } as never);
     expect(prisma.logProduksi.create.mock.calls[0][0].data.progressMolding).toBe(ProgressMolding.ONGOING);
@@ -130,7 +132,7 @@ describe('LogProduksiService.append', () => {
 
     await svc(prisma, advance).append(adminPenyewa, 'job-1', {
       eventType: LogProduksiEventType.PRODUKSI_HARIAN,
-      occurredAt: '2026-08-01T00:00:00.000Z',
+      occurredAt: PAST_ISO,
       goodProduct: 100,
       rejectCount: 2,
     } as never);
@@ -146,7 +148,7 @@ describe('LogProduksiService.append', () => {
 
     await svc(prisma, advance).append(adminPenyewa, 'job-1', {
       eventType: LogProduksiEventType.MATERIAL_DATANG,
-      occurredAt: '2026-08-01T00:00:00.000Z',
+      occurredAt: PAST_ISO,
       materialName: 'PP Resin',
       jumlahKg: 500,
     } as never);
@@ -160,7 +162,7 @@ describe('LogProduksiService.append', () => {
     await expect(
       svc(prisma).append(adminPenyewa, 'job-1', {
         eventType: LogProduksiEventType.MATERIAL_DATANG,
-        occurredAt: '2026-08-01T00:00:00.000Z',
+        occurredAt: PAST_ISO,
         materialName: 'X',
         jumlahKg: 1,
       } as never),

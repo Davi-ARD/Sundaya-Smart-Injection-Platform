@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { Boxes, Info, PackagePlus, Plus, Truck } from 'lucide-react'
+import { Boxes, Inbox, Info, PackageCheck, Plus } from 'lucide-react'
 import {
   ItemPengiriman,
-  type CreateLogPengirimanRequest,
+  Role,
+  type CreateLogPenerimaanRequest,
   type Job,
+  type LogPenerimaan,
   type LogPengiriman,
 } from '@mold-tracker/shared'
 import { useAuth } from '../auth/authContextValue'
@@ -19,17 +21,26 @@ import { errorMessage } from '../../lib/errorMessage'
 import { optionalText } from '../../lib/form'
 import { formatDate, formatDateTime } from '../../lib/format'
 
-const today = () => new Date().toISOString().slice(0, 10)
+const nowLocal = () => {
+  const now = new Date()
+  now.setMinutes(now.getMinutes() - now.getTimezoneOffset())
+  return now.toISOString().slice(0, 16)
+}
 
-// Log Pengiriman (Manager Penyewa): catatan kapan mold dan material akan dikirim
-// ke Sundaya. Mold dan material dipisah jadi dua daftar dalam satu tab. Mencatat
-// pengiriman mold otomatis memindahkan status tracking mold ke Delivery, dan
-// Admin Sundaya langsung menerima notifikasinya.
-export function PengirimanPage() {
-  const { accessToken } = useAuth()
+// Log Penerimaan (Admin Sundaya): konfirmasi cetakan dan material tiba di lokasi
+// Sundaya, dipisah jadi dua daftar dalam satu tab. Mencatat penerimaan cetakan
+// otomatis memindahkan tracking mold ke Received, dan Manager pemilik job
+// langsung menerima notifikasinya.
+//
+// Berbeda dari Log Produksi event Material datang (Layer 2, Admin Penyewa) yang
+// mencatat material masuk stok lantai produksi: yang ini kedatangan di gerbang.
+export function PenerimaanPage() {
+  const { accessToken, user } = useAuth()
   const toast = useToast()
+  const canWrite = user?.role === Role.ADMIN_SUNDAYA
 
-  const [logs, setLogs] = useState<LogPengiriman[]>([])
+  const [logs, setLogs] = useState<LogPenerimaan[]>([])
+  const [rencana, setRencana] = useState<LogPengiriman[]>([])
   const [jobs, setJobs] = useState<Job[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [panelItem, setPanelItem] = useState<ItemPengiriman | null>(null)
@@ -37,14 +48,16 @@ export function PengirimanPage() {
   const load = useCallback(async () => {
     setIsLoading(true)
     try {
-      const [logList, jobList] = await Promise.all([
+      const [logList, rencanaList, jobList] = await Promise.all([
+        api.listPenerimaan(accessToken),
         api.listPengiriman(accessToken),
         api.listJobs(accessToken),
       ])
       setLogs(logList)
+      setRencana(rencanaList)
       setJobs(jobList)
     } catch (caught) {
-      toast.error(errorMessage(caught, 'Gagal memuat log pengiriman'))
+      toast.error(errorMessage(caught, 'Gagal memuat log penerimaan'))
     } finally {
       setIsLoading(false)
     }
@@ -60,31 +73,27 @@ export function PengirimanPage() {
     [logs],
   )
 
-  const jobColumn: Column<LogPengiriman> = {
+  const jobColumn: Column<LogPenerimaan> = {
     header: 'Job',
     cell: (l) => <span className="font-semibold text-slate-900">{l.jobNumber ?? '-'}</span>,
   }
-  const rencanaColumn: Column<LogPengiriman> = {
-    header: 'Rencana kirim',
-    cell: (l) => formatDate(l.rencanaKirim),
+  const diterimaColumn: Column<LogPenerimaan> = {
+    header: 'Diterima',
+    cell: (l) => formatDateTime(l.diterimaAt),
   }
-  const catatanColumn: Column<LogPengiriman> = {
-    header: 'Catatan',
-    cell: (l) => l.catatan ?? <span className="text-slate-400">-</span>,
-  }
-  const dicatatColumn: Column<LogPengiriman> = {
-    header: 'Dicatat',
-    cell: (l) => <span className="text-xs text-slate-400">{formatDateTime(l.createdAt)}</span>,
+  const kondisiColumn: Column<LogPenerimaan> = {
+    header: 'Kondisi',
+    cell: (l) => l.kondisi ?? <span className="text-slate-400">-</span>,
   }
 
-  const moldColumns: Column<LogPengiriman>[] = [
+  const moldColumns: Column<LogPenerimaan>[] = [
     jobColumn,
-    rencanaColumn,
-    catatanColumn,
-    dicatatColumn,
+    diterimaColumn,
+    kondisiColumn,
+    { header: 'Catatan', cell: (l) => l.catatan ?? <span className="text-slate-400">-</span> },
   ]
 
-  const materialColumns: Column<LogPengiriman>[] = [
+  const materialColumns: Column<LogPenerimaan>[] = [
     jobColumn,
     { header: 'Material', cell: (l) => l.materialName ?? '-' },
     { header: 'Jumlah', cell: (l) => (l.jumlahKg != null ? `${l.jumlahKg} kg` : '-') },
@@ -92,31 +101,59 @@ export function PengirimanPage() {
       header: 'No. surat jalan',
       cell: (l) => l.noSuratJalan ?? <span className="text-slate-400">-</span>,
     },
-    rencanaColumn,
-    dicatatColumn,
+    diterimaColumn,
+    kondisiColumn,
+  ]
+
+  const rencanaColumns: Column<LogPengiriman>[] = [
+    { header: 'Job', cell: (l) => <span className="font-semibold text-slate-900">{l.jobNumber ?? '-'}</span> },
+    {
+      header: 'Item',
+      cell: (l) => (l.item === ItemPengiriman.MOLD ? 'Cetakan' : `Material ${l.materialName ?? ''}`.trim()),
+    },
+    { header: 'Jumlah', cell: (l) => (l.jumlahKg != null ? `${l.jumlahKg} kg` : '-') },
+    { header: 'Rencana kirim', cell: (l) => formatDate(l.rencanaKirim) },
   ]
 
   return (
     <div className="mx-auto max-w-6xl">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900">Log Pengiriman</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-slate-900">Log Penerimaan</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Catat kapan cetakan dan material akan dikirim ke Sundaya. Admin Sundaya langsung
-          diberi tahu setiap ada rencana pengiriman baru.
+          Catat cetakan dan material yang tiba di lokasi Sundaya. Manager Penyewa langsung
+          diberi tahu setiap ada penerimaan baru.
         </p>
       </div>
 
       <Card
-        title="Pengiriman cetakan"
-        subtitle="Mencatat pengiriman cetakan memindahkan status tracking-nya ke Delivery."
+        title="Rencana pengiriman dari Penyewa"
+        subtitle="Dicatat Manager Penyewa, dipakai untuk mengantisipasi kedatangan."
+      >
+        {isLoading ? (
+          <TableSkeleton rows={2} columns={4} />
+        ) : rencana.length === 0 ? (
+          <p className="py-8 text-center text-sm text-slate-500">
+            Belum ada rencana pengiriman dari Penyewa.
+          </p>
+        ) : (
+          <DataTable columns={rencanaColumns} rows={rencana} rowKey={(l) => l.id} />
+        )}
+      </Card>
+
+      <Card
+        className="mt-5"
+        title="Penerimaan cetakan"
+        subtitle="Mencatat penerimaan cetakan memindahkan status tracking-nya ke Received."
         actions={
-          <Button
-            size="sm"
-            onClick={() => setPanelItem(ItemPengiriman.MOLD)}
-            disabled={jobs.length === 0}
-          >
-            <Plus className="h-3.5 w-3.5" /> Catat cetakan
-          </Button>
+          canWrite ? (
+            <Button
+              size="sm"
+              onClick={() => setPanelItem(ItemPengiriman.MOLD)}
+              disabled={jobs.length === 0}
+            >
+              <Plus className="h-3.5 w-3.5" /> Catat cetakan
+            </Button>
+          ) : null
         }
       >
         {isLoading ? (
@@ -124,12 +161,8 @@ export function PengirimanPage() {
         ) : moldLogs.length === 0 ? (
           <EmptyState
             icon={Boxes}
-            title="Belum ada rencana pengiriman cetakan"
-            message={
-              jobs.length === 0
-                ? 'Ajukan booking terlebih dahulu sebelum mencatat pengiriman.'
-                : 'Catat rencana pengiriman cetakan agar Sundaya bisa bersiap menerimanya.'
-            }
+            title="Belum ada cetakan diterima"
+            message="Catat cetakan yang sudah tiba di lokasi Sundaya."
           />
         ) : (
           <DataTable columns={moldColumns} rows={moldLogs} rowKey={(l) => l.id} />
@@ -138,26 +171,28 @@ export function PengirimanPage() {
 
       <Card
         className="mt-5"
-        title="Pengiriman material"
+        title="Penerimaan material"
         subtitle="Material dicatat terpisah beserta jumlah dan nomor surat jalan."
         actions={
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => setPanelItem(ItemPengiriman.MATERIAL)}
-            disabled={jobs.length === 0}
-          >
-            <Plus className="h-3.5 w-3.5" /> Catat material
-          </Button>
+          canWrite ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => setPanelItem(ItemPengiriman.MATERIAL)}
+              disabled={jobs.length === 0}
+            >
+              <Plus className="h-3.5 w-3.5" /> Catat material
+            </Button>
+          ) : null
         }
       >
         {isLoading ? (
           <TableSkeleton rows={3} columns={5} />
         ) : materialLogs.length === 0 ? (
           <EmptyState
-            icon={PackagePlus}
-            title="Belum ada rencana pengiriman material"
-            message="Catat material yang akan dikirim beserta perkiraan jumlahnya."
+            icon={PackageCheck}
+            title="Belum ada material diterima"
+            message="Catat material yang sudah tiba beserta jumlah aktualnya."
           />
         ) : (
           <DataTable columns={materialColumns} rows={materialLogs} rowKey={(l) => l.id} />
@@ -166,12 +201,12 @@ export function PengirimanPage() {
 
       <p className="mt-4 flex items-start gap-2 text-xs leading-5 text-slate-500">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-        Halaman ini murni catatan rencana pengiriman. Konfirmasi barang benar-benar tiba dicatat
-        Admin Sundaya di Log Penerimaan, dan Anda akan menerima notifikasinya.
+        Penerimaan di sini adalah kedatangan barang di gerbang Sundaya. Material yang masuk stok
+        lantai produksi dicatat terpisah oleh Admin Penyewa lewat Log Produksi.
       </p>
 
       {panelItem ? (
-        <PengirimanFormPanel
+        <PenerimaanFormPanel
           item={panelItem}
           jobs={jobs}
           onClose={() => setPanelItem(null)}
@@ -190,7 +225,7 @@ function EmptyState({
   title,
   message,
 }: {
-  icon: typeof Truck
+  icon: typeof Inbox
   title: string
   message: string
 }) {
@@ -205,7 +240,7 @@ function EmptyState({
   )
 }
 
-function PengirimanFormPanel({
+function PenerimaanFormPanel({
   item,
   jobs,
   onClose,
@@ -221,10 +256,11 @@ function PengirimanFormPanel({
   const isMold = item === ItemPengiriman.MOLD
 
   const [jobId, setJobId] = useState(jobs[0]?.id ?? '')
-  const [rencanaKirim, setRencanaKirim] = useState(today())
+  const [diterimaAt, setDiterimaAt] = useState(nowLocal())
   const [materialName, setMaterialName] = useState('')
   const [jumlahKg, setJumlahKg] = useState('')
   const [noSuratJalan, setNoSuratJalan] = useState('')
+  const [kondisi, setKondisi] = useState('')
   const [catatan, setCatatan] = useState('')
   const [isSaving, setIsSaving] = useState(false)
 
@@ -235,10 +271,11 @@ function PengirimanFormPanel({
       const base = {
         jobId,
         item,
-        rencanaKirim: new Date(rencanaKirim).toISOString(),
+        diterimaAt: new Date(diterimaAt).toISOString(),
+        kondisi: optionalText(kondisi),
         catatan: optionalText(catatan),
       }
-      const body: CreateLogPengirimanRequest = isMold
+      const body: CreateLogPenerimaanRequest = isMold
         ? base
         : {
             ...base,
@@ -246,11 +283,11 @@ function PengirimanFormPanel({
             jumlahKg: Number(jumlahKg),
             noSuratJalan: optionalText(noSuratJalan),
           }
-      await api.createPengiriman(accessToken, body)
-      toast.success(isMold ? 'Rencana pengiriman cetakan dicatat' : 'Rencana pengiriman material dicatat')
+      await api.createPenerimaan(accessToken, body)
+      toast.success(isMold ? 'Penerimaan cetakan dicatat' : 'Penerimaan material dicatat')
       onSaved()
     } catch (caught) {
-      toast.error(errorMessage(caught, 'Gagal mencatat pengiriman'))
+      toast.error(errorMessage(caught, 'Gagal mencatat penerimaan'))
     } finally {
       setIsSaving(false)
     }
@@ -258,10 +295,10 @@ function PengirimanFormPanel({
 
   return (
     <SidePanel
-      title={isMold ? 'Catat pengiriman cetakan' : 'Catat pengiriman material'}
+      title={isMold ? 'Catat penerimaan cetakan' : 'Catat penerimaan material'}
       subtitle={
         isMold
-          ? 'Status tracking cetakan otomatis menjadi Delivery.'
+          ? 'Status tracking cetakan otomatis menjadi Received.'
           : 'Material dicatat terpisah dari cetakan.'
       }
       onClose={onClose}
@@ -274,10 +311,10 @@ function PengirimanFormPanel({
           options={jobs.map((job) => ({ value: job.id, label: job.jobNumber }))}
         />
         <TextField
-          label="Rencana kirim"
-          type="date"
-          value={rencanaKirim}
-          onChange={setRencanaKirim}
+          label="Waktu diterima"
+          type="datetime-local"
+          value={diterimaAt}
+          onChange={setDiterimaAt}
         />
 
         {!isMold ? (
@@ -285,7 +322,7 @@ function PengirimanFormPanel({
             <TextField label="Nama material" value={materialName} onChange={setMaterialName} />
             <FieldGroup>
               <TextField
-                label="Jumlah (kg)"
+                label="Jumlah diterima (kg)"
                 type="number"
                 min={0}
                 step="0.1"
@@ -302,6 +339,12 @@ function PengirimanFormPanel({
           </>
         ) : null}
 
+        <TextField
+          label="Kondisi barang"
+          required={false}
+          value={kondisi}
+          onChange={setKondisi}
+        />
         <TextAreaField label="Catatan" value={catatan} onChange={setCatatan} />
 
         <div className="flex justify-end gap-2 pt-2">

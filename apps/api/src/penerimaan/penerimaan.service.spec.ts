@@ -25,6 +25,8 @@ function svc(prisma: ReturnType<typeof prismaMock>, advance = jest.fn(), create 
   );
 }
 
+const PAST_ISO = new Date(Date.now() - 60_000).toISOString();
+
 const adminSundaya = { id: 'adm-1', role: Role.ADMIN_SUNDAYA } as unknown as PrismaUser;
 const manager = { id: 'mgr-1', role: Role.MANAGER_PENYEWA } as unknown as PrismaUser;
 
@@ -55,7 +57,7 @@ describe('PenerimaanService.create', () => {
     await svc(prisma, advance).create(adminSundaya, {
       jobId: 'job-1',
       item: ItemPengiriman.MOLD,
-      diterimaAt: '2026-08-06T00:00:00.000Z',
+      diterimaAt: PAST_ISO,
     });
 
     expect(advance).toHaveBeenCalledWith(
@@ -77,7 +79,7 @@ describe('PenerimaanService.create', () => {
     await svc(prisma, advance).create(adminSundaya, {
       jobId: 'job-1',
       item: ItemPengiriman.MATERIAL,
-      diterimaAt: '2026-08-06T00:00:00.000Z',
+      diterimaAt: PAST_ISO,
       materialName: 'PP Resin',
       jumlahKg: 500,
     });
@@ -93,7 +95,7 @@ describe('PenerimaanService.create', () => {
       svc(prisma).create(adminSundaya, {
         jobId: 'job-1',
         item: ItemPengiriman.MATERIAL,
-        diterimaAt: '2026-08-06T00:00:00.000Z',
+        diterimaAt: PAST_ISO,
         materialName: 'PP Resin',
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
@@ -109,7 +111,7 @@ describe('PenerimaanService.create', () => {
     await svc(prisma, jest.fn(), notify).create(adminSundaya, {
       jobId: 'job-1',
       item: ItemPengiriman.MOLD,
-      diterimaAt: '2026-08-06T00:00:00.000Z',
+      diterimaAt: PAST_ISO,
     });
 
     expect(notify).toHaveBeenCalledWith(
@@ -128,7 +130,7 @@ describe('PenerimaanService.create', () => {
       svc(prisma).create(adminSundaya, {
         jobId: 'x',
         item: ItemPengiriman.MOLD,
-        diterimaAt: '2026-08-06T00:00:00.000Z',
+        diterimaAt: PAST_ISO,
       }),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
