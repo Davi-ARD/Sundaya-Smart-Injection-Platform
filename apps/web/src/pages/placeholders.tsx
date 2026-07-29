@@ -2,7 +2,6 @@ import {
   Factory,
   Gauge,
   LayoutDashboard,
-  ClipboardList,
   Users,
   Wrench,
   Route,
@@ -18,14 +17,6 @@ export const JobDashboardPage = () => (
     icon={Gauge}
     title="Dashboard Job"
     description="Pantau job aktif di lokasi Sundaya: progress, mesin, dan material."
-  />
-)
-
-export const LogProduksiPage = () => (
-  <PagePlaceholder
-    icon={ClipboardList}
-    title="Log Produksi"
-    description="Catat timeline produksi: material datang, produksi harian, progress molding."
   />
 )
 
