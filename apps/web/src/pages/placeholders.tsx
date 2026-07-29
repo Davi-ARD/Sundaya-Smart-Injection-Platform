@@ -14,14 +14,6 @@ import { PagePlaceholder } from '../components/PagePlaceholder'
 // dipindah ke features/<domain>/ saat konten fungsionalnya diimplementasi.
 
 // --- Manager Penyewa ---
-export const ManagerDashboardPage = () => (
-  <PagePlaceholder
-    icon={LayoutDashboard}
-    title="Dashboard Manager"
-    description="Ringkasan cetakan di Sundaya, produksi berjalan, dan ketepatan pengiriman."
-  />
-)
-
 export const PenyewaAdminsPage = () => (
   <PagePlaceholder
     icon={UserCog}

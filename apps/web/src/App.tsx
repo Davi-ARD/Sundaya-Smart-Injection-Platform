@@ -10,12 +10,12 @@ import { ProfilePage } from './pages/ProfilePage'
 import { MoldsPage } from './features/molds/MoldsPage'
 import { BookingPage } from './features/booking/BookingPage'
 import { PengirimanPage } from './features/pengiriman/PengirimanPage'
+import { ManagerDashboardPage } from './features/dashboard/ManagerDashboardPage'
 import {
   JobDashboardPage,
   LogProduksiPage,
   MachinesPage,
   MaintenancePage,
-  ManagerDashboardPage,
   MoldTrackingPage,
   PenyewaAdminsPage,
   SundayaDashboardPage,
