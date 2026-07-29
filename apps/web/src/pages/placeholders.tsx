@@ -3,7 +3,6 @@ import {
   Gauge,
   LayoutDashboard,
   ClipboardList,
-  UserCog,
   Users,
   Wrench,
   Route,
@@ -12,15 +11,6 @@ import { PagePlaceholder } from '../components/PagePlaceholder'
 
 // ponytail: semua halaman fase 6 masih placeholder di satu file; tiap halaman
 // dipindah ke features/<domain>/ saat konten fungsionalnya diimplementasi.
-
-// --- Manager Penyewa ---
-export const PenyewaAdminsPage = () => (
-  <PagePlaceholder
-    icon={UserCog}
-    title="Akun Admin Penyewa"
-    description="Undang dan kelola akun Admin Penyewa di bawah perusahaan Anda."
-  />
-)
 
 // --- Admin Penyewa ---
 export const JobDashboardPage = () => (
