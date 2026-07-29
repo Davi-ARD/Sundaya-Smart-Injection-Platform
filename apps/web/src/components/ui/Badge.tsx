@@ -4,6 +4,7 @@ import {
   JobLifecycle,
   MachineStatus,
   MoldTrackingStatus,
+  ProgressMolding,
   WarrantyStatus,
 } from '@mold-tracker/shared'
 
@@ -147,6 +148,23 @@ export const deliveryLabel: Record<DeliveryStatus, string> = {
 
 export function DeliveryStatusBadge({ status }: { status: DeliveryStatus }) {
   return <Badge tone={deliveryTone[status]}>{deliveryLabel[status]}</Badge>
+}
+
+// --- Progress molding (Layer 2) ---
+const progressMoldingTone: Record<ProgressMolding, BadgeTone> = {
+  [ProgressMolding.PLANNING]: 'slate',
+  [ProgressMolding.ONGOING]: 'brand',
+  [ProgressMolding.SUDAH_DIPRODUKSI]: 'emerald',
+}
+
+export const progressMoldingLabel: Record<ProgressMolding, string> = {
+  [ProgressMolding.PLANNING]: 'Planning',
+  [ProgressMolding.ONGOING]: 'Ongoing',
+  [ProgressMolding.SUDAH_DIPRODUKSI]: 'Sudah diproduksi',
+}
+
+export function ProgressMoldingBadge({ status }: { status: ProgressMolding }) {
+  return <Badge tone={progressMoldingTone[status]}>{progressMoldingLabel[status]}</Badge>
 }
 
 // --- Garansi mesin ---

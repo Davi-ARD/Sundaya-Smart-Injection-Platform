@@ -13,8 +13,8 @@ import { PengirimanPage } from './features/pengiriman/PengirimanPage'
 import { ManagerDashboardPage } from './features/dashboard/ManagerDashboardPage'
 import { PenyewaAdminsPage } from './features/penyewa-admins/PenyewaAdminsPage'
 import { LogProduksiPage } from './features/log-produksi/LogProduksiPage'
+import { JobDashboardPage } from './features/dashboard/JobDashboardPage'
 import {
-  JobDashboardPage,
   MachinesPage,
   MaintenancePage,
   MoldTrackingPage,
