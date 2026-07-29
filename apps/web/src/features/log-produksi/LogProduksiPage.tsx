@@ -11,13 +11,14 @@ import { useAuth } from '../auth/authContextValue'
 import { api } from '../../lib/api'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
-import { JobLifecycleBadge } from '../../components/ui/Badge'
+import { JobLifecycleBadge, progressMoldingLabel } from '../../components/ui/Badge'
 import { SidePanel } from '../../components/ui/SidePanel'
 import { CardSkeleton } from '../../components/ui/Skeleton'
 import { FieldGroup, SelectField, TextAreaField, TextField } from '../../components/ui/FormField'
 import { useToast } from '../../components/ui/Toast'
 import { errorMessage } from '../../lib/errorMessage'
 import { optionalNumber, optionalText } from '../../lib/form'
+import { formatDateTime } from '../../lib/format'
 
 const eventLabel: Record<LogProduksiEventType, string> = {
   [LogProduksiEventType.MATERIAL_DATANG]: 'Material datang',
@@ -30,21 +31,6 @@ const eventIcon = {
   [LogProduksiEventType.PRODUKSI_HARIAN]: Factory,
   [LogProduksiEventType.PROGRESS_MOLDING]: Layers,
 }
-
-const progressLabel: Record<ProgressMolding, string> = {
-  [ProgressMolding.PLANNING]: 'Planning',
-  [ProgressMolding.ONGOING]: 'Ongoing',
-  [ProgressMolding.SUDAH_DIPRODUKSI]: 'Sudah diproduksi',
-}
-
-const formatDateTime = (iso: string) =>
-  new Date(iso).toLocaleString('id-ID', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
 
 // Nilai <input type="datetime-local"> ('YYYY-MM-DDTHH:mm') menjadi ISO string.
 const toIso = (local: string) => new Date(local).toISOString()
@@ -233,7 +219,7 @@ function TimelineItem({ log }: { log: LogProduksi }) {
             </>
           ) : (
             <>
-              {log.progressMolding ? progressLabel[log.progressMolding] : '-'}
+              {log.progressMolding ? progressMoldingLabel[log.progressMolding] : '-'}
               {log.keteranganProgress ? ` - ${log.keteranganProgress}` : ''}
             </>
           )}
@@ -356,7 +342,7 @@ function LogFormPanel({
               onChange={setProgressMolding}
               options={Object.values(ProgressMolding).map((value) => ({
                 value,
-                label: progressLabel[value],
+                label: progressMoldingLabel[value],
               }))}
             />
             <TextField

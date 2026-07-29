@@ -1,24 +1,8 @@
-import {
-  Factory,
-  Gauge,
-  LayoutDashboard,
-  Users,
-  Wrench,
-  Route,
-} from 'lucide-react'
+import { Factory, LayoutDashboard, Users, Wrench, Route } from 'lucide-react'
 import { PagePlaceholder } from '../components/PagePlaceholder'
 
-// ponytail: semua halaman fase 6 masih placeholder di satu file; tiap halaman
-// dipindah ke features/<domain>/ saat konten fungsionalnya diimplementasi.
-
-// --- Admin Penyewa ---
-export const JobDashboardPage = () => (
-  <PagePlaceholder
-    icon={Gauge}
-    title="Dashboard Job"
-    description="Pantau job aktif di lokasi Sundaya: progress, mesin, dan material."
-  />
-)
+// ponytail: sisa placeholder tinggal halaman staf Sundaya; dipindah ke
+// features/<domain>/ oleh Dev A saat konten fungsionalnya diimplementasi.
 
 // --- Staf Sundaya (diimplementasi Dev A) ---
 export const SundayaDashboardPage = () => (
