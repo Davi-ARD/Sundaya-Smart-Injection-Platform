@@ -38,8 +38,9 @@ docs/             Dokumentasi, termasuk kontrak API
 ## Aturan tim
 
 - Tipe request/response diambil dari packages/shared, tidak diduplikasi di api atau web.
-- Satu domain bisnis sama dengan satu NestJS module (auth, users, machines, molds, jobs, log-produksi, operational, maintenance, reports, dan seterusnya).
+- Satu domain bisnis sama dengan satu NestJS module (auth, users, machines, molds, jobs, log-produksi, pengiriman, penerimaan, maintenance, notifications, dashboard, dan seterusnya).
 - Transisi status (mold tracking, job lifecycle, machine status) hanya lewat service layer, tidak pernah langsung dari controller atau query mentah.
+- Mold tracking bergerak otomatis dari event domain (Log Pengiriman, Log Penerimaan, Log Produksi); hanya dua status penutup yang manual. Dashboard tiap role read-only, aksi ada di tab masing-masing. Detail di PROJECT_CONTEXT.md bagian 5a dan docs/ssip-spec.md bagian 6.
 - RBAC lima role: SUPER_ADMIN, ADMIN_SUNDAYA, TEKNISI_SUNDAYA, MANAGER_PENYEWA, ADMIN_PENYEWA. Admin Penyewa adalah child dari Manager Penyewa. Semua endpoint diproteksi Guard kecuali yang ditandai publik di kontrak API.
 - Dokumentasi berbahasa Indonesia dan tidak memakai tanda em dash.
 - Jangan commit file .env. Gunakan .env.example sebagai templat.
