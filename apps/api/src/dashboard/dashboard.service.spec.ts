@@ -3,11 +3,15 @@ import { MachineOperationalStatus } from '@mold-tracker/shared';
 import { DashboardService } from './dashboard.service';
 import { PrismaService } from '../prisma/prisma.service';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const inDays = (days: number) => new Date(Date.now() + days * DAY_MS);
+
 function prismaMock() {
   return {
     machine: { findUnique: jest.fn(), findMany: jest.fn() },
     operationalData: { findMany: jest.fn() },
-    job: { count: jest.fn() },
+    job: { count: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
+    rentalExtension: { count: jest.fn().mockResolvedValue(0) },
   };
 }
 
@@ -50,6 +54,39 @@ describe('DashboardService.sundaya', () => {
     const d = await service.sundaya();
     expect(d.avgOee).toBe(0);
     expect(d.utilization).toBe(0);
+  });
+});
+
+describe('DashboardService.sundaya rentalMonitoring', () => {
+  it('sisa terpendek, jumlah overdue, dan pengajuan perpanjangan yang menunggu', async () => {
+    const prisma = prismaMock();
+    prisma.machine.findMany.mockResolvedValue([]);
+    prisma.operationalData.findMany.mockResolvedValue([]);
+    prisma.job.count.mockResolvedValue(3);
+    prisma.job.findMany.mockResolvedValue([
+      { endDate: inDays(4) },
+      { endDate: inDays(1) },
+      { endDate: inDays(-2) }, // sudah lewat jatuh tempo
+      { endDate: null }, // belum aktif, tidak dihitung
+    ]);
+    prisma.rentalExtension.count.mockResolvedValue(2);
+
+    const d = await new DashboardService(prisma as unknown as PrismaService).sundaya();
+
+    expect(d.rentalMonitoring.shortestRemainingDays).toBe(-2);
+    expect(d.rentalMonitoring.overdueJobs).toBe(1);
+    expect(d.rentalMonitoring.pendingExtensions).toBe(2);
+  });
+
+  it('tanpa job aktif -> sisa terpendek null', async () => {
+    const prisma = prismaMock();
+    prisma.machine.findMany.mockResolvedValue([]);
+    prisma.operationalData.findMany.mockResolvedValue([]);
+    prisma.job.count.mockResolvedValue(0);
+
+    const d = await new DashboardService(prisma as unknown as PrismaService).sundaya();
+    expect(d.rentalMonitoring.shortestRemainingDays).toBeNull();
+    expect(d.rentalMonitoring.overdueJobs).toBe(0);
   });
 });
 

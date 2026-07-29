@@ -2,13 +2,16 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { $Enums } from '@prisma/client';
 import {
   DowntimeReason,
+  ExtensionStatus,
   JobLifecycle,
   MachineMetrics,
   MachineOperationalStatus,
   MachineStatusCount,
+  RentalMonitoring,
   SundayaDashboard,
 } from '@mold-tracker/shared';
 import { PrismaService } from '../prisma/prisma.service';
+import { remainingDays } from '../jobs/job-status';
 import { computeMachineMetrics, OperationalEvent } from './metrics';
 
 const round = (n: number, d = 1) => {
@@ -72,9 +75,10 @@ export class DashboardService {
     const avg = (pick: (m: { oee: number; utilization: number }) => number) =>
       perMachine.length ? round(perMachine.reduce((s, m) => s + pick(m), 0) / perMachine.length) : 0;
 
-    const activeBookings = await this.prisma.job.count({
-      where: { lifecycle: { in: ACTIVE_LIFECYCLES } },
-    });
+    const [activeBookings, rentalMonitoring] = await Promise.all([
+      this.prisma.job.count({ where: { lifecycle: { in: ACTIVE_LIFECYCLES } } }),
+      this.rentalMonitoring(),
+    ]);
 
     return {
       runningMachines: machines.filter(
@@ -85,6 +89,33 @@ export class DashboardService {
       utilization: avg((m) => m.utilization),
       activeBookings,
       operationalStatusCounts: this.statusCounts(machines.map((m) => m.operationalStatus as string)),
+      rentalMonitoring,
+    };
+  }
+
+  // Rental monitoring: bahan cek berkala Admin Sundaya. Sisa sewa terpendek dan
+  // jumlah job lewat jatuh tempo dihitung dari endDate job AKTIF, pengajuan
+  // perpanjangan yang menunggu dihitung dari RentalExtension berstatus DIAJUKAN.
+  private async rentalMonitoring(): Promise<RentalMonitoring> {
+    const [activeJobs, pendingExtensions] = await Promise.all([
+      this.prisma.job.findMany({
+        where: { lifecycle: JobLifecycle.AKTIF as unknown as $Enums.JobLifecycle },
+        select: { endDate: true },
+      }),
+      this.prisma.rentalExtension.count({
+        where: { status: ExtensionStatus.DIAJUKAN as unknown as $Enums.ExtensionStatus },
+      }),
+    ]);
+
+    const now = new Date();
+    const sisa = activeJobs
+      .map((j) => remainingDays(j.endDate, now))
+      .filter((d): d is number => d !== null);
+
+    return {
+      shortestRemainingDays: sisa.length ? Math.min(...sisa) : null,
+      pendingExtensions,
+      overdueJobs: sisa.filter((d) => d < 0).length,
     };
   }
 

@@ -30,6 +30,9 @@ type MenuItem = {
   to: string
   icon: ComponentType<{ className?: string }>
   roles: Role[]
+  // Cocokkan path persis, dipakai menu induk yang punya submenu (mis. /staff
+  // agar tidak ikut aktif saat berada di /staff/booking).
+  exact?: boolean
 }
 
 // Menu Penyewa (Manager + Admin Penyewa) dan staf Sundaya. Disaring per role.
@@ -42,11 +45,20 @@ const penyewaItems: MenuItem[] = [
   { label: 'Log Produksi', to: '/logs', icon: ClipboardList, roles: [Role.ADMIN_PENYEWA] },
 ]
 
+// Teknisi Sundaya dan Admin Sundaya memakai menu yang sama persis; perbedaan
+// hak akses ditampilkan di dalam halaman (tombol aksi muncul atau tidak).
 const sundayaItems: MenuItem[] = [
   {
     label: 'Dashboard',
     to: '/staff',
     icon: LayoutDashboard,
+    roles: [Role.SUPER_ADMIN, Role.ADMIN_SUNDAYA, Role.TEKNISI_SUNDAYA],
+    exact: true,
+  },
+  {
+    label: 'Booking',
+    to: '/staff/booking',
+    icon: CalendarPlus,
     roles: [Role.SUPER_ADMIN, Role.ADMIN_SUNDAYA, Role.TEKNISI_SUNDAYA],
   },
   {
@@ -401,6 +413,7 @@ function SidebarContent({
                 <NavLink
                   key={item.to}
                   to={item.to}
+                  end={item.exact}
                   onClick={onNavigate}
                   title={isOpen ? undefined : item.label}
                   className={({ isActive }) =>

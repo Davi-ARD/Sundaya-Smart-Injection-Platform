@@ -212,6 +212,20 @@ Role: ADMIN_SUNDAYA. SELESAI_SEWA -> DIKEMBALIKAN (mesin -> DIKEMBALIKAN).
 Role: ADMIN_SUNDAYA. DIKEMBALIKAN -> SELESAI (mesin lewat PENGECEKAN kembali ke TERSEDIA).
 - Response 200: `Job`
 
+### POST /jobs/:id/extensions
+Role: MANAGER_PENYEWA. Mengajukan perpanjangan masa sewa untuk job miliknya. Job harus AKTIF (409 bila bukan) dan tidak boleh ada pengajuan lain yang masih DIAJUKAN (409). Job tenant lain dibalas 403. Status pengajuan mulai dari DIAJUKAN.
+- Request: `CreateExtensionRequest` { additionalDays (1 sampai 365) }
+- Response 201: `RentalExtension`
+
+### GET /jobs/extensions
+Role: SUPER_ADMIN, ADMIN_SUNDAYA, TEKNISI_SUNDAYA. Antrean perpanjangan seluruh penyewa untuk tab Booking dan rental monitoring. Semua status disertakan supaya riwayat keputusan ikut terlihat.
+- Response 200: `ExtensionRequestRow[]`
+
+### PATCH /jobs/extensions/:extensionId/decide
+Role: ADMIN_SUNDAYA. Memutuskan perpanjangan. Hanya pengajuan berstatus DIAJUKAN yang bisa diputuskan (409 bila sudah). DITERIMA menambah `requestedDurationDays` dan menggeser `endDate` job dalam satu transaksi; DITOLAK tidak mengubah job.
+- Request: `DecideExtensionRequest` { decision (DITERIMA | DITOLAK) }
+- Response 200: `RentalExtension`
+
 ---
 
 ## Modul Log Produksi (SSIP, Layer 2)
@@ -407,8 +421,9 @@ Monitoring OEE Sundaya. Semua angka dihitung dari OperationalData Layer 1 (event
 
 ### GET /dashboard/sundaya
 Role: SUPER_ADMIN, ADMIN_SUNDAYA, TEKNISI_SUNDAYA. Ringkasan armada.
-- Response 200: `SundayaDashboard` { runningMachines, totalMachines, avgOee, utilization, activeBookings, operationalStatusCounts: MachineStatusCount[] }
+- Response 200: `SundayaDashboard` { runningMachines, totalMachines, avgOee, utilization, activeBookings, operationalStatusCounts: MachineStatusCount[], rentalMonitoring: RentalMonitoring }
 - `activeBookings` = job dengan lifecycle non-terminal (bukan DITOLAK/SELESAI). `avgOee`/`utilization` = rata-rata atas mesin yang punya event Layer 1.
+- `rentalMonitoring` { shortestRemainingDays, pendingExtensions, overdueJobs } dihitung dari job AKTIF dan RentalExtension: sisa sewa terpendek (null bila tidak ada job aktif ber-endDate), jumlah pengajuan perpanjangan berstatus DIAJUKAN, dan jumlah job yang endDate-nya sudah lewat.
 
 ### GET /machines/:id/metrics
 Role: SUPER_ADMIN, ADMIN_SUNDAYA, TEKNISI_SUNDAYA. Metrik OEE satu mesin dari event Layer 1-nya. Mesin tidak ada 404.
@@ -425,7 +440,16 @@ Role: MANAGER_PENYEWA. Ringkasan tenant sendiri.
 - Response 200: `ManagerDashboard` { moldsAtSundaya, ongoing, totalGoodProduct, avgAchievement, onTimeDeliveryRate }
 - `moldsAtSundaya` = mold milik Manager yang fisik ada di Sundaya (trackingStatus RECEIVED/WAITING_PRODUCTION/ON_MACHINE/PRODUCTION/REPAIR). `ongoing` = job lifecycle AKTIF. `totalGoodProduct` = jumlah good dari Log Produksi. `avgAchievement` = rata-rata (good / targetOutput) job bertarget, persen. `onTimeDeliveryRate` = persen kedatangan on-time dari Log Pengiriman (B4), 100 bila belum ada kedatangan.
 
+### GET /dashboard/manager/mold-plan
+Role: MANAGER_PENYEWA. Perkembangan plan mold: satu baris per cetakan milik Manager, menggabung tracking fisik, job/mesin, capaian produksi, dan realisasi material. Dipakai tabel dashboard Manager, panel detail cepat, dan detail cetakan.
+- Response 200: `MoldPlanRow[]` { moldId, kodeMold, namaProduk, cavity, tonaseTon, trackingStatus, jobId, jobNumber, lifecycle, machineNumber, progressMolding, targetOutput, totalGoodProduct, totalReject, achievement, rejectRate, sisaHariSewa, etaHari, planMaterialUtama, estimasiKg, materialDatangKg, materialTerpakaiKg, materialRemainingKg, materialTambahan, rencanaKirimMold, endDate }
+- Cetakan tanpa job memberi angka produksi nol dan field job null. `estimasiKg`/`planMaterialUtama` diambil dari plan job bila ada, selain itu dari master cetakan. `materialDatangKg` = jumlah event MATERIAL_DATANG; `materialTerpakaiKg` = datang dikurangi sisa terakhir dilaporkan. `etaHari` = sisa target dibagi rata-rata output per hari produksi (null bila belum bisa dihitung, 0 bila target tercapai).
+
 ### GET /dashboard/job
 Role: ADMIN_PENYEWA. Ringkasan tiap job aktif tenant induknya (lewat `parentId`).
-- Response 200: `JobDashboard[]` { jobId, jobNumber, lifecycle, machineNumber, progressMolding, totalGoodProduct, totalReject, materialRemainingKg, latestLogAt }
-- Diturunkan dari Log Produksi job: `progressMolding`/`materialRemainingKg` = nilai terakhir dilaporkan; `latestLogAt` = waktu event terbaru.
+- Response 200: `JobDashboard[]` { jobId, jobNumber, lifecycle, machineNumber, moldKode, moldProduk, moldCavity, progressMolding, targetOutput, achievement, totalGoodProduct, totalReject, materialRemainingKg, endDate, sisaHariSewa, latestLogAt }
+- Diturunkan dari Log Produksi job: `progressMolding`/`materialRemainingKg` = nilai terakhir dilaporkan; `latestLogAt` = waktu event terbaru. `sisaHariSewa` dihitung dari `endDate` (negatif berarti lewat jatuh tempo, null bila job belum aktif).
+
+### GET /dashboard/job/logs
+Role: ADMIN_PENYEWA. Log utama: seluruh event dari semua job tenant induk dalam satu timeline, terbaru dulu, dibatasi 50 event.
+- Response 200: `JobLogEntry[]` (bentuk `LogProduksi` ditambah `jobNumber` dan `moldKode`)

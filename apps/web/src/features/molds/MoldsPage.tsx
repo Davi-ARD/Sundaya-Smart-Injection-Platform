@@ -1,18 +1,21 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { Boxes, Pencil, Plus } from 'lucide-react'
-import type { CreateMoldRequest, Mold, UpdateMoldRequest } from '@mold-tracker/shared'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { Boxes, Eye, Pencil, Plus } from 'lucide-react'
+import type { CreateMoldRequest, Mold, MoldPlanRow, UpdateMoldRequest } from '@mold-tracker/shared'
 import { useAuth } from '../auth/authContextValue'
 import { api } from '../../lib/api'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { DataTable, type Column } from '../../components/ui/DataTable'
 import { MoldTrackingBadge } from '../../components/ui/Badge'
+import { Modal } from '../../components/ui/Modal'
 import { SidePanel } from '../../components/ui/SidePanel'
 import { TableSkeleton } from '../../components/ui/Skeleton'
 import { TextField, TextAreaField, FieldGroup } from '../../components/ui/FormField'
 import { useToast } from '../../components/ui/Toast'
 import { errorMessage } from '../../lib/errorMessage'
 import { optionalNumber, optionalText } from '../../lib/form'
+import { formatNumber } from '../../lib/format'
+import { MoldPlanDetail } from './MoldPlanDetail'
 
 type FormState = {
   kodeMold: string
@@ -54,13 +57,21 @@ export function MoldsPage() {
   const toast = useToast()
 
   const [molds, setMolds] = useState<Mold[]>([])
+  const [plan, setPlan] = useState<MoldPlanRow[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [panel, setPanel] = useState<{ mode: 'create' } | { mode: 'edit'; mold: Mold } | null>(null)
+  const [detailMoldId, setDetailMoldId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setIsLoading(true)
     try {
-      setMolds(await api.listMolds(accessToken))
+      // Plan berisi realisasi material dan produksi; master mold tetap dari /molds.
+      const [moldList, planList] = await Promise.all([
+        api.listMolds(accessToken),
+        api.getMoldPlan(accessToken),
+      ])
+      setMolds(moldList)
+      setPlan(planList)
     } catch (caught) {
       toast.error(errorMessage(caught, 'Gagal memuat cetakan'))
     } finally {
@@ -72,20 +83,45 @@ export function MoldsPage() {
     void load()
   }, [load])
 
+  const planByMoldId = useMemo(() => new Map(plan.map((row) => [row.moldId, row])), [plan])
+  const detailRow = detailMoldId ? planByMoldId.get(detailMoldId) : undefined
+
   const columns: Column<Mold>[] = [
     { header: 'Kode', cell: (m) => <span className="font-semibold text-slate-900">{m.kodeMold}</span> },
     { header: 'Produk', cell: (m) => m.namaProduk },
     { header: 'Cavity', cell: (m) => m.cavity },
     { header: 'Tonase', cell: (m) => `${m.tonaseTon} ton` },
     { header: 'Material rencana', cell: (m) => m.planMaterialUtama ?? <span className="text-slate-400">-</span> },
+    {
+      header: 'Estimasi material',
+      cell: (m) => (m.estimasiKg != null ? `${formatNumber(m.estimasiKg)} kg` : <span className="text-slate-400">-</span>),
+    },
+    {
+      header: 'Sisa material',
+      cell: (m) => {
+        const row = planByMoldId.get(m.id)
+        if (!row) return <span className="text-slate-400">-</span>
+        const sisa = row.materialRemainingKg ?? row.estimasiKg
+        return sisa != null ? `${formatNumber(sisa)} kg` : <span className="text-slate-400">-</span>
+      },
+    },
+    {
+      header: 'Target output',
+      cell: (m) => (m.targetOutput != null ? formatNumber(m.targetOutput) : <span className="text-slate-400">-</span>),
+    },
     { header: 'Status', cell: (m) => <MoldTrackingBadge status={m.trackingStatus} /> },
     {
       header: '',
       className: 'text-right',
       cell: (m) => (
-        <Button size="sm" variant="secondary" onClick={() => setPanel({ mode: 'edit', mold: m })}>
-          <Pencil className="h-3.5 w-3.5" /> Edit
-        </Button>
+        <div className="flex justify-end gap-2">
+          <Button size="sm" variant="secondary" onClick={() => setDetailMoldId(m.id)}>
+            <Eye className="h-3.5 w-3.5" /> Detail
+          </Button>
+          <Button size="sm" variant="secondary" onClick={() => setPanel({ mode: 'edit', mold: m })}>
+            <Pencil className="h-3.5 w-3.5" /> Edit
+          </Button>
+        </div>
       ),
     },
   ]
@@ -119,6 +155,19 @@ export function MoldsPage() {
           <DataTable columns={columns} rows={molds} rowKey={(m) => m.id} />
         )}
       </Card>
+
+      {detailRow ? (
+        <Modal
+          title={`Detail cetakan ${detailRow.kodeMold}`}
+          onClose={() => setDetailMoldId(null)}
+          size="lg"
+        >
+          <p className="mb-4 text-sm text-slate-500">
+            {detailRow.namaProduk} - {detailRow.cavity} cavity - {detailRow.tonaseTon} ton
+          </p>
+          <MoldPlanDetail row={detailRow} />
+        </Modal>
+      ) : null}
 
       {panel ? (
         <MoldFormPanel

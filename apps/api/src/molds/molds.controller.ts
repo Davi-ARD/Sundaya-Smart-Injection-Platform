@@ -10,7 +10,9 @@ import { CreateMoldDto, UpdateMoldDto } from './dto';
 // ponytail: GET dibuka juga untuk staf Sundaya (baca semua, single-provider
 // jadi tanpa scoping tenant) karena mereka butuh melihat mold untuk approval
 // booking dan transisi tracking (ADMIN_SUNDAYA semua transisi, TEKNISI setup).
-const STAF_TRACKING = [Role.ADMIN_SUNDAYA, Role.TEKNISI_SUNDAYA] as const;
+// SUPER_ADMIN ikut membaca supaya halaman staf (Dashboard, Booking, Mold
+// Tracking) tidak 403 untuknya, sejalan dengan modul Mesin.
+const STAF_TRACKING = [Role.SUPER_ADMIN, Role.ADMIN_SUNDAYA, Role.TEKNISI_SUNDAYA] as const;
 
 @Roles(Role.MANAGER_PENYEWA)
 @Controller('molds')

@@ -9,7 +9,7 @@ import { computeJobStatus } from './job-status';
 // jobStatus dihitung saat baca dari lifecycle + endDate (bukan kolom tersimpan basi).
 // ponytail: enum shared dan Prisma nominal berbeda meski nilainya sama, cast di sini saja.
 export function toJob(
-  j: PrismaJob,
+  j: PrismaJob & { manager?: { companyName: string | null } },
   machineNumber?: string,
   extensions: PrismaRentalExtension[] = [],
   now: Date = new Date(),
@@ -22,6 +22,7 @@ export function toJob(
     managerId: j.managerId,
     machineId: j.machineId,
     machineNumber,
+    companyName: j.manager?.companyName ?? null,
     assignedById: j.assignedById,
     lifecycle,
     jobStatus: computeJobStatus(lifecycle, j.endDate, now),

@@ -1,13 +1,18 @@
 import { useEffect, useState, type ReactNode } from 'react'
 
+// lg dipakai konten baca yang lebar (detail cetakan), md untuk form biasa.
+const sizeClasses = { md: 'max-w-lg', lg: 'max-w-4xl' } as const
+
 export function Modal({
   title,
   onClose,
   children,
+  size = 'md',
 }: {
   title: ReactNode
   onClose: () => void
   children: ReactNode
+  size?: keyof typeof sizeClasses
 }) {
   const [isVisible, setIsVisible] = useState(false)
 
@@ -29,7 +34,8 @@ export function Modal({
       />
       <div
         className={[
-          'relative max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-2xl shadow-slate-900/20 transition-all duration-200 ease-out',
+          'relative max-h-[90vh] w-full overflow-y-auto rounded-xl bg-white p-6 shadow-2xl shadow-slate-900/20 transition-all duration-200 ease-out',
+          sizeClasses[size],
           isVisible ? 'translate-y-0 scale-100 opacity-100' : 'translate-y-2 scale-[0.98] opacity-0',
         ].join(' ')}
       >

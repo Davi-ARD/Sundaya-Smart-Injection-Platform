@@ -1,12 +1,19 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { CalendarPlus, Info } from 'lucide-react'
-import type { CreateJobRequest, Job, Mold } from '@mold-tracker/shared'
+import { CalendarPlus, Info, TimerReset } from 'lucide-react'
+import {
+  ExtensionStatus,
+  JobLifecycle,
+  type CreateJobRequest,
+  type Job,
+  type Mold,
+} from '@mold-tracker/shared'
 import { useAuth } from '../auth/authContextValue'
 import { api } from '../../lib/api'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { DataTable, type Column } from '../../components/ui/DataTable'
-import { JobLifecycleBadge } from '../../components/ui/Badge'
+import { ExtensionStatusBadge, JobLifecycleBadge } from '../../components/ui/Badge'
+import { Modal } from '../../components/ui/Modal'
 import { SidePanel } from '../../components/ui/SidePanel'
 import { TableSkeleton } from '../../components/ui/Skeleton'
 import { FieldGroup, SelectField, TextField } from '../../components/ui/FormField'
@@ -52,6 +59,7 @@ export function BookingPage() {
   const [molds, setMolds] = useState<Mold[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isPanelOpen, setIsPanelOpen] = useState(false)
+  const [extendTarget, setExtendTarget] = useState<Job | null>(null)
 
   const load = useCallback(async () => {
     setIsLoading(true)
@@ -97,7 +105,37 @@ export function BookingPage() {
         j.machineNumber ?? <span className="text-slate-400">Menunggu assign</span>,
     },
     { header: 'Durasi', cell: (j) => `${j.requestedDurationDays} hari` },
-    { header: 'Rencana kirim', cell: (j) => formatDate(j.rencanaKirimMold) },
+    { header: 'Selesai sewa', cell: (j) => formatDate(j.endDate) },
+    {
+      header: 'Perpanjangan',
+      cell: (j) => {
+        // Pengajuan terbaru ada di indeks 0 (server mengurutkan menurun).
+        const latest = j.extensions[0]
+        if (!latest) return <span className="text-slate-400">-</span>
+        return (
+          <span className="flex flex-col gap-1">
+            <ExtensionStatusBadge status={latest.status} />
+            <span className="text-xs text-slate-500">+{latest.additionalDays} hari</span>
+          </span>
+        )
+      },
+    },
+    {
+      header: '',
+      className: 'text-right',
+      cell: (j) =>
+        // Perpanjangan hanya relevan saat mesin sedang dipakai.
+        j.lifecycle === JobLifecycle.AKTIF ? (
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={j.extensions.some((e) => e.status === ExtensionStatus.DIAJUKAN)}
+            onClick={() => setExtendTarget(j)}
+          >
+            <TimerReset className="h-3.5 w-3.5" /> Ajukan perpanjangan
+          </Button>
+        ) : null,
+    },
   ]
 
   return (
@@ -134,6 +172,17 @@ export function BookingPage() {
         )}
       </Card>
 
+      {extendTarget ? (
+        <ExtensionModal
+          job={extendTarget}
+          onClose={() => setExtendTarget(null)}
+          onSaved={() => {
+            setExtendTarget(null)
+            void load()
+          }}
+        />
+      ) : null}
+
       {isPanelOpen ? (
         <BookingFormPanel
           molds={availableMolds}
@@ -159,6 +208,64 @@ export function BookingPage() {
         />
       ) : null}
     </div>
+  )
+}
+
+// Pengajuan perpanjangan sewa. Keputusan ada di Admin Sundaya (tab Booking
+// mereka); di sini Manager hanya menyebut tambahan hari yang dibutuhkan.
+function ExtensionModal({
+  job,
+  onClose,
+  onSaved,
+}: {
+  job: Job
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const { accessToken } = useAuth()
+  const toast = useToast()
+  const [additionalDays, setAdditionalDays] = useState('7')
+  const [isSaving, setIsSaving] = useState(false)
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault()
+    setIsSaving(true)
+    try {
+      await api.requestExtension(accessToken, job.id, { additionalDays: Number(additionalDays) })
+      toast.success('Pengajuan perpanjangan dikirim ke Sundaya')
+      onSaved()
+    } catch (caught) {
+      toast.error(errorMessage(caught, 'Gagal mengajukan perpanjangan'))
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <Modal title={`Perpanjangan sewa ${job.jobNumber}`} onClose={onClose}>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <p className="text-sm text-slate-500">
+          Sewa berakhir {formatDate(job.endDate)}. Tambahan hari dihitung dari tanggal tersebut
+          setelah Admin Sundaya menyetujui.
+        </p>
+        <TextField
+          label="Tambahan hari"
+          type="number"
+          min={1}
+          max={365}
+          value={additionalDays}
+          onChange={setAdditionalDays}
+        />
+        <div className="flex justify-end gap-2 pt-2">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Batal
+          </Button>
+          <Button type="submit" disabled={isSaving || Number(additionalDays) < 1}>
+            {isSaving ? 'Mengirim...' : 'Ajukan perpanjangan'}
+          </Button>
+        </div>
+      </form>
+    </Modal>
   )
 }
 

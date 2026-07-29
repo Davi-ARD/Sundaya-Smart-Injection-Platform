@@ -1,13 +1,22 @@
 import {
   IsDateString,
+  IsIn,
   IsInt,
   IsNumber,
   IsOptional,
   IsPositive,
   IsString,
+  Max,
   MinLength,
 } from 'class-validator';
-import { AssignJobRequest, CreateJobRequest, RejectJobRequest } from '@mold-tracker/shared';
+import {
+  AssignJobRequest,
+  CreateExtensionRequest,
+  CreateJobRequest,
+  DecideExtensionRequest,
+  ExtensionStatus,
+  RejectJobRequest,
+} from '@mold-tracker/shared';
 
 // Booking oleh MANAGER_PENYEWA. Tanpa machineId: mesin di-assign Admin Sundaya.
 // jobNumber dan lifecycle (DIAJUKAN) diset service, bukan diterima dari client.
@@ -60,4 +69,18 @@ export class RejectJobDto implements RejectJobRequest {
   @IsString()
   @MinLength(1)
   reason: string;
+}
+
+// Perpanjangan sewa diajukan MANAGER_PENYEWA. Batas atas 365 hari supaya salah
+// ketik tidak mengunci mesin bertahun-tahun.
+export class CreateExtensionDto implements CreateExtensionRequest {
+  @IsInt()
+  @IsPositive()
+  @Max(365)
+  additionalDays: number;
+}
+
+export class DecideExtensionDto implements DecideExtensionRequest {
+  @IsIn([ExtensionStatus.DITERIMA, ExtensionStatus.DITOLAK])
+  decision: ExtensionStatus.DITERIMA | ExtensionStatus.DITOLAK;
 }

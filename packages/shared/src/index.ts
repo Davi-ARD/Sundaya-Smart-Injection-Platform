@@ -192,6 +192,7 @@ export interface Job {
   managerId: string;
   machineId: string | null; // null sebelum di-assign Admin Sundaya
   machineNumber?: string;
+  companyName?: string | null; // perusahaan penyewa, untuk tampilan staf Sundaya
   assignedById: string | null;
   lifecycle: JobLifecycle;
   jobStatus: JobStatus;
@@ -468,6 +469,14 @@ export interface MachineMetrics {
   totalDowntimeHours: number;
 }
 
+// Pemantauan sewa berjalan (Layer 1, dashboard Sundaya). Dipakai Admin Sundaya
+// untuk mengecek berkala apakah ada penyewa yang minta perpanjangan sewa.
+export interface RentalMonitoring {
+  shortestRemainingDays: number | null; // sisa sewa terpendek dari job aktif
+  pendingExtensions: number; // pengajuan perpanjangan berstatus DIAJUKAN
+  overdueJobs: number; // job aktif yang endDate-nya sudah lewat
+}
+
 export interface SundayaDashboard {
   runningMachines: number;
   totalMachines: number;
@@ -475,6 +484,23 @@ export interface SundayaDashboard {
   utilization: number;
   activeBookings: number;
   operationalStatusCounts: MachineStatusCount[];
+  rentalMonitoring: RentalMonitoring;
+}
+
+// Baris antrean perpanjangan untuk tab Booking Sundaya. Extension digabung
+// konteks job/penyewa supaya Admin bisa memutuskan tanpa membuka job satu-satu.
+export interface ExtensionRequestRow {
+  extensionId: string;
+  jobId: string;
+  jobNumber: string;
+  companyName: string | null;
+  moldKode: string | null;
+  machineNumber: string | null;
+  additionalDays: number;
+  status: ExtensionStatus;
+  requestedAt: ISODateString;
+  endDate: ISODateString | null;
+  sisaHariSewa: number | null;
 }
 
 export interface ManagerDashboard {
@@ -491,11 +517,57 @@ export interface JobDashboard {
   jobNumber: string;
   lifecycle: JobLifecycle;
   machineNumber: string | null;
+  moldKode: string; // cetakan yang dipakai job ini
+  moldProduk: string;
+  moldCavity: number;
   progressMolding: ProgressMolding | null; // progress molding terakhir
+  targetOutput: number | null;
+  achievement: number; // persen good product terhadap target
   totalGoodProduct: number;
   totalReject: number;
   materialRemainingKg: number | null; // sisa material terakhir dilaporkan
+  endDate: ISODateString | null;
+  sisaHariSewa: number | null; // sisa masa sewa mesin, negatif berarti lewat
   latestLogAt: ISODateString | null;
+}
+
+// Log utama Admin Penyewa: seluruh event dari semua job tenant dalam satu
+// timeline (LogProduksi apa adanya plus konteks job dan cetakannya).
+export interface JobLogEntry extends LogProduksi {
+  jobNumber: string;
+  moldKode: string;
+}
+
+// Perkembangan plan mold (Manager Penyewa). Satu baris per cetakan, menggabung
+// tracking fisik, job/mesin, capaian produksi, dan realisasi material. Dipakai
+// tabel dashboard Manager, panel detail cepat, dan detail cetakan.
+export interface MoldPlanRow {
+  moldId: string;
+  kodeMold: string;
+  namaProduk: string;
+  cavity: number;
+  tonaseTon: number;
+  trackingStatus: MoldTrackingStatus;
+  jobId: string | null;
+  jobNumber: string | null;
+  lifecycle: JobLifecycle | null;
+  machineNumber: string | null;
+  progressMolding: ProgressMolding | null;
+  targetOutput: number | null;
+  totalGoodProduct: number;
+  totalReject: number;
+  achievement: number; // persen
+  rejectRate: number; // persen dari total output
+  sisaHariSewa: number | null;
+  etaHari: number | null; // perkiraan hari sampai target tercapai
+  planMaterialUtama: string | null;
+  estimasiKg: number | null; // rencana material dari planning awal
+  materialDatangKg: number; // akumulasi MATERIAL_DATANG
+  materialTerpakaiKg: number | null;
+  materialRemainingKg: number | null;
+  materialTambahan: string | null;
+  rencanaKirimMold: ISODateString | null;
+  endDate: ISODateString | null;
 }
 
 // =====================================================================

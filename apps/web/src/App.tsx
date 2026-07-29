@@ -9,6 +9,7 @@ import { InternalLoginPage } from './pages/InternalLoginPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { MoldsPage } from './features/molds/MoldsPage'
 import { BookingPage } from './features/booking/BookingPage'
+import { SundayaBookingPage } from './features/booking/SundayaBookingPage'
 import { PengirimanPage } from './features/pengiriman/PengirimanPage'
 import { ManagerDashboardPage } from './features/dashboard/ManagerDashboardPage'
 import { PenyewaAdminsPage } from './features/penyewa-admins/PenyewaAdminsPage'
@@ -56,6 +57,7 @@ export default function App() {
           {/* Staf Sundaya (diisi Dev A) */}
           <Route element={<ProtectedRoute allowedRoles={STAF} />}>
             <Route path="/staff" element={<SundayaDashboardPage />} />
+            <Route path="/staff/booking" element={<SundayaBookingPage />} />
             <Route path="/machines" element={<MachinesPage />} />
             <Route path="/tracking" element={<MoldTrackingPage />} />
             <Route path="/maintenance" element={<MaintenancePage />} />
