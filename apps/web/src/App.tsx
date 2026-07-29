@@ -11,13 +11,13 @@ import { MoldsPage } from './features/molds/MoldsPage'
 import { BookingPage } from './features/booking/BookingPage'
 import { PengirimanPage } from './features/pengiriman/PengirimanPage'
 import { ManagerDashboardPage } from './features/dashboard/ManagerDashboardPage'
+import { PenyewaAdminsPage } from './features/penyewa-admins/PenyewaAdminsPage'
 import {
   JobDashboardPage,
   LogProduksiPage,
   MachinesPage,
   MaintenancePage,
   MoldTrackingPage,
-  PenyewaAdminsPage,
   SundayaDashboardPage,
   UsersPage,
 } from './pages/placeholders'
