@@ -12,6 +12,7 @@ import { TableSkeleton } from '../../components/ui/Skeleton'
 import { TextField, TextAreaField, FieldGroup } from '../../components/ui/FormField'
 import { useToast } from '../../components/ui/Toast'
 import { errorMessage } from '../../lib/errorMessage'
+import { optionalNumber, optionalText } from '../../lib/form'
 
 type FormState = {
   kodeMold: string
@@ -45,10 +46,6 @@ const formFromMold = (mold: Mold): FormState => ({
   estimasiKg: mold.estimasiKg != null ? String(mold.estimasiKg) : '',
   targetOutput: mold.targetOutput != null ? String(mold.targetOutput) : '',
 })
-
-// Angka opsional: kirim hanya bila diisi. undefined dibiarkan (field opsional).
-const optionalNumber = (value: string) => (value.trim() === '' ? undefined : Number(value))
-const optionalText = (value: string) => (value.trim() === '' ? undefined : value.trim())
 
 // Cetakan (Mold) - CRUD milik Manager Penyewa. Cetakan baru berstatus PLANNING;
 // transisi tracking dilakukan sisi Sundaya, bukan di sini.

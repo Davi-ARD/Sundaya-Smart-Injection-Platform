@@ -1,5 +1,4 @@
 import {
-  CalendarPlus,
   Factory,
   Gauge,
   LayoutDashboard,
@@ -21,14 +20,6 @@ export const ManagerDashboardPage = () => (
     icon={LayoutDashboard}
     title="Dashboard Manager"
     description="Ringkasan cetakan di Sundaya, produksi berjalan, dan ketepatan pengiriman."
-  />
-)
-
-export const BookingPage = () => (
-  <PagePlaceholder
-    icon={CalendarPlus}
-    title="Booking Mesin"
-    description="Ajukan booking cetakan tanpa memilih mesin. Mesin di-assign Admin Sundaya."
   />
 )
 

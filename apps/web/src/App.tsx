@@ -8,8 +8,8 @@ import { RegisterPage } from './pages/RegisterPage'
 import { InternalLoginPage } from './pages/InternalLoginPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { MoldsPage } from './features/molds/MoldsPage'
+import { BookingPage } from './features/booking/BookingPage'
 import {
-  BookingPage,
   JobDashboardPage,
   LogProduksiPage,
   MachinesPage,
