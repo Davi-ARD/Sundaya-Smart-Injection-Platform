@@ -3,7 +3,6 @@ import {
   Gauge,
   LayoutDashboard,
   ClipboardList,
-  Truck,
   UserCog,
   Users,
   Wrench,
@@ -20,14 +19,6 @@ export const ManagerDashboardPage = () => (
     icon={LayoutDashboard}
     title="Dashboard Manager"
     description="Ringkasan cetakan di Sundaya, produksi berjalan, dan ketepatan pengiriman."
-  />
-)
-
-export const PengirimanPage = () => (
-  <PagePlaceholder
-    icon={Truck}
-    title="Log Pengiriman"
-    description="Bandingkan rencana kirim vs aktual kedatangan mold dan material."
   />
 )
 

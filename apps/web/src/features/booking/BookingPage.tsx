@@ -13,9 +13,7 @@ import { FieldGroup, SelectField, TextField } from '../../components/ui/FormFiel
 import { useToast } from '../../components/ui/Toast'
 import { errorMessage } from '../../lib/errorMessage'
 import { optionalNumber, optionalText } from '../../lib/form'
-
-const formatDate = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'
+import { formatDate } from '../../lib/format'
 
 // Input <input type="date"> memberi 'YYYY-MM-DD'; backend menerima ISO string.
 const toIso = (date: string) => new Date(`${date}T00:00:00`).toISOString()
