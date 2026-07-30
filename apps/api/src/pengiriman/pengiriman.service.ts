@@ -1,9 +1,10 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { $Enums, User as PrismaUser } from '@prisma/client';
 import { ItemPengiriman, LogPengiriman, MoldTrackingStatus, Role } from '@mold-tracker/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { MoldTrackingService } from '../molds/mold-tracking.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { assertMaterialFields } from '../common/item-pengiriman';
 import { CreateLogPengirimanDto } from './dto';
 import { toLogPengiriman } from './pengiriman.mapper';
 
@@ -31,7 +32,7 @@ export class PengirimanService {
     });
     // Job milik tenant lain sama dengan tidak ada: jangan bocorkan keberadaannya.
     if (!job || job.managerId !== user.id) throw new NotFoundException('Job tidak ditemukan');
-    this.validateItemFields(dto);
+    assertMaterialFields(dto.item, dto.materialName, dto.jumlahKg);
 
     const row = await this.prisma.$transaction(async (tx) => {
       const created = await tx.logPengiriman.create({
@@ -68,15 +69,6 @@ export class PengirimanService {
       include: { job: { select: { jobNumber: true } } },
     });
     return rows.map((r) => toLogPengiriman(r, r.job.jobNumber));
-  }
-
-  // Item MOLD tidak memakai field material; item MATERIAL wajib nama dan jumlah
-  // supaya baris log tidak setengah terisi.
-  private validateItemFields(dto: CreateLogPengirimanDto) {
-    if (dto.item !== ItemPengiriman.MATERIAL) return;
-    if (!dto.materialName || dto.jumlahKg == null) {
-      throw new BadRequestException('materialName dan jumlahKg wajib untuk item MATERIAL');
-    }
   }
 
   private async notifySundaya(user: PrismaUser, jobNumber: string, dto: CreateLogPengirimanDto) {

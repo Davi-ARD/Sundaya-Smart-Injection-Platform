@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react'
 import {
   ExtensionStatus,
-  ItemPengiriman,
   JobLifecycle,
   MachineOperationalStatus,
   MachineStatus,
@@ -175,21 +174,6 @@ export const moldTrackingLabel: Record<MoldTrackingStatus, string> = {
 
 export function MoldTrackingBadge({ status }: { status: MoldTrackingStatus }) {
   return <Badge tone={moldTrackingTone[status]}>{moldTrackingLabel[status]}</Badge>
-}
-
-// --- Item pengiriman/penerimaan (mold vs material) ---
-const itemTone: Record<ItemPengiriman, BadgeTone> = {
-  [ItemPengiriman.MOLD]: 'brand',
-  [ItemPengiriman.MATERIAL]: 'sky',
-}
-
-export const itemPengirimanLabel: Record<ItemPengiriman, string> = {
-  [ItemPengiriman.MOLD]: 'Mold',
-  [ItemPengiriman.MATERIAL]: 'Material',
-}
-
-export function ItemPengirimanBadge({ item }: { item: ItemPengiriman }) {
-  return <Badge tone={itemTone[item]}>{itemPengirimanLabel[item]}</Badge>
 }
 
 // --- Progress molding (Layer 2) ---

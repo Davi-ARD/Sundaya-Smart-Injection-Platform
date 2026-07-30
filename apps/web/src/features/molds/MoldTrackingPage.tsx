@@ -11,6 +11,7 @@ import { useAuth } from '../auth/authContextValue'
 import { api } from '../../lib/api'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
+import { EmptyState } from '../../components/ui/EmptyState'
 import { moldTrackingLabel } from '../../components/ui/Badge'
 import { CardSkeleton } from '../../components/ui/Skeleton'
 import { useToast } from '../../components/ui/Toast'
@@ -100,15 +101,11 @@ export function MoldTrackingPage() {
         </Card>
       ) : molds.length === 0 ? (
         <Card>
-          <div className="grid place-items-center py-14 text-center">
-            <span className="grid h-12 w-12 place-items-center rounded-xl bg-brand-50 text-brand-700">
-              <RouteIcon className="h-6 w-6" />
-            </span>
-            <p className="mt-3 text-sm font-semibold text-slate-800">Belum ada cetakan</p>
-            <p className="mt-1 text-sm text-slate-500">
-              Cetakan muncul setelah Manager Penyewa mendaftarkannya.
-            </p>
-          </div>
+          <EmptyState
+            icon={RouteIcon}
+            title="Belum ada cetakan"
+            message="Cetakan muncul setelah Manager Penyewa mendaftarkannya."
+          />
         </Card>
       ) : (
         <div className="flex gap-4 overflow-x-auto pb-4">

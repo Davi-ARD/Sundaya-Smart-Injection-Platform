@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { Boxes, Inbox, Info, PackageCheck, Plus } from 'lucide-react'
+import { Boxes, Info, PackageCheck, Plus } from 'lucide-react'
 import {
   ItemPengiriman,
   Role,
@@ -13,19 +13,15 @@ import { api } from '../../lib/api'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { DataTable, type Column } from '../../components/ui/DataTable'
+import { EmptyState } from '../../components/ui/EmptyState'
 import { SidePanel } from '../../components/ui/SidePanel'
 import { TableSkeleton } from '../../components/ui/Skeleton'
 import { FieldGroup, SelectField, TextAreaField, TextField } from '../../components/ui/FormField'
 import { useToast } from '../../components/ui/Toast'
 import { errorMessage } from '../../lib/errorMessage'
 import { optionalText } from '../../lib/form'
-import { formatDate, formatDateTime } from '../../lib/format'
+import { formatDate, formatDateTime, nowLocalInput } from '../../lib/format'
 
-const nowLocal = () => {
-  const now = new Date()
-  now.setMinutes(now.getMinutes() - now.getTimezoneOffset())
-  return now.toISOString().slice(0, 16)
-}
 
 // Log Penerimaan (Admin Sundaya): konfirmasi cetakan dan material tiba di lokasi
 // Sundaya, dipisah jadi dua daftar dalam satu tab. Mencatat penerimaan cetakan
@@ -220,26 +216,6 @@ export function PenerimaanPage() {
   )
 }
 
-function EmptyState({
-  icon: Icon,
-  title,
-  message,
-}: {
-  icon: typeof Inbox
-  title: string
-  message: string
-}) {
-  return (
-    <div className="grid place-items-center py-12 text-center">
-      <span className="grid h-12 w-12 place-items-center rounded-xl bg-brand-50 text-brand-700">
-        <Icon className="h-6 w-6" />
-      </span>
-      <p className="mt-3 text-sm font-semibold text-slate-800">{title}</p>
-      <p className="mt-1 max-w-sm text-sm text-slate-500">{message}</p>
-    </div>
-  )
-}
-
 function PenerimaanFormPanel({
   item,
   jobs,
@@ -256,7 +232,7 @@ function PenerimaanFormPanel({
   const isMold = item === ItemPengiriman.MOLD
 
   const [jobId, setJobId] = useState(jobs[0]?.id ?? '')
-  const [diterimaAt, setDiterimaAt] = useState(nowLocal())
+  const [diterimaAt, setDiterimaAt] = useState(nowLocalInput())
   const [materialName, setMaterialName] = useState('')
   const [jumlahKg, setJumlahKg] = useState('')
   const [noSuratJalan, setNoSuratJalan] = useState('')

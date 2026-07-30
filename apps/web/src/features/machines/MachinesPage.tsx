@@ -15,6 +15,7 @@ import { api } from '../../lib/api'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { DataTable, type Column } from '../../components/ui/DataTable'
+import { EmptyState } from '../../components/ui/EmptyState'
 import {
   MachineOperationalBadge,
   MachineStatusBadge,
@@ -26,13 +27,8 @@ import { TableSkeleton } from '../../components/ui/Skeleton'
 import { FieldGroup, SelectField, TextAreaField, TextField } from '../../components/ui/FormField'
 import { useToast } from '../../components/ui/Toast'
 import { errorMessage } from '../../lib/errorMessage'
-import { formatDate } from '../../lib/format'
+import { formatDate, nowLocalInput } from '../../lib/format'
 
-const nowLocal = () => {
-  const now = new Date()
-  now.setMinutes(now.getMinutes() - now.getTimezoneOffset())
-  return now.toISOString().slice(0, 16)
-}
 
 type MachineForm = {
   machineNumber: string
@@ -177,12 +173,7 @@ export function MachinesPage() {
         {isLoading ? (
           <TableSkeleton rows={5} columns={6} />
         ) : machines.length === 0 ? (
-          <div className="grid place-items-center py-14 text-center">
-            <span className="grid h-12 w-12 place-items-center rounded-xl bg-brand-50 text-brand-700">
-              <Factory className="h-6 w-6" />
-            </span>
-            <p className="mt-3 text-sm font-semibold text-slate-800">Belum ada mesin</p>
-          </div>
+          <EmptyState icon={Factory} title="Belum ada mesin" />
         ) : (
           <DataTable columns={columns} rows={machines} rowKey={(m) => m.id} />
         )}
@@ -335,7 +326,7 @@ function OperationalFormPanel({
   const [jam, setJam] = useState('')
   const [menit, setMenit] = useState('')
   const [detik, setDetik] = useState('')
-  const [occurredAt, setOccurredAt] = useState(nowLocal())
+  const [occurredAt, setOccurredAt] = useState(nowLocalInput())
   const [catatan, setCatatan] = useState('')
   const [isSaving, setIsSaving] = useState(false)
 

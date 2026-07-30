@@ -6,18 +6,11 @@ import {
   Role,
 } from '@mold-tracker/shared';
 
-// Urutan linear 6-state. Indeks dipakai untuk membandingkan maju/mundur pada
-// transisi otomatis (idempoten: event domain yang terulang tidak menurunkan status).
-export const MOLD_ORDER: MT[] = [
-  MT.PLANNING,
-  MT.DELIVERY,
-  MT.RECEIVED,
-  MT.PRODUCTION,
-  MT.SEND_BACK,
-  MT.COMPLETED,
-];
-
-export const moldRank = (status: MT): number => MOLD_ORDER.indexOf(status);
+// Posisi status pada urutan linear, dibaca langsung dari MOLD_TRACKING_FLOW supaya
+// tidak ada daftar kedua yang harus dijaga sinkron dengan peta transisi. Dipakai
+// transisi otomatis untuk membandingkan maju/mundur (idempoten: event domain yang
+// terulang tidak menurunkan status).
+export const moldRank = (status: MT): number => Object.keys(MOLD_TRACKING_FLOW).indexOf(status);
 
 // Validasi transisi manual: hanya satu langkah maju sesuai MOLD_TRACKING_FLOW.
 export function assertMoldTransition(from: MT, to: MT): void {

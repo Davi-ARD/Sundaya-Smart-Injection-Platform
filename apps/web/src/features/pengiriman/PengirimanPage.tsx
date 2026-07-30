@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { Boxes, Info, PackagePlus, Plus, Truck } from 'lucide-react'
+import { Boxes, Info, PackagePlus, Plus } from 'lucide-react'
 import {
   ItemPengiriman,
   type CreateLogPengirimanRequest,
@@ -11,15 +11,14 @@ import { api } from '../../lib/api'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { DataTable, type Column } from '../../components/ui/DataTable'
+import { EmptyState } from '../../components/ui/EmptyState'
 import { SidePanel } from '../../components/ui/SidePanel'
 import { TableSkeleton } from '../../components/ui/Skeleton'
 import { FieldGroup, SelectField, TextAreaField, TextField } from '../../components/ui/FormField'
 import { useToast } from '../../components/ui/Toast'
 import { errorMessage } from '../../lib/errorMessage'
 import { optionalText } from '../../lib/form'
-import { formatDate, formatDateTime } from '../../lib/format'
-
-const today = () => new Date().toISOString().slice(0, 10)
+import { formatDate, formatDateTime, todayInput } from '../../lib/format'
 
 // Log Pengiriman (Manager Penyewa): catatan kapan mold dan material akan dikirim
 // ke Sundaya. Mold dan material dipisah jadi dua daftar dalam satu tab. Mencatat
@@ -185,26 +184,6 @@ export function PengirimanPage() {
   )
 }
 
-function EmptyState({
-  icon: Icon,
-  title,
-  message,
-}: {
-  icon: typeof Truck
-  title: string
-  message: string
-}) {
-  return (
-    <div className="grid place-items-center py-12 text-center">
-      <span className="grid h-12 w-12 place-items-center rounded-xl bg-brand-50 text-brand-700">
-        <Icon className="h-6 w-6" />
-      </span>
-      <p className="mt-3 text-sm font-semibold text-slate-800">{title}</p>
-      <p className="mt-1 max-w-sm text-sm text-slate-500">{message}</p>
-    </div>
-  )
-}
-
 function PengirimanFormPanel({
   item,
   jobs,
@@ -221,7 +200,7 @@ function PengirimanFormPanel({
   const isMold = item === ItemPengiriman.MOLD
 
   const [jobId, setJobId] = useState(jobs[0]?.id ?? '')
-  const [rencanaKirim, setRencanaKirim] = useState(today())
+  const [rencanaKirim, setRencanaKirim] = useState(todayInput())
   const [materialName, setMaterialName] = useState('')
   const [jumlahKg, setJumlahKg] = useState('')
   const [noSuratJalan, setNoSuratJalan] = useState('')

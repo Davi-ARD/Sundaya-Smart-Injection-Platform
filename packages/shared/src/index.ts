@@ -240,8 +240,8 @@ export interface OperationalData {
   id: string;
   machineId: string;
   status: MachineOperationalStatus;
-  // Durasi satu siklus molding penuh, kanonik dalam detik. UI memakai
-  // secondsToHms/hmsToSeconds untuk input dan tampilan jam + menit + detik.
+  // Durasi satu siklus molding penuh, kanonik dalam detik. Form memakai
+  // hmsToSeconds untuk merakitnya dari input jam + menit + detik.
   cycleTimeSec: number | null;
   occurredAt: ISODateString;
   byId: string;
@@ -643,42 +643,16 @@ export const MOLD_TRACKING_FLOW: Record<MoldTrackingStatus, MoldTrackingStatus[]
   [MoldTrackingStatus.COMPLETED]: [],
 };
 
-// Transisi yang dipicu otomatis oleh event domain, bukan tombol. DELIVERY dari
-// Log Pengiriman mold (Manager), RECEIVED dari Log Penerimaan mold (Admin
-// Sundaya), PRODUCTION dari produksi harian pertama (Admin Penyewa).
-export const MOLD_AUTO_TRANSITIONS: MoldTrackingStatus[] = [
-  MoldTrackingStatus.DELIVERY,
-  MoldTrackingStatus.RECEIVED,
-  MoldTrackingStatus.PRODUCTION,
-];
-
-// Transisi yang tetap manual (tombol Admin Sundaya di tab Mold Tracking).
+// Status mold yang tidak digerakkan event domain melainkan tombol Admin Sundaya
+// di tab Mold Tracking. Sisanya otomatis (lihat PROJECT_CONTEXT.md bagian 5a).
 export const MOLD_MANUAL_TRANSITIONS: MoldTrackingStatus[] = [
   MoldTrackingStatus.SEND_BACK,
   MoldTrackingStatus.COMPLETED,
 ];
 
-// Cycle time disimpan kanonik dalam detik tapi diinput dan ditampilkan sebagai
-// jam + menit + detik. Dua helper ini dipakai api (validasi) dan web (form).
+// Cycle time disimpan kanonik dalam detik tapi diinput sebagai jam + menit + detik.
 export function hmsToSeconds(jam: number, menit: number, detik: number): number {
   return jam * 3600 + menit * 60 + detik;
-}
-
-export function secondsToHms(total: number): { jam: number; menit: number; detik: number } {
-  const jam = Math.floor(total / 3600);
-  const menit = Math.floor((total % 3600) / 60);
-  // Detik disisakan 1 desimal: siklus molding sering di bawah satu menit.
-  const detik = Math.round((total % 60) * 10) / 10;
-  return { jam, menit, detik };
-}
-
-// Label ringkas cycle time, mis. "1j 2m 30s" atau "32s".
-export function formatCycleTime(total: number | null): string {
-  if (total == null) return "-";
-  const { jam, menit, detik } = secondsToHms(total);
-  return [jam ? `${jam}j` : "", menit ? `${menit}m` : "", detik ? `${detik}s` : ""]
-    .filter(Boolean)
-    .join(" ") || "0s";
 }
 
 // Cycle time ideal per mesin belum jadi master data; Performance dihitung dari

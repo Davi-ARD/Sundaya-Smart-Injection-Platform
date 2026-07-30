@@ -18,7 +18,7 @@ import { FieldGroup, SelectField, TextAreaField, TextField } from '../../compone
 import { useToast } from '../../components/ui/Toast'
 import { errorMessage } from '../../lib/errorMessage'
 import { optionalNumber, optionalText } from '../../lib/form'
-import { formatDateTime } from '../../lib/format'
+import { formatDateTime, nowLocalInput } from '../../lib/format'
 
 const eventLabel: Record<LogProduksiEventType, string> = {
   [LogProduksiEventType.MATERIAL_DATANG]: 'Material datang',
@@ -35,12 +35,6 @@ const eventIcon = {
 // Nilai <input type="datetime-local"> ('YYYY-MM-DDTHH:mm') menjadi ISO string.
 const toIso = (local: string) => new Date(local).toISOString()
 
-// Nilai awal input datetime-local: waktu sekarang menurut zona waktu pengguna.
-const nowLocal = () => {
-  const now = new Date()
-  now.setMinutes(now.getMinutes() - now.getTimezoneOffset())
-  return now.toISOString().slice(0, 16)
-}
 
 // Log Produksi (Layer 2, Admin Penyewa di lokasi Sundaya). Append-only:
 // event tidak bisa diubah atau dihapus, koreksi ditulis sebagai event baru.
@@ -244,7 +238,7 @@ function LogFormPanel({
   const [eventType, setEventType] = useState<LogProduksiEventType>(
     LogProduksiEventType.PRODUKSI_HARIAN,
   )
-  const [occurredAt, setOccurredAt] = useState(nowLocal())
+  const [occurredAt, setOccurredAt] = useState(nowLocalInput())
   const [catatan, setCatatan] = useState('')
   // Material datang
   const [materialName, setMaterialName] = useState('')
