@@ -84,7 +84,12 @@ export function ManagerDashboardPage() {
     },
     {
       header: 'Mesin',
-      cell: (r) => r.machineNumber ?? <span className="text-slate-400">Belum assign</span>,
+      cell: (r) =>
+        r.machineNumbers.length ? (
+          r.machineNumbers.join(', ')
+        ) : (
+          <span className="text-slate-400">Belum dipinjami</span>
+        ),
     },
     {
       header: 'Progress',
@@ -227,7 +232,9 @@ export function ManagerDashboardPage() {
             key={blok.jobId}
             className="mt-3"
             title={blok.jobNumber}
-            subtitle={`Mesin ${blok.machineNumber ?? 'belum assign'}, sisa sewa ${formatSisaHari(
+            subtitle={`Mesin ${
+              blok.machineNumbers.join(', ') || 'belum dipinjami'
+            } (${blok.machineNumbers.length} dari ${blok.requestedMachineCount} diminta), sisa sewa ${formatSisaHari(
               blok.sisaHariSewa,
             )}`}
             actions={<JobLifecycleBadge status={blok.lifecycle} />}

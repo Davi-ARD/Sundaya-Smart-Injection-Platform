@@ -84,7 +84,19 @@ export function BookingPage() {
     { header: 'Status', cell: (j) => <JobLifecycleBadge status={j.lifecycle} /> },
     {
       header: 'Mesin',
-      cell: (j) => j.machineNumber ?? <span className="text-slate-400">Menunggu assign</span>,
+      cell: (j) =>
+        j.machines.length ? (
+          <span className="flex flex-col gap-0.5 text-sm">
+            {j.machines.map((m) => (
+              <span key={m.machineId}>{m.machineNumber}</span>
+            ))}
+            <span className="text-xs text-slate-500">
+              {j.machines.length} dari {j.requestedMachineCount} diminta
+            </span>
+          </span>
+        ) : (
+          <span className="text-slate-400">Menunggu {j.requestedMachineCount} mesin</span>
+        ),
     },
     { header: 'Durasi', cell: (j) => `${j.requestedDurationDays} hari` },
     { header: 'Selesai sewa', cell: (j) => formatDate(j.endDate) },
@@ -126,7 +138,8 @@ export function BookingPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">Booking Mesin</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Ajukan booking untuk satu atau beberapa cetakan sekaligus.
+            Ajukan booking untuk satu atau beberapa cetakan sekaligus, plus jumlah mesin yang
+            ingin dipinjam.
           </p>
         </div>
         <Button onClick={() => setIsPanelOpen(true)} disabled={isLoading}>
@@ -174,6 +187,7 @@ export function BookingPage() {
           save={async (form) => {
             const body: CreateJobRequest = {
               moldIds: form.moldIds,
+              requestedMachineCount: Number(form.requestedMachineCount),
               requestedDurationDays: Number(form.requestedDurationDays),
               startDate: toIso(form.startDate),
               catatan: optionalText(form.catatan),
@@ -188,6 +202,7 @@ export function BookingPage() {
 
 type FormState = {
   moldIds: string[]
+  requestedMachineCount: string
   requestedDurationDays: string
   startDate: string
   catatan: string
@@ -207,6 +222,7 @@ function BookingFormPanel({
   const toast = useToast()
   const [form, setForm] = useState<FormState>({
     moldIds: [],
+    requestedMachineCount: '1',
     requestedDurationDays: '30',
     startDate: todayInput(),
     catatan: '',
@@ -221,8 +237,8 @@ function BookingFormPanel({
         : [...f.moldIds, moldId],
     }))
 
-  // Mesin di-assign satu untuk seluruh booking, jadi tonase terbesar di antara
-  // cetakan terpilih yang menentukan mesin mana yang sanggup.
+  // Sundaya meminjamkan beberapa mesin tanpa memasangkannya ke cetakan tertentu, jadi
+  // angka ini sifatnya info: mesin sebesar ini perlu ada supaya semua cetakan kebagian.
   const tonaseTerbesar = molds
     .filter((m) => form.moldIds.includes(m.id))
     .reduce((max, m) => Math.max(max, m.tonaseTon), 0)
@@ -248,7 +264,7 @@ function BookingFormPanel({
   return (
     <SidePanel
       title="Ajukan booking"
-      subtitle="Pilih satu atau beberapa cetakan. Mesin ditentukan Sundaya setelah disetujui."
+      subtitle="Pilih cetakan dan jumlah mesin. Mesin mana yang dipinjamkan ditentukan Sundaya."
       onClose={onClose}
     >
       {molds.length === 0 ? (
@@ -290,10 +306,24 @@ function BookingFormPanel({
             </div>
             {form.moldIds.length > 0 ? (
               <p className="mt-2 text-xs text-slate-500">
-                {form.moldIds.length} cetakan dipilih, butuh mesin minimal {tonaseTerbesar} ton.
+                {form.moldIds.length} cetakan dipilih, cetakan terberat butuh mesin {tonaseTerbesar}{' '}
+                ton.
               </p>
             ) : null}
           </div>
+
+          <TextField
+            label="Jumlah mesin yang dipinjam"
+            type="number"
+            min={1}
+            max={20}
+            value={form.requestedMachineCount}
+            onChange={(value) => setForm((f) => ({ ...f, requestedMachineCount: value }))}
+          />
+          <p className="-mt-2 text-xs leading-5 text-slate-500">
+            Mesin dipinjamkan, bukan dipasangkan ke cetakan. Petugas Anda bebas menjalankan cetakan
+            mana pun di mesin mana pun selama tonasenya cukup.
+          </p>
 
           <FieldGroup>
             <TextField

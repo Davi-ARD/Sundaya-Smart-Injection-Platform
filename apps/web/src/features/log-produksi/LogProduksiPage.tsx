@@ -3,6 +3,7 @@ import { ClipboardList, Info, PackagePlus, Plus, Factory, Layers } from 'lucide-
 import {
   LogProduksiEventType,
   ProgressMolding,
+  type JobMachine,
   type JobMold,
   type CreateLogProduksiRequest,
   type Job,
@@ -35,6 +36,11 @@ const eventIcon = {
 
 // Nilai <input type="datetime-local"> ('YYYY-MM-DDTHH:mm') menjadi ISO string.
 const toIso = (local: string) => new Date(local).toISOString()
+
+// Booking meminjamkan beberapa mesin tanpa memasangkannya ke cetakan, jadi event yang
+// benar-benar berjalan di atas mesin harus menyebut mesin mana yang dipakai.
+const butuhMesin = (eventType: LogProduksiEventType) =>
+  eventType !== LogProduksiEventType.MATERIAL_DATANG
 
 
 // Log Produksi (Layer 2, Admin Penyewa di lokasi Sundaya). Append-only:
@@ -123,7 +129,10 @@ export function LogProduksiPage() {
             Catat material datang, produksi harian, dan progress molding di lokasi Sundaya.
           </p>
         </div>
-        <Button onClick={() => setIsPanelOpen(true)} disabled={!jobId || !activeJob?.molds.length}>
+        <Button
+          onClick={() => setIsPanelOpen(true)}
+          disabled={!jobId || !activeJob?.molds.length || !activeJob?.machines.length}
+        >
           <Plus className="h-4 w-4" /> Catat event
         </Button>
       </div>
@@ -142,7 +151,10 @@ export function LogProduksiPage() {
             <div className="flex items-center gap-3 pb-1">
               <JobLifecycleBadge status={activeJob.lifecycle} />
               <span className="text-sm text-slate-500">
-                Mesin: {activeJob.machineNumber ?? 'belum di-assign'}
+                Mesin:{' '}
+                {activeJob.machines.length
+                  ? activeJob.machines.map((m) => m.machineNumber).join(', ')
+                  : 'belum dipinjamkan'}
               </span>
             </div>
           ) : null}
@@ -179,6 +191,7 @@ export function LogProduksiPage() {
         <LogFormPanel
           jobId={jobId}
           molds={activeJob?.molds ?? []}
+          machines={activeJob?.machines ?? []}
           onClose={() => setIsPanelOpen(false)}
           onSaved={() => {
             setIsPanelOpen(false)
@@ -201,7 +214,12 @@ function TimelineItem({ log }: { log: LogProduksi }) {
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <p className="text-sm font-semibold text-slate-900">
             {eventLabel[log.eventType]}
-            {log.kodeMold ? <span className="ml-2 font-normal text-slate-500">{log.kodeMold}</span> : null}
+            {log.kodeMold ? (
+              <span className="ml-2 font-normal text-slate-500">
+                {log.kodeMold}
+                {log.machineNumber ? ` di mesin ${log.machineNumber}` : ''}
+              </span>
+            ) : null}
           </p>
           <p className="text-xs text-slate-400">{formatDateTime(log.occurredAt)}</p>
         </div>
@@ -232,11 +250,13 @@ function TimelineItem({ log }: { log: LogProduksi }) {
 function LogFormPanel({
   jobId,
   molds,
+  machines,
   onClose,
   onSaved,
 }: {
   jobId: string
   molds: JobMold[]
+  machines: JobMachine[]
   onClose: () => void
   onSaved: () => void
 }) {
@@ -246,6 +266,7 @@ function LogFormPanel({
     LogProduksiEventType.PRODUKSI_HARIAN,
   )
   const [moldId, setMoldId] = useState(molds[0]?.moldId ?? '')
+  const [machineId, setMachineId] = useState(machines[0]?.machineId ?? '')
   const [occurredAt, setOccurredAt] = useState(nowLocalInput())
   const [catatan, setCatatan] = useState('')
   // Material datang
@@ -262,12 +283,26 @@ function LogFormPanel({
   const [isSaving, setIsSaving] = useState(false)
 
   const selectedMold = molds.find((m) => m.moldId === moldId)
+  // Tonase mesin adalah batas atas: cetakan ini hanya boleh jalan di mesin yang sanggup.
+  const mesinCocok = machines.filter((m) => m.tonaseTon >= (selectedMold?.tonaseTon ?? 0))
+  const perluMesin = butuhMesin(eventType)
+  // Ganti cetakan bisa membuat mesin terpilih tidak sanggup lagi; jatuh ke mesin cocok
+  // pertama supaya yang dikirim selalu sama dengan yang tampil di form.
+  const mesinDipakai = mesinCocok.some((m) => m.machineId === machineId)
+    ? machineId
+    : (mesinCocok[0]?.machineId ?? '')
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
     setIsSaving(true)
     // Hanya field milik jenis event yang dikirim; server menolak bila wajib kosong.
-    const base = { moldId, eventType, occurredAt: toIso(occurredAt), catatan: optionalText(catatan) }
+    const base = {
+      moldId,
+      machineId: perluMesin ? mesinDipakai : undefined,
+      eventType,
+      occurredAt: toIso(occurredAt),
+      catatan: optionalText(catatan),
+    }
     const body: CreateLogProduksiRequest =
       eventType === LogProduksiEventType.MATERIAL_DATANG
         ? {
@@ -337,6 +372,26 @@ function LogFormPanel({
             label: eventLabel[type],
           }))}
         />
+
+        {perluMesin ? (
+          mesinCocok.length ? (
+            <SelectField
+              label="Mesin yang dipakai"
+              value={mesinDipakai}
+              onChange={setMachineId}
+              options={mesinCocok.map((m) => ({
+                value: m.machineId,
+                label: `${m.machineNumber} (${m.tonaseTon} ton)`,
+              }))}
+            />
+          ) : (
+            <p className="rounded-lg bg-rose-50 px-3 py-2.5 text-xs leading-5 text-rose-700 ring-1 ring-inset ring-rose-600/15">
+              Tidak ada mesin pinjaman yang sanggup cetakan ini
+              {selectedMold ? ` (butuh ${selectedMold.tonaseTon} ton)` : ''}. Hubungi Sundaya.
+            </p>
+          )
+        ) : null}
+
         <TextField label="Waktu kejadian" type="datetime-local" value={occurredAt} onChange={setOccurredAt} />
 
         {eventType === LogProduksiEventType.MATERIAL_DATANG ? (
@@ -389,7 +444,7 @@ function LogFormPanel({
           <Button type="button" variant="secondary" onClick={onClose}>
             Batal
           </Button>
-          <Button type="submit" disabled={isSaving}>
+          <Button type="submit" disabled={isSaving || (perluMesin && !mesinDipakai)}>
             {isSaving ? 'Menyimpan...' : 'Catat event'}
           </Button>
         </div>

@@ -79,7 +79,10 @@ export function MoldPlanDetail({ row }: { row: MoldPlanRow }) {
             label="Status booking"
             value={row.lifecycle ? <JobLifecycleBadge status={row.lifecycle} /> : '-'}
           />
-          <Row label="Mesin assigned" value={row.machineNumber ?? 'Belum assign'} />
+          <Row
+            label="Mesin dipinjamkan"
+            value={row.machineNumbers.join(', ') || 'Belum dipinjami'}
+          />
           <Row
             label="Sisa masa sewa"
             value={formatSisaHari(row.sisaHariSewa)}

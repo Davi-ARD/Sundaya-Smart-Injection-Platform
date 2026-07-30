@@ -19,6 +19,7 @@ import { TableSkeleton } from '../../components/ui/Skeleton'
 import { FieldGroup, SelectField, TextAreaField, TextField } from '../../components/ui/FormField'
 import { useToast } from '../../components/ui/Toast'
 import { errorMessage } from '../../lib/errorMessage'
+import { useMoldPicker } from '../../lib/useMoldPicker'
 import { optionalText } from '../../lib/form'
 import { formatDate, formatDateTime, nowLocalInput } from '../../lib/format'
 
@@ -235,21 +236,7 @@ function PenerimaanFormPanel({
   const toast = useToast()
   const isMold = item === ItemPengiriman.MOLD
 
-  // Booking bisa memuat beberapa cetakan, jadi item MOLD harus menyebut cetakan mana.
-  const [jobId, setJobId] = useState(jobs[0]?.id ?? '')
-  const moldsOfJob = jobs.find((j) => j.id === jobId)?.molds ?? []
-  const [moldId, setMoldId] = useState(moldsOfJob[0]?.moldId ?? '')
-  const moldOptions = moldsOfJob.map((m) => ({
-    value: m.moldId,
-    label: `${m.kodeMold} - ${m.namaProduk}`,
-  }))
-
-  // Ganti booking berarti cetakan lama tidak relevan lagi.
-  const pilihJob = (nextJobId: string) => {
-    setJobId(nextJobId)
-    const next = jobs.find((j) => j.id === nextJobId)?.molds ?? []
-    setMoldId(next[0]?.moldId ?? '')
-  }
+  const { jobId, moldId, setMoldId, pilihJob, jobOptions, moldOptions } = useMoldPicker(jobs)
   const [diterimaAt, setDiterimaAt] = useState(nowLocalInput())
   const [materialName, setMaterialName] = useState('')
   const [jumlahKg, setJumlahKg] = useState('')
@@ -299,12 +286,7 @@ function PenerimaanFormPanel({
       onClose={onClose}
     >
       <form onSubmit={handleSubmit} className="space-y-4">
-        <SelectField
-          label="Job"
-          value={jobId}
-          onChange={pilihJob}
-          options={jobs.map((job) => ({ value: job.id, label: job.jobNumber }))}
-        />
+        <SelectField label="Job" value={jobId} onChange={pilihJob} options={jobOptions} />
         {isMold ? (
           <SelectField
             label="Cetakan"

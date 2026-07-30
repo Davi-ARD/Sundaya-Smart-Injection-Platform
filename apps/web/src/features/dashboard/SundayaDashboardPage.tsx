@@ -87,7 +87,15 @@ export function SundayaDashboardPage() {
 
   const progressColumns: Column<Job>[] = [
     { header: 'Penyewa', cell: (j) => j.companyName ?? <span className="text-slate-400">-</span> },
-    { header: 'Mesin', cell: (j) => j.machineNumber ?? <span className="text-slate-400">Belum assign</span> },
+    {
+      header: 'Mesin',
+      cell: (j) =>
+        j.machines.length ? (
+          j.machines.map((m) => m.machineNumber).join(', ')
+        ) : (
+          <span className="text-slate-400">Belum dipinjami</span>
+        ),
+    },
     {
       header: 'Cetakan',
       cell: (j) =>

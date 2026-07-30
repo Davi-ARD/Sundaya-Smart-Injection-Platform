@@ -224,6 +224,10 @@ export const api = {
     return request<Job>('PATCH', `/jobs/${id}/assign`, token, body)
   },
 
+  async releaseJobMachine(token: string | null, id: string, machineId: string): Promise<Job> {
+    return request<Job>('DELETE', `/jobs/${id}/machines/${machineId}`, token)
+  },
+
   async rejectJob(token: string | null, id: string, body: RejectJobRequest): Promise<Job> {
     return request<Job>('PATCH', `/jobs/${id}/reject`, token, body)
   },
