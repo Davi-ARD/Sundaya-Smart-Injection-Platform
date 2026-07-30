@@ -9,7 +9,6 @@ import {
   type ExtensionRequestRow,
   type Job,
   type Machine,
-  type Mold,
   type RejectJobRequest,
 } from '@mold-tracker/shared'
 import { useAuth } from '../auth/authContextValue'
@@ -43,7 +42,6 @@ export function SundayaBookingPage() {
   const canManage = user?.role === Role.ADMIN_SUNDAYA
 
   const [jobs, setJobs] = useState<Job[]>([])
-  const [molds, setMolds] = useState<Mold[]>([])
   const [machines, setMachines] = useState<Machine[]>([])
   const [extensions, setExtensions] = useState<ExtensionRequestRow[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -54,14 +52,12 @@ export function SundayaBookingPage() {
   const load = useCallback(async () => {
     setIsLoading(true)
     try {
-      const [jobList, moldList, machineList, extensionList] = await Promise.all([
+      const [jobList, machineList, extensionList] = await Promise.all([
         api.listJobs(accessToken),
-        api.listMolds(accessToken),
         api.listMachines(accessToken, { status: MachineStatus.TERSEDIA }),
         api.listExtensions(accessToken),
       ])
       setJobs(jobList)
-      setMolds(moldList)
       setMachines(machineList)
       setExtensions(extensionList)
     } catch (caught) {
@@ -75,7 +71,6 @@ export function SundayaBookingPage() {
     void load()
   }, [load])
 
-  const moldById = useMemo(() => new Map(molds.map((m) => [m.id, m])), [molds])
   const pendingApproval = useMemo(() => jobs.filter((j) => j.lifecycle === JobLifecycle.DIAJUKAN), [jobs])
   const ongoingJobs = useMemo(() => jobs.filter((j) => ONGOING_LIFECYCLES.includes(j.lifecycle)), [jobs])
   const pendingExtensions = useMemo(
@@ -136,9 +131,25 @@ export function SundayaBookingPage() {
 
   const approvalColumns: Column<Job>[] = [
     { header: 'No. Job', cell: (j) => <span className="font-semibold text-slate-900">{j.jobNumber}</span> },
-    { header: 'Cetakan', cell: (j) => moldById.get(j.moldId)?.kodeMold ?? <span className="text-slate-400">-</span> },
-    { header: 'Tonase', cell: (j) => (moldById.get(j.moldId) ? `${moldById.get(j.moldId)!.tonaseTon} ton` : '-') },
-    { header: 'Tujuan', cell: (j) => j.destinationLocation },
+    {
+      header: 'Cetakan',
+      cell: (j) =>
+        j.molds.length ? (
+          <span className="flex flex-col gap-0.5 text-sm">
+            {j.molds.map((m) => (
+              <span key={m.moldId}>{m.kodeMold}</span>
+            ))}
+          </span>
+        ) : (
+          <span className="text-slate-400">-</span>
+        ),
+    },
+    {
+      // Satu mesin untuk seluruh booking, jadi tonase terbesar yang menentukan.
+      header: 'Tonase min.',
+      cell: (j) =>
+        j.molds.length ? `${Math.max(...j.molds.map((m) => m.tonaseTon))} ton` : '-',
+    },
     { header: 'Mulai', cell: (j) => formatDate(j.startDate) },
     { header: 'Durasi', cell: (j) => `${j.requestedDurationDays} hari` },
     {
@@ -213,7 +224,19 @@ export function SundayaBookingPage() {
 
   const ongoingColumns: Column<Job>[] = [
     { header: 'No. Job', cell: (j) => <span className="font-semibold text-slate-900">{j.jobNumber}</span> },
-    { header: 'Cetakan', cell: (j) => moldById.get(j.moldId)?.kodeMold ?? <span className="text-slate-400">-</span> },
+    {
+      header: 'Cetakan',
+      cell: (j) =>
+        j.molds.length ? (
+          <span className="flex flex-col gap-0.5 text-sm">
+            {j.molds.map((m) => (
+              <span key={m.moldId}>{m.kodeMold}</span>
+            ))}
+          </span>
+        ) : (
+          <span className="text-slate-400">-</span>
+        ),
+    },
     { header: 'Mesin', cell: (j) => j.machineNumber ?? <span className="text-slate-400">Belum assign</span> },
     { header: 'Status', cell: (j) => <JobLifecycleBadge status={j.lifecycle} /> },
     { header: 'Selesai sewa', cell: (j) => formatDate(j.endDate) },
@@ -302,7 +325,6 @@ export function SundayaBookingPage() {
       {assignTarget ? (
         <AssignModal
           job={assignTarget}
-          mold={moldById.get(assignTarget.moldId)}
           machines={machines}
           onClose={() => setAssignTarget(null)}
           onSaved={() => {
@@ -328,20 +350,23 @@ export function SundayaBookingPage() {
 
 function AssignModal({
   job,
-  mold,
   machines,
   onClose,
   onSaved,
 }: {
   job: Job
-  mold: Mold | undefined
   machines: Machine[]
   onClose: () => void
   onSaved: () => void
 }) {
   const { accessToken } = useAuth()
   const toast = useToast()
-  const matching = mold ? machines.filter((m) => m.tonaseTon === mold.tonaseTon) : machines
+  // Satu mesin untuk seluruh booking, dan tonase mesin adalah batas atas: mesin
+  // yang lebih besar tetap boleh dipakai.
+  const tonaseDibutuhkan = job.molds.length
+    ? Math.max(...job.molds.map((m) => m.tonaseTon))
+    : 0
+  const matching = machines.filter((m) => m.tonaseTon >= tonaseDibutuhkan)
   const [machineId, setMachineId] = useState(matching[0]?.id ?? '')
   const [isSaving, setIsSaving] = useState(false)
 
@@ -364,8 +389,15 @@ function AssignModal({
     <Modal title={`Setujui ${job.jobNumber}`} onClose={onClose}>
       <form onSubmit={handleSubmit} className="space-y-4">
         <dl className="divide-y divide-slate-100 rounded-lg border border-slate-200/70">
-          <DetailRow label="Cetakan" value={mold ? `${mold.kodeMold} - ${mold.namaProduk}` : '-'} />
-          <DetailRow label="Tonase diminta" value={mold ? `${mold.tonaseTon} ton` : '-'} />
+          <DetailRow
+            label="Cetakan"
+            value={
+              job.molds.length
+                ? job.molds.map((m) => `${m.kodeMold} - ${m.namaProduk}`).join(', ')
+                : '-'
+            }
+          />
+          <DetailRow label="Tonase mesin minimal" value={`${tonaseDibutuhkan} ton`} />
           <DetailRow
             label="Periode"
             value={`${formatDate(job.startDate)} - ${job.requestedDurationDays} hari`}
@@ -374,7 +406,7 @@ function AssignModal({
 
         {matching.length === 0 ? (
           <p className="text-sm text-rose-600">
-            Tidak ada mesin tersedia{mold ? ` dengan tonase ${mold.tonaseTon} ton` : ''}.
+            Tidak ada mesin tersedia dengan tonase minimal {tonaseDibutuhkan} ton.
           </p>
         ) : (
           <SelectField

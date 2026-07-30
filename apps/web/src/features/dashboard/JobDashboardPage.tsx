@@ -36,7 +36,7 @@ const logSummary = (log: JobLogEntry) => {
       return `${log.materialName ?? '-'} - ${log.jumlahKg ?? 0} kg${log.noSuratJalan ? ` (surat jalan ${log.noSuratJalan})` : ''}`
     case LogProduksiEventType.PRODUKSI_HARIAN:
       return `${formatNumber(log.goodProduct ?? 0)} baik, ${formatNumber(log.rejectCount ?? 0)} reject${
-        log.materialRemainingKg != null ? `, sisa material ${log.materialRemainingKg} kg` : ''
+        log.materialUsedKg != null ? `, material terpakai ${log.materialUsedKg} kg` : ''
       }`
     default:
       return `${log.progressMolding ? progressMoldingLabel[log.progressMolding] : '-'}${
@@ -249,9 +249,9 @@ function JobCard({ job }: { job: JobDashboard }) {
           </dd>
         </div>
         <div>
-          <dt className="text-xs font-medium text-slate-500">Sisa material</dt>
+          <dt className="text-xs font-medium text-slate-500">Material terpakai</dt>
           <dd className="mt-0.5 text-lg font-bold text-slate-900">
-            {job.materialRemainingKg != null ? `${formatNumber(job.materialRemainingKg)} kg` : '-'}
+            {job.materialUsedKg != null ? `${formatNumber(job.materialUsedKg)} kg` : '-'}
           </dd>
         </div>
       </dl>

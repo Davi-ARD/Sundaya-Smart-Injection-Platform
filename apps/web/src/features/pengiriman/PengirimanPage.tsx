@@ -78,6 +78,7 @@ export function PengirimanPage() {
 
   const moldColumns: Column<LogPengiriman>[] = [
     jobColumn,
+    { header: 'Cetakan', cell: (l) => l.kodeMold ?? <span className="text-slate-400">-</span> },
     rencanaColumn,
     catatanColumn,
     dicatatColumn,
@@ -199,7 +200,21 @@ function PengirimanFormPanel({
   const toast = useToast()
   const isMold = item === ItemPengiriman.MOLD
 
+  // Booking bisa memuat beberapa cetakan, jadi item MOLD harus menyebut cetakan mana.
   const [jobId, setJobId] = useState(jobs[0]?.id ?? '')
+  const moldsOfJob = jobs.find((j) => j.id === jobId)?.molds ?? []
+  const [moldId, setMoldId] = useState(moldsOfJob[0]?.moldId ?? '')
+  const moldOptions = moldsOfJob.map((m) => ({
+    value: m.moldId,
+    label: `${m.kodeMold} - ${m.namaProduk}`,
+  }))
+
+  // Ganti booking berarti cetakan lama tidak relevan lagi.
+  const pilihJob = (nextJobId: string) => {
+    setJobId(nextJobId)
+    const next = jobs.find((j) => j.id === nextJobId)?.molds ?? []
+    setMoldId(next[0]?.moldId ?? '')
+  }
   const [rencanaKirim, setRencanaKirim] = useState(todayInput())
   const [materialName, setMaterialName] = useState('')
   const [jumlahKg, setJumlahKg] = useState('')
@@ -214,6 +229,7 @@ function PengirimanFormPanel({
       const base = {
         jobId,
         item,
+        moldId: isMold ? moldId : undefined,
         rencanaKirim: new Date(rencanaKirim).toISOString(),
         catatan: optionalText(catatan),
       }
@@ -249,9 +265,17 @@ function PengirimanFormPanel({
         <SelectField
           label="Job"
           value={jobId}
-          onChange={setJobId}
+          onChange={pilihJob}
           options={jobs.map((job) => ({ value: job.id, label: job.jobNumber }))}
         />
+        {isMold ? (
+          <SelectField
+            label="Cetakan"
+            value={moldId}
+            onChange={setMoldId}
+            options={moldOptions}
+          />
+        ) : null}
         <TextField
           label="Rencana kirim"
           type="date"
@@ -287,7 +311,7 @@ function PengirimanFormPanel({
           <Button type="button" variant="secondary" onClick={onClose}>
             Batal
           </Button>
-          <Button type="submit" disabled={isSaving || !jobId}>
+          <Button type="submit" disabled={isSaving || !jobId || (isMold && !moldId)}>
             {isSaving ? 'Menyimpan...' : 'Simpan'}
           </Button>
         </div>

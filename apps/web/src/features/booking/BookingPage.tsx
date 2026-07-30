@@ -12,43 +12,24 @@ import { api } from '../../lib/api'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { DataTable, type Column } from '../../components/ui/DataTable'
+import { EmptyState } from '../../components/ui/EmptyState'
 import { ExtensionStatusBadge, JobLifecycleBadge } from '../../components/ui/Badge'
 import { Modal } from '../../components/ui/Modal'
 import { SidePanel } from '../../components/ui/SidePanel'
 import { TableSkeleton } from '../../components/ui/Skeleton'
-import { FieldGroup, SelectField, TextField } from '../../components/ui/FormField'
+import { FieldGroup, TextAreaField, TextField } from '../../components/ui/FormField'
 import { useToast } from '../../components/ui/Toast'
 import { errorMessage } from '../../lib/errorMessage'
-import { optionalNumber, optionalText } from '../../lib/form'
-import { formatDate } from '../../lib/format'
+import { optionalText } from '../../lib/form'
+import { formatDate, todayInput } from '../../lib/format'
 
 // Input <input type="date"> memberi 'YYYY-MM-DD'; backend menerima ISO string.
 const toIso = (date: string) => new Date(`${date}T00:00:00`).toISOString()
 
-type FormState = {
-  moldId: string
-  requestedDurationDays: string
-  destinationLocation: string
-  startDate: string
-  planMaterialUtama: string
-  estimasiMaterialKg: string
-  materialTambahan: string
-  targetOutput: string
-}
-
-const emptyForm: FormState = {
-  moldId: '',
-  requestedDurationDays: '30',
-  destinationLocation: '',
-  startDate: '',
-  planMaterialUtama: '',
-  estimasiMaterialKg: '',
-  materialTambahan: '',
-  targetOutput: '',
-}
-
-// Booking mesin (Manager Penyewa). Booking memilih cetakan dan rencana, TANPA
-// memilih mesin: mesin di-assign Admin Sundaya setelah booking disetujui.
+// Booking mesin (Manager Penyewa). Satu booking boleh memuat beberapa cetakan dan
+// TIDAK memilih mesin: mesin di-assign Admin Sundaya untuk seluruh booking.
+// Plan material dan target output tidak ditanyakan di sini karena sudah diisi saat
+// merancang cetakan.
 export function BookingPage() {
   const { accessToken } = useAuth()
   const toast = useToast()
@@ -79,28 +60,31 @@ export function BookingPage() {
     void load()
   }, [load])
 
-  const moldById = useMemo(() => new Map(molds.map((m) => [m.id, m])), [molds])
-  // Satu cetakan hanya boleh satu job, jadi cetakan yang sudah dibooking tidak
-  // ditawarkan lagi (server tetap menolak dengan 409 bila dipaksa).
-  const availableMolds = useMemo(() => {
-    const booked = new Set(jobs.map((job) => job.moldId))
-    return molds.filter((mold) => !booked.has(mold.id))
-  }, [jobs, molds])
+  // Satu cetakan hanya boleh ikut satu booking; jobId terisi berarti sudah dibooking
+  // (server tetap menolak dengan 409 bila dipaksa).
+  const availableMolds = useMemo(() => molds.filter((mold) => mold.jobId == null), [molds])
 
   const columns: Column<Job>[] = [
     { header: 'No. Job', cell: (j) => <span className="font-semibold text-slate-900">{j.jobNumber}</span> },
     {
       header: 'Cetakan',
-      cell: (j) => {
-        const mold = moldById.get(j.moldId)
-        return mold ? `${mold.kodeMold} - ${mold.namaProduk}` : <span className="text-slate-400">-</span>
-      },
+      cell: (j) =>
+        j.molds.length ? (
+          <span className="flex flex-col gap-0.5">
+            {j.molds.map((m) => (
+              <span key={m.moldId} className="text-sm">
+                {m.kodeMold} - {m.namaProduk}
+              </span>
+            ))}
+          </span>
+        ) : (
+          <span className="text-slate-400">-</span>
+        ),
     },
     { header: 'Status', cell: (j) => <JobLifecycleBadge status={j.lifecycle} /> },
     {
       header: 'Mesin',
-      cell: (j) =>
-        j.machineNumber ?? <span className="text-slate-400">Menunggu assign</span>,
+      cell: (j) => j.machineNumber ?? <span className="text-slate-400">Menunggu assign</span>,
     },
     { header: 'Durasi', cell: (j) => `${j.requestedDurationDays} hari` },
     { header: 'Selesai sewa', cell: (j) => formatDate(j.endDate) },
@@ -142,7 +126,7 @@ export function BookingPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">Booking Mesin</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Ajukan booking cetakan beserta rencana material dan waktu sewa.
+            Ajukan booking untuk satu atau beberapa cetakan sekaligus.
           </p>
         </div>
         <Button onClick={() => setIsPanelOpen(true)} disabled={isLoading}>
@@ -154,17 +138,15 @@ export function BookingPage() {
         {isLoading ? (
           <TableSkeleton rows={5} columns={6} />
         ) : jobs.length === 0 ? (
-          <div className="grid place-items-center py-14 text-center">
-            <span className="grid h-12 w-12 place-items-center rounded-xl bg-brand-50 text-brand-700">
-              <CalendarPlus className="h-6 w-6" />
-            </span>
-            <p className="mt-3 text-sm font-semibold text-slate-800">Belum ada booking</p>
-            <p className="mt-1 text-sm text-slate-500">
-              {molds.length === 0
+          <EmptyState
+            icon={CalendarPlus}
+            title="Belum ada booking"
+            message={
+              molds.length === 0
                 ? 'Tambahkan cetakan terlebih dahulu di halaman Cetakan.'
-                : 'Ajukan booking pertama untuk cetakan Anda.'}
-            </p>
-          </div>
+                : 'Ajukan booking pertama untuk cetakan Anda.'
+            }
+          />
         ) : (
           <DataTable columns={columns} rows={jobs} rowKey={(j) => j.id} />
         )}
@@ -191,20 +173,167 @@ export function BookingPage() {
           }}
           save={async (form) => {
             const body: CreateJobRequest = {
-              moldId: form.moldId,
+              moldIds: form.moldIds,
               requestedDurationDays: Number(form.requestedDurationDays),
-              destinationLocation: form.destinationLocation.trim(),
               startDate: toIso(form.startDate),
-              planMaterialUtama: optionalText(form.planMaterialUtama),
-              estimasiMaterialKg: optionalNumber(form.estimasiMaterialKg),
-              materialTambahan: optionalText(form.materialTambahan),
-              targetOutput: optionalNumber(form.targetOutput),
+              catatan: optionalText(form.catatan),
             }
             await api.createJob(accessToken, body)
           }}
         />
       ) : null}
     </div>
+  )
+}
+
+type FormState = {
+  moldIds: string[]
+  requestedDurationDays: string
+  startDate: string
+  catatan: string
+}
+
+function BookingFormPanel({
+  molds,
+  onClose,
+  onSaved,
+  save,
+}: {
+  molds: Mold[]
+  onClose: () => void
+  onSaved: () => void
+  save: (form: FormState) => Promise<void>
+}) {
+  const toast = useToast()
+  const [form, setForm] = useState<FormState>({
+    moldIds: [],
+    requestedDurationDays: '30',
+    startDate: todayInput(),
+    catatan: '',
+  })
+  const [isSaving, setIsSaving] = useState(false)
+
+  const toggleMold = (moldId: string) =>
+    setForm((f) => ({
+      ...f,
+      moldIds: f.moldIds.includes(moldId)
+        ? f.moldIds.filter((id) => id !== moldId)
+        : [...f.moldIds, moldId],
+    }))
+
+  // Mesin di-assign satu untuk seluruh booking, jadi tonase terbesar di antara
+  // cetakan terpilih yang menentukan mesin mana yang sanggup.
+  const tonaseTerbesar = molds
+    .filter((m) => form.moldIds.includes(m.id))
+    .reduce((max, m) => Math.max(max, m.tonaseTon), 0)
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault()
+    if (form.moldIds.length === 0) {
+      toast.error('Pilih minimal satu cetakan')
+      return
+    }
+    setIsSaving(true)
+    try {
+      await save(form)
+      toast.success('Booking diajukan')
+      onSaved()
+    } catch (caught) {
+      toast.error(errorMessage(caught, 'Gagal mengajukan booking'))
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <SidePanel
+      title="Ajukan booking"
+      subtitle="Pilih satu atau beberapa cetakan. Mesin ditentukan Sundaya setelah disetujui."
+      onClose={onClose}
+    >
+      {molds.length === 0 ? (
+        <div className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800 ring-1 ring-inset ring-amber-600/15">
+          Semua cetakan sudah dibooking. Tambahkan cetakan baru di halaman Cetakan terlebih dahulu.
+        </div>
+      ) : (
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <p className="text-sm font-medium text-slate-700">Cetakan</p>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Boleh lebih dari satu. Rencana material dan target output terbawa dari masing-masing
+              cetakan.
+            </p>
+            <div className="mt-2 max-h-64 space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50/60 p-2">
+              {molds.map((mold) => (
+                <label
+                  key={mold.id}
+                  className="flex cursor-pointer items-start gap-2.5 rounded-lg px-2 py-2 transition-colors hover:bg-white"
+                >
+                  <input
+                    type="checkbox"
+                    checked={form.moldIds.includes(mold.id)}
+                    onChange={() => toggleMold(mold.id)}
+                    className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-medium text-slate-900">
+                      {mold.kodeMold} - {mold.namaProduk}
+                    </span>
+                    <span className="block text-xs text-slate-500">
+                      {mold.tonaseTon} ton, {mold.cavity} cavity
+                      {mold.targetOutput != null ? `, target ${mold.targetOutput}` : ''}
+                      {mold.estimasiKg != null ? `, material ${mold.estimasiKg} kg` : ''}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            {form.moldIds.length > 0 ? (
+              <p className="mt-2 text-xs text-slate-500">
+                {form.moldIds.length} cetakan dipilih, butuh mesin minimal {tonaseTerbesar} ton.
+              </p>
+            ) : null}
+          </div>
+
+          <FieldGroup>
+            <TextField
+              label="Durasi sewa (hari)"
+              type="number"
+              min={1}
+              value={form.requestedDurationDays}
+              onChange={(value) => setForm((f) => ({ ...f, requestedDurationDays: value }))}
+            />
+            <TextField
+              label="Rencana mulai"
+              type="date"
+              value={form.startDate}
+              onChange={(value) => setForm((f) => ({ ...f, startDate: value }))}
+            />
+          </FieldGroup>
+
+          <TextAreaField
+            label="Catatan"
+            value={form.catatan}
+            onChange={(value) => setForm((f) => ({ ...f, catatan: value }))}
+          />
+
+          <div className="flex items-start gap-2 rounded-lg bg-brand-50/70 px-3 py-2.5 text-xs leading-5 text-brand-900 ring-1 ring-inset ring-brand-600/10">
+            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            Rencana kirim cetakan dan material dicatat terpisah di tab Log Pengiriman setelah
+            booking dibuat.
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="secondary" onClick={onClose}>
+              Batal
+            </Button>
+            <Button type="submit" disabled={isSaving || form.moldIds.length === 0}>
+              {isSaving ? 'Mengajukan...' : 'Ajukan booking'}
+            </Button>
+          </div>
+        </form>
+      )}
+    </SidePanel>
   )
 }
 
@@ -228,8 +357,10 @@ function ExtensionModal({
     event.preventDefault()
     setIsSaving(true)
     try {
-      await api.requestExtension(accessToken, job.id, { additionalDays: Number(additionalDays) })
-      toast.success('Pengajuan perpanjangan dikirim ke Sundaya')
+      await api.createExtension(accessToken, job.id, {
+        additionalDays: Number(additionalDays),
+      })
+      toast.success('Pengajuan perpanjangan dikirim')
       onSaved()
     } catch (caught) {
       toast.error(errorMessage(caught, 'Gagal mengajukan perpanjangan'))
@@ -239,11 +370,10 @@ function ExtensionModal({
   }
 
   return (
-    <Modal title={`Perpanjangan sewa ${job.jobNumber}`} onClose={onClose}>
+    <Modal title={`Perpanjangan ${job.jobNumber}`} onClose={onClose}>
       <form onSubmit={handleSubmit} className="space-y-4">
-        <p className="text-sm text-slate-500">
-          Sewa berakhir {formatDate(job.endDate)}. Tambahan hari dihitung dari tanggal tersebut
-          setelah Admin Sundaya menyetujui.
+        <p className="text-sm text-slate-600">
+          Sewa berakhir {formatDate(job.endDate)}. Admin Sundaya yang memutuskan pengajuan ini.
         </p>
         <TextField
           label="Tambahan hari"
@@ -257,145 +387,11 @@ function ExtensionModal({
           <Button type="button" variant="secondary" onClick={onClose}>
             Batal
           </Button>
-          <Button type="submit" disabled={isSaving || Number(additionalDays) < 1}>
-            {isSaving ? 'Mengirim...' : 'Ajukan perpanjangan'}
+          <Button type="submit" disabled={isSaving}>
+            {isSaving ? 'Mengirim...' : 'Ajukan'}
           </Button>
         </div>
       </form>
     </Modal>
-  )
-}
-
-function BookingFormPanel({
-  molds,
-  onClose,
-  onSaved,
-  save,
-}: {
-  molds: Mold[]
-  onClose: () => void
-  onSaved: () => void
-  save: (form: FormState) => Promise<void>
-}) {
-  const toast = useToast()
-  // Prefill rencana material dari cetakan terpilih: rencana hanya diisi sekali.
-  const [form, setForm] = useState<FormState>({ ...emptyForm, moldId: molds[0]?.id ?? '' })
-  const [isSaving, setIsSaving] = useState(false)
-
-  const set = (key: keyof FormState) => (value: string) => setForm((f) => ({ ...f, [key]: value }))
-
-  const selectMold = (moldId: string) => {
-    const mold = molds.find((m) => m.id === moldId)
-    setForm((f) => ({
-      ...f,
-      moldId,
-      planMaterialUtama: mold?.planMaterialUtama ?? f.planMaterialUtama,
-      estimasiMaterialKg: mold?.estimasiKg != null ? String(mold.estimasiKg) : f.estimasiMaterialKg,
-      targetOutput: mold?.targetOutput != null ? String(mold.targetOutput) : f.targetOutput,
-    }))
-  }
-
-  const handleSubmit = async (event: FormEvent) => {
-    event.preventDefault()
-    setIsSaving(true)
-    try {
-      await save(form)
-      toast.success('Booking diajukan')
-      onSaved()
-    } catch (caught) {
-      toast.error(errorMessage(caught, 'Gagal mengajukan booking'))
-    } finally {
-      setIsSaving(false)
-    }
-  }
-
-  return (
-    <SidePanel
-      title="Ajukan booking"
-      subtitle="Mesin ditentukan Sundaya setelah booking disetujui."
-      onClose={onClose}
-    >
-      {molds.length === 0 ? (
-        <div className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800 ring-1 ring-inset ring-amber-600/15">
-          Semua cetakan sudah dibooking. Tambahkan cetakan baru di halaman Cetakan terlebih dahulu.
-        </div>
-      ) : (
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <SelectField
-            label="Cetakan"
-            value={form.moldId}
-            onChange={selectMold}
-            options={molds.map((mold) => ({
-              value: mold.id,
-              label: `${mold.kodeMold} - ${mold.namaProduk} (${mold.tonaseTon} ton)`,
-            }))}
-          />
-
-          <FieldGroup>
-            <TextField
-              label="Durasi sewa (hari)"
-              type="number"
-              min={1}
-              value={form.requestedDurationDays}
-              onChange={set('requestedDurationDays')}
-            />
-            <TextField label="Rencana mulai" type="date" value={form.startDate} onChange={set('startDate')} />
-          </FieldGroup>
-
-          <TextField
-            label="Lokasi tujuan"
-            value={form.destinationLocation}
-            onChange={set('destinationLocation')}
-          />
-
-          <div className="flex items-start gap-2 rounded-lg bg-brand-50/70 px-3 py-2.5 text-xs leading-5 text-brand-900 ring-1 ring-inset ring-brand-600/10">
-            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            Rencana kirim cetakan dan material dicatat terpisah di tab Log Pengiriman setelah
-            booking dibuat.
-          </div>
-
-          <TextField
-            label="Material utama (rencana)"
-            required={false}
-            value={form.planMaterialUtama}
-            onChange={set('planMaterialUtama')}
-          />
-          <FieldGroup>
-            <TextField
-              label="Estimasi material (kg)"
-              type="number"
-              min={0}
-              step="0.1"
-              required={false}
-              value={form.estimasiMaterialKg}
-              onChange={set('estimasiMaterialKg')}
-            />
-            <TextField
-              label="Target output"
-              type="number"
-              min={0}
-              required={false}
-              value={form.targetOutput}
-              onChange={set('targetOutput')}
-            />
-          </FieldGroup>
-          <TextField
-            label="Material tambahan"
-            required={false}
-            value={form.materialTambahan}
-            onChange={set('materialTambahan')}
-          />
-
-          <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="secondary" onClick={onClose}>
-              Batal
-            </Button>
-            <Button type="submit" disabled={isSaving}>
-              {isSaving ? 'Mengirim...' : 'Ajukan booking'}
-            </Button>
-          </div>
-        </form>
-      )}
-    </SidePanel>
   )
 }
