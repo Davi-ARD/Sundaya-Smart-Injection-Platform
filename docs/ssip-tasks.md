@@ -13,7 +13,13 @@ Dokumentasi tanpa em dash.
   modul baru, notifikasi dua arah, status mesin Teknisi tinggal Setup/Running
   dengan pemulihan status pasca-maintenance, OEE tiga dimensi lintas layer,
   dashboard tiap role jadi read-only.
-- **Sisa**: revisi detail sisi Manager Penyewa dan Admin Penyewa.
+- **Selesai (revisi Manager Penyewa dan booking)**: dashboard Manager jadi
+  visualisasi murni dengan satu tabel gabungan plus cycle production per booking,
+  booking memuat beberapa cetakan dengan satu mesin, plan cetakan jadi batas keras
+  di Log Produksi (output dan material), material diperlakukan sebagai kuota,
+  nomor mesin otomatis, standardRatio dihapus, dan tonase mesin diperlakukan
+  sebagai batas atas.
+- **Sisa**: revisi detail sisi Admin Penyewa.
 
 Aturan domain yang mengikat pekerjaan selanjutnya ada di `PROJECT_CONTEXT.md`
 bagian 5a (mold tracking otomatis) dan `docs/ssip-spec.md` bagian 6 dan 6a.

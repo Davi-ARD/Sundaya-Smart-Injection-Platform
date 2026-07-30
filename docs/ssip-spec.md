@@ -150,6 +150,13 @@ Basis `schema.prisma:134-157`.
   returnedAt/rejectionReason`.
 - `rencanaKirimMold` dihapus: rencana kirim dicatat Manager di LogPengiriman,
   bukan sekali saat booking.
+- **`moldId` unique dihapus.** Relasi dibalik menjadi `Mold.jobId`, jadi satu
+  booking memuat banyak cetakan (`Job.molds Mold[]`) sementara satu cetakan tetap
+  hanya ikut satu booking.
+- `destinationLocation` dihapus (single-provider: tujuannya selalu Sundaya).
+  `planMaterialUtama`, `estimasiMaterialKg`, `materialTambahan`, `targetOutput`
+  dihapus: semuanya dibaca dari Mold, tidak diduplikasi.
+- Tambah `catatan String?` untuk catatan booking.
 - Relasi baru: `logPengiriman LogPengiriman[]`, `logPenerimaan LogPenerimaan[]`.
 
 ### [BARU] Mold (Cetakan)
@@ -184,7 +191,16 @@ Single-table timeline dengan kolom nullable per jenis event.
   ProductionBatch lama: pindah ke sini hanya jika alur review masih dipakai;
   default buang sampai diminta (belum ada di wireframe/PROJECT_CONTEXT baru).
 
+### [EVOLVE] Mold (tambahan)
+- Tambah `jobId String?`: booking yang memuat cetakan ini, null berarti belum
+  dibooking. Booking yang ditolak mengosongkannya kembali.
+- `targetOutput` dan `estimasiKg` naik peran menjadi **batas keras** yang
+  ditegakkan Log Produksi, bukan sekadar angka rencana.
+- Relasi baru: `logProduksi`, `logPengiriman`, `logPenerimaan`.
+
 ### [BARU] OperationalData (Layer 1, append-only, realtime Teknisi)
+- `machineNumber` digenerate service berpola `IM-001` berurutan (bukan input).
+  `standardRatio` dihapus: data mati sejak modul batches dikarantina.
 - `id`, `machineId`, `status MachineOperationalStatus`, `cycleTimeSec Float?`,
   `occurredAt DateTime`, `byId` (Teknisi), `catatan String?`.
 - Append-only. Sumber hitung Availability, Performance, dan Utilization.
@@ -259,6 +275,20 @@ DIAJUKAN -> (DITOLAK | DIKONFIRMASI+assign mesin) -> DIKIRIM -> AKTIF ->
 SELESAI_SEWA -> DIKEMBALIKAN -> SELESAI
 ```
 Assign mesin hanya boleh oleh Admin Sundaya, hanya saat transisi ke DIKONFIRMASI.
+Satu mesin untuk seluruh booking. **Tonase mesin adalah batas atas**:
+`machine.tonaseTon >= max(mold.tonaseTon)` di antara cetakan booking itu (400 bila
+kurang, menyebut cetakan mana yang tidak terpenuhi). Bukan kesamaan persis.
+
+**Batas plan per cetakan (Log Produksi).** Plan cetakan menjadi kuota, ditegakkan
+saat append event `PRODUKSI_HARIAN`:
+
+```
+sum(goodProduct)    + baru <= Mold.targetOutput   (400 bila lewat, sebut sisa)
+sum(materialUsedKg) + baru <= Mold.estimasiKg     (400 bila lewat, sebut sisa)
+```
+
+Plan yang null berarti tidak dibatasi. Event dicatat per cetakan (`LogProduksi.moldId`)
+dan cetakan harus benar-benar bagian dari booking itu (404 bila bukan).
 
 **Machine operationalStatus (Layer 1):** Teknisi hanya menyetel SETUP dan RUNNING
 lewat `POST /machines/:id/operational`; tiap perubahan menulis OperationalData event
