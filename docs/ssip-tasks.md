@@ -15,11 +15,18 @@ Dokumentasi tanpa em dash.
   dashboard tiap role jadi read-only.
 - **Selesai (revisi Manager Penyewa dan booking)**: dashboard Manager jadi
   visualisasi murni dengan satu tabel gabungan plus cycle production per booking,
-  booking memuat beberapa cetakan dengan satu mesin, plan cetakan jadi batas keras
+  booking memuat beberapa cetakan, plan cetakan jadi batas keras
   di Log Produksi (output dan material), material diperlakukan sebagai kuota,
   nomor mesin otomatis, standardRatio dihapus, dan tonase mesin diperlakukan
   sebagai batas atas.
-- **Sisa**: revisi detail sisi Admin Penyewa.
+- **Selesai (peminjaman beberapa mesin dan revisi Admin Penyewa)**: satu booking
+  dipinjami beberapa mesin tanpa pemasangan mesin ke cetakan, penyewa meminta
+  jumlah mesin dan Admin Sundaya memenuhinya bertahap (bisa ditarik lagi sebelum
+  dikirim), Log Produksi wajib menyebut pasangan cetakan-mesin dengan pengecekan
+  tonase per pasangan, nomor job dibentuk dari kode cetakan plus sekuens, dan
+  dashboard Admin Penyewa jadi visualisasi per booking dengan sisa masa sewa
+  mesin, kuota material per cetakan, serta timeline berkepala tanggal.
+- **Sisa**: belum ada permintaan revisi terbuka.
 
 Aturan domain yang mengikat pekerjaan selanjutnya ada di `PROJECT_CONTEXT.md`
 bagian 5a (mold tracking otomatis) dan `docs/ssip-spec.md` bagian 6 dan 6a.

@@ -140,9 +140,11 @@ Ringkasan akses:
 1. Manager Penyewa daftarkan cetakan/mold beserta plan material & target.
    Mold otomatis berstatus **Planning**.
 2. Manager Penyewa booking: memilih **satu atau beberapa cetakan** yang akan
-   dikirim plus waktu sewa dan catatan. **Tidak memilih mesin** saat booking, dan
-   tidak mengisi plan material atau target output lagi (sudah ada di cetakan).
-3. Admin Sundaya approval **dan assign satu mesin untuk seluruh booking**.
+   dikirim, **jumlah mesin yang ingin dipinjam**, plus waktu sewa dan catatan.
+   **Tidak memilih mesin mana** saat booking, dan tidak mengisi plan material atau
+   target output lagi (sudah ada di cetakan).
+3. Admin Sundaya approval **dan meminjamkan mesin ke booking itu satu per satu**
+   sampai jumlah permintaan terpenuhi. Mesin tidak dipasangkan ke cetakan tertentu.
 4. Manager Penyewa mencatat **Log Pengiriman** cetakan: kapan mold akan dikirim
    ke Sundaya. Mold otomatis menjadi **Delivery**, Admin Sundaya dapat notifikasi.
 5. Admin Sundaya mencatat **Log Penerimaan** cetakan saat barang tiba. Mold
@@ -150,9 +152,9 @@ Ringkasan akses:
 6. Teknisi setup mold, lalu mesin running (status Layer 1 Setup lalu Running).
 7. Teknisi input Operational Data (Layer 1): status mesin dan cycle time.
 8. Admin Penyewa (datang ke Sundaya) input **Log Produksi** (timeline):
-   material datang, produksi harian, progress molding. Produksi harian pertama
-   otomatis memindahkan mold ke **Production**. Mesin yang dipakai terlihat dari
-   assign Sundaya.
+   material datang, produksi harian, progress molding. Tiap event produksi wajib
+   menyebut **cetakan mana di mesin mana**, karena mesin dipinjamkan tanpa
+   dipasangkan. Produksi harian pertama otomatis memindahkan mold ke **Production**.
 9. Admin Sundaya menekan tombol selesai produksi: mold menjadi **Send Back**.
 10. Admin Sundaya menekan tombol selesai: mold menjadi **Completed**.
 
@@ -180,20 +182,32 @@ tracking tidak bisa dipalsukan lewat tombol.
 
 **Catatan flow booking (penting):**
 - Manager Penyewa punya master mold & mengajukan booking.
-- Booking = pilih **satu atau beberapa cetakan** + **plan waktu** + **catatan**.
-  Satu cetakan hanya boleh ikut satu booking; booking yang ditolak melepas
-  cetakannya supaya bisa dibooking ulang.
+- Booking = pilih **satu atau beberapa cetakan** + **jumlah mesin** + **plan waktu**
+  + **catatan**. Satu cetakan hanya boleh ikut satu booking; booking yang ditolak
+  melepas cetakannya supaya bisa dibooking ulang.
 - Plan material dan target output **tidak diisi di booking**: keduanya milik
   cetakan, diisi sekali saat Manager merancang cetakan.
-- **Mesin di-assign Admin Sundaya**, satu mesin untuk seluruh booking. Cetakan di
-  dalamnya dikerjakan bergantian di mesin itu.
+- **Mesin dipinjamkan, bukan dipasangkan.** Sundaya memasukkan beberapa mesin ke satu
+  booking; tidak ada aturan satu cetakan satu mesin. Penyewa yang minta 2 mesin untuk
+  10 cetakan bebas menjalankan cetakan mana pun di antara kedua mesin itu, dan boleh
+  bertukar kapan saja.
+- Konsekuensinya, **Log Produksi wajib menyebut pasangannya**: cetakan mana berjalan di
+  mesin mana pada event itu. Itulah satu-satunya catatan pasangan yang sebenarnya.
 - **Tonase mesin adalah batas atas, bukan angka yang harus sama.** Mesin 150 ton
-  sanggup menjalankan cetakan 100 ton, tapi tidak cetakan 200 ton. Saat assign,
-  acuannya cetakan bertonase terbesar dalam booking.
-- Admin Penyewa di Sundaya melihat mesin assigned lewat Log produksi / dashboard job.
+  sanggup menjalankan cetakan 100 ton, tapi tidak cetakan 200 ton. Saat meminjamkan,
+  syaratnya cuma mesin itu sanggup **cetakan terkecil** di booking (kalau tidak, mesin
+  itu tidak berguna di sana); kecocokan per pasangan ditegakkan saat Log Produksi
+  dicatat, beserta nomor mesin yang ditolak.
+- Susunan mesin masih bisa diubah selama booking belum dikirim: mesin bisa ditambah atau
+  ditarik kembali ke Tersedia. Mesin terakhir tidak bisa ditarik (booking tanpa mesin
+  sama dengan booking yang tidak disetujui, jalurnya reject).
+- **Nomor job menyebut kode cetakannya**, mis. `JOB-MDA1-MDB2-001`, supaya penyewa tahu
+  job itu tugas untuk cetakan mana. Tiga cetakan atau lebih diringkas jadi
+  `JOB-MDA1-MDB2-DLL-003`; tiga digit terakhir sekuens penjaga keunikan.
+- Admin Penyewa di Sundaya melihat mesin pinjaman lewat Log Produksi / dashboard job.
 
 **Catatan pembagian tampilan (penting):**
-- **Tampilan Admin Sundaya** = tab Booking (approval + assign mesin + lifecycle),
+- **Tampilan Admin Sundaya** = tab Booking (approval + peminjaman mesin + lifecycle),
   Log Penerimaan, mold tracking, mesin, rencana maintenance, dashboard OEE
   (baca saja).
 - **Tampilan Teknisi Sundaya** = input status mesin real-time (Layer 1, hanya
