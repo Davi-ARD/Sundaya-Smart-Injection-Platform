@@ -4,7 +4,7 @@ import { ItemPengiriman, LogPengiriman, MoldTrackingStatus, Role } from '@mold-t
 import { PrismaService } from '../prisma/prisma.service';
 import { MoldTrackingService } from '../molds/mold-tracking.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { assertMaterialFields, assertMoldRef } from '../common/item-pengiriman';
+import { assertMaterialFields, assertMoldRef, moldInJob } from '../common/log-refs';
 import { CreateLogPengirimanDto } from './dto';
 import { toLogPengiriman } from './pengiriman.mapper';
 
@@ -34,7 +34,9 @@ export class PengirimanService {
     if (!job || job.managerId !== user.id) throw new NotFoundException('Job tidak ditemukan');
     assertMaterialFields(dto.item, dto.materialName, dto.jumlahKg);
     assertMoldRef(dto.item, dto.moldId);
-    const kodeMold = dto.moldId ? await this.moldKodeInJob(dto.jobId, dto.moldId) : undefined;
+    const kodeMold = dto.moldId
+      ? (await moldInJob(this.prisma, dto.jobId, dto.moldId)).kodeMold
+      : undefined;
 
     const row = await this.prisma.$transaction(async (tx) => {
       const created = await tx.logPengiriman.create({
@@ -60,18 +62,6 @@ export class PengirimanService {
     return toLogPengiriman(row, job.jobNumber, kodeMold);
   }
 
-  // Cetakan harus benar-benar ada di booking yang disebut; kalau bukan, 404 supaya
-  // cetakan booking lain tidak bisa disentuh dari sini.
-  private async moldKodeInJob(jobId: string, moldId: string): Promise<string> {
-    const mold = await this.prisma.mold.findUnique({
-      where: { id: moldId },
-      select: { kodeMold: true, jobId: true },
-    });
-    if (!mold || mold.jobId !== jobId) {
-      throw new NotFoundException('Cetakan tidak ada di booking ini');
-    }
-    return mold.kodeMold;
-  }
 
   // Scoping tenant: Manager lihat log job miliknya; staf Sundaya lihat semua
   // (opsional filter jobId). Admin Penyewa tidak mengakses modul ini.

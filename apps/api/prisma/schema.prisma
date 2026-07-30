@@ -190,7 +190,11 @@ model Machine {
   createdAt              DateTime                 @default(now())
 
   owner           User              @relation(fields: [ownerId], references: [id])
+  // Relasi banyak-ke-banyak: satu booking dipinjami beberapa mesin, dan satu mesin
+  // dipakai beberapa booking sepanjang waktu (riwayat tetap terbaca setelah sewa
+  // selesai). Ketersediaan tetap dijaga kolom status, bukan oleh relasi ini.
   jobs            Job[]
+  logProduksi     LogProduksi[]
   operationalData OperationalData[]
   maintenances    Maintenance[]
 }
@@ -252,10 +256,12 @@ model Job {
   id                    String       @id @default(cuid())
   jobNumber             String       @unique
   managerId             String
-  machineId             String? // di-assign Admin Sundaya
   assignedById          String?
   lifecycle             JobLifecycle @default(DIAJUKAN)
   jobStatus             JobStatus    @default(ON_SCHEDULE)
+  // Jumlah mesin yang diminta penyewa. Sundaya meminjamkan mesin sebanyak ini secara
+  // bertahap; tidak ada pemasangan mesin ke cetakan tertentu.
+  requestedMachineCount Int          @default(1)
   requestedDurationDays Int
   startDate             DateTime?
   endDate               DateTime?
@@ -268,9 +274,9 @@ model Job {
   createdAt             DateTime     @default(now())
 
   molds         Mold[]
+  machines      Machine[]
   manager       User              @relation("JobManager", fields: [managerId], references: [id])
   assignedBy    User?             @relation("JobAssignedBy", fields: [assignedById], references: [id])
-  machine       Machine?          @relation(fields: [machineId], references: [id])
   extensions    RentalExtension[]
   logProduksi   LogProduksi[]
   logPengiriman LogPengiriman[]
@@ -349,6 +355,11 @@ model LogProduksi {
   // Cetakan yang dicatat. Batas output dan material ditetapkan per cetakan, jadi
   // tiap event harus menyebut cetakan mana supaya batasnya bisa ditegakkan.
   moldId     String
+  // Mesin yang menjalankan cetakan itu pada event ini. Booking meminjamkan beberapa
+  // mesin tanpa memasangkannya ke cetakan, jadi pasangan sebenarnya baru diketahui
+  // dari log ini. Wajib untuk PRODUKSI_HARIAN dan PROGRESS_MOLDING (ditegakkan service),
+  // null untuk MATERIAL_DATANG yang tidak menyentuh mesin.
+  machineId  String?
   eventType  LogProduksiEventType
   occurredAt DateTime
   byId       String
@@ -367,12 +378,14 @@ model LogProduksi {
   keteranganProgress String?
   createdAt          DateTime         @default(now())
 
-  job  Job  @relation(fields: [jobId], references: [id])
-  mold Mold @relation(fields: [moldId], references: [id])
-  by   User @relation(fields: [byId], references: [id])
+  job     Job      @relation(fields: [jobId], references: [id])
+  mold    Mold     @relation(fields: [moldId], references: [id])
+  machine Machine? @relation(fields: [machineId], references: [id])
+  by      User     @relation(fields: [byId], references: [id])
 
   @@index([jobId, occurredAt])
   @@index([moldId, eventType])
+  @@index([machineId])
 }
 
 // Operational Data (Layer 1, append-only, diinput Teknisi Sundaya). Sumbu waktu

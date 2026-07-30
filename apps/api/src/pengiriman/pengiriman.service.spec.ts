@@ -9,7 +9,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 function prismaMock() {
   const client = {
     job: { findUnique: jest.fn() },
-    mold: { findUnique: jest.fn().mockResolvedValue({ kodeMold: 'MLD-001', jobId: 'job-1' }) },
+    mold: { findFirst: jest.fn().mockResolvedValue({ kodeMold: 'MLD-001' }) },
     logPengiriman: { create: jest.fn(), findMany: jest.fn() },
     user: { findMany: jest.fn().mockResolvedValue([{ id: 'adm-1' }]) },
   };
@@ -129,7 +129,8 @@ describe('PengirimanService.create', () => {
   it('cetakan di luar booking -> 404', async () => {
     const prisma = prismaMock();
     prisma.job.findUnique.mockResolvedValue(jobRow);
-    prisma.mold.findUnique.mockResolvedValue({ kodeMold: 'MLD-9', jobId: 'job-lain' });
+    // findFirst menyaring jobId, jadi cetakan booking lain tidak ketemu.
+    prisma.mold.findFirst.mockResolvedValue(null);
 
     await expect(
       svc(prisma).create(manager, {

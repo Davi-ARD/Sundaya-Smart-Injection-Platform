@@ -18,6 +18,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { machineWalk } from '../machines/machine-state';
 import { nextJobLifecycle } from './job-state';
 import { remainingDays } from './job-status';
+import { buildJobNumber } from './job-number';
 import { toJob, toRentalExtension } from './job.mapper';
 import {
   AssignJobDto,
@@ -37,10 +38,15 @@ const addDays = (d: Date, days: number) => new Date(d.getTime() + days * DAY_MS)
 
 const STAF_SUNDAYA: Role[] = [Role.SUPER_ADMIN, Role.ADMIN_SUNDAYA, Role.TEKNISI_SUNDAYA];
 
+const machineSelect = {
+  select: { id: true, machineNumber: true, tonaseTon: true, status: true },
+  orderBy: { machineNumber: 'asc' as const },
+} as const;
+
 const withDetails = {
   include: {
     molds: { orderBy: { kodeMold: 'asc' as const } },
-    machine: { select: { machineNumber: true, status: true } },
+    machines: machineSelect,
     manager: { select: { companyName: true } },
     extensions: { orderBy: { requestedAt: 'desc' as const } },
   },
@@ -48,14 +54,20 @@ const withDetails = {
 
 type JobWithDetails = Prisma.JobGetPayload<typeof withDetails>;
 
+// Lifecycle yang masih boleh menerima atau melepas mesin: sebelum mesin dikirim ke
+// lokasi penyewa. Sesudah itu susunan mesin booking dianggap final.
+const BOLEH_UBAH_MESIN: JobLifecycle[] = [JobLifecycle.DIAJUKAN, JobLifecycle.DIKONFIRMASI];
+
+const detailJob = (j: JobWithDetails) => toJob(j, j.molds, j.machines, j.extensions);
+
 @Injectable()
 export class JobsService {
   constructor(private prisma: PrismaService) {}
 
-  // Booking (MANAGER_PENYEWA): pilih satu atau lebih cetakan miliknya plus rencana
-  // waktu, tanpa memilih mesin. Plan material dan target output tidak diminta lagi:
-  // sudah tersimpan di masing-masing cetakan. Lifecycle mulai DIAJUKAN (default
-  // schema); mesin di-assign Admin Sundaya belakangan untuk seluruh booking.
+  // Booking (MANAGER_PENYEWA): pilih satu atau lebih cetakan miliknya, jumlah mesin
+  // yang ingin dipinjam, plus rencana waktu. Plan material dan target output tidak
+  // diminta lagi: sudah tersimpan di masing-masing cetakan. Lifecycle mulai DIAJUKAN
+  // (default schema); mesin dipinjamkan Admin Sundaya bertahap sesudahnya.
   //
   // Satu cetakan hanya boleh ikut satu booking: cetakan yang jobId-nya sudah terisi
   // ditolak 409. Job dan penautan cetakan ditulis dalam satu transaksi.
@@ -75,14 +87,15 @@ export class JobsService {
       );
     }
 
-    // ponytail: jobNumber base36 timestamp, unik cukup untuk laju booking manusia;
-    // naikkan ke sekuens rapi SSIP-0001 bila butuh nomor berurutan.
-    const jobNumber = `SSIP-${Date.now().toString(36).toUpperCase()}`;
+    // Nomor job menyebut kode cetakannya supaya penyewa tahu job itu tugas untuk apa.
+    // Sekuens diambil di dalam transaksi agar dua booking berbarengan tidak bernomor sama.
+    const kodeMolds = molds.map((m) => m.kodeMold).sort();
     const job = await this.prisma.$transaction(async (tx) => {
       const created = await tx.job.create({
         data: {
-          jobNumber,
+          jobNumber: buildJobNumber(kodeMolds, (await tx.job.count()) + 1),
           managerId: user.id,
+          requestedMachineCount: dto.requestedMachineCount,
           requestedDurationDays: dto.requestedDurationDays,
           startDate: new Date(dto.startDate),
           catatan: dto.catatan,
@@ -94,7 +107,7 @@ export class JobsService {
       });
       return tx.job.findUniqueOrThrow({ where: { id: created.id }, ...withDetails });
     });
-    return toJob(job, job.molds, job.machine?.machineNumber, job.extensions);
+    return detailJob(job);
   }
 
   // Scoping tenant di service: staf Sundaya lihat semua; Manager lihat miliknya;
@@ -106,68 +119,131 @@ export class JobsService {
       orderBy: { createdAt: 'desc' },
       ...withDetails,
     });
-    return jobs.map((j) => toJob(j, j.molds, j.machine?.machineNumber, j.extensions));
+    return jobs.map(detailJob);
   }
 
   async findOne(user: PrismaUser, id: string): Promise<Job> {
     const j = await this.prisma.job.findUnique({ where: { id }, ...withDetails });
     if (!j) throw new NotFoundException('Job tidak ditemukan');
     this.assertParty(user, j);
-    return toJob(j, j.molds, j.machine?.machineNumber, j.extensions);
+    return detailJob(j);
   }
 
-  // ADMIN_SUNDAYA menyetujui + assign mesin: DIAJUKAN -> DIKONFIRMASI. Satu mesin
-  // untuk seluruh booking, jadi mesin harus TERSEDIA dan clamping force-nya sanggup
-  // menahan cetakan bertonase terbesar di booking itu. Mesin ikut berjalan
-  // TERSEDIA -> DIKONFIRMASI.
+  // ADMIN_SUNDAYA meminjamkan satu mesin ke booking. Konsepnya meminjamkan, bukan
+  // memasangkan: mesin masuk ke booking tanpa ditautkan ke cetakan tertentu, dan
+  // penyewa bebas menjalankan cetakan mana pun di mesin mana pun. Pasangan yang
+  // benar-benar dipakai baru tercatat di Log Produksi.
+  //
+  // Mesin pertama sekaligus menyetujui booking (DIAJUKAN -> DIKONFIRMASI); mesin
+  // berikutnya ditambahkan lewat endpoint yang sama sampai jumlah permintaan terpenuhi.
+  // Mesin ikut berjalan TERSEDIA -> DIKONFIRMASI.
   async assign(user: PrismaUser, id: string, dto: AssignJobDto): Promise<Job> {
     const job = await this.prisma.job.findUnique({
       where: { id },
-      include: { molds: { select: { kodeMold: true, tonaseTon: true } } },
+      include: {
+        molds: { select: { kodeMold: true, tonaseTon: true } },
+        machines: { select: { id: true } },
+      },
     });
     if (!job) throw new NotFoundException('Job tidak ditemukan');
-    this.assertLifecycle(job.lifecycle, JobLifecycle.DIAJUKAN);
+    if (!BOLEH_UBAH_MESIN.includes(job.lifecycle as unknown as JobLifecycle)) {
+      throw new ConflictException(
+        `Mesin hanya bisa ditambah sebelum dikirim (lifecycle sekarang ${job.lifecycle})`,
+      );
+    }
     if (!job.molds.length) throw new ConflictException('Booking belum memuat cetakan');
+    if (job.machines.some((m) => m.id === dto.machineId)) {
+      throw new ConflictException('Mesin sudah dipinjamkan ke booking ini');
+    }
 
     const machine = await this.prisma.machine.findUnique({ where: { id: dto.machineId } });
     if (!machine) throw new NotFoundException('Mesin tidak ditemukan');
     if (machine.status !== asMachineStatus(MachineStatus.TERSEDIA)) {
       throw new ConflictException('Mesin sedang tidak tersedia');
     }
-    // Tonase mesin adalah batas atas, bukan angka yang harus sama: mesin 150 ton
-    // sanggup menjalankan mold 100 ton, tapi tidak mold 200 ton.
-    const terbesar = job.molds.reduce((a, b) => (b.tonaseTon > a.tonaseTon ? b : a));
-    if (machine.tonaseTon < terbesar.tonaseTon) {
+    // Tonase mesin adalah batas atas. Karena cetakan tidak dipasangkan ke mesin, syarat
+    // di sini hanya mesin itu sanggup menjalankan setidaknya satu cetakan booking;
+    // kecocokan per pasangan ditegakkan saat Log Produksi dicatat.
+    const terkecil = job.molds.reduce((a, b) => (b.tonaseTon < a.tonaseTon ? b : a));
+    if (machine.tonaseTon < terkecil.tonaseTon) {
       throw new BadRequestException(
-        `Tonase mesin ${machine.tonaseTon} ton kurang dari kebutuhan cetakan ${terbesar.kodeMold} (${terbesar.tonaseTon} ton)`,
+        `Mesin ${machine.machineNumber} (${machine.tonaseTon} ton) tidak sanggup menjalankan cetakan mana pun di booking ini; yang terkecil ${terkecil.kodeMold} butuh ${terkecil.tonaseTon} ton`,
       );
     }
 
-    nextJobLifecycle(JobLifecycle.DIAJUKAN, JobLifecycle.DIKONFIRMASI);
+    const konfirmasiPertama = job.lifecycle === asLifecycle(JobLifecycle.DIAJUKAN);
+    if (konfirmasiPertama) nextJobLifecycle(JobLifecycle.DIAJUKAN, JobLifecycle.DIKONFIRMASI);
     const nextMachine = machineWalk(
       MachineStatus.TERSEDIA,
       MachineStatus.DIAJUKAN,
       MachineStatus.DIKONFIRMASI,
     );
 
-    const [updated] = await this.prisma.$transaction([
-      this.prisma.job.update({
-        where: { id: job.id },
-        data: {
-          machineId: machine.id,
-          assignedById: user.id,
-          confirmedAt: new Date(),
-          lifecycle: asLifecycle(JobLifecycle.DIKONFIRMASI),
-        },
-        ...withDetails,
-      }),
+    // Status mesin disetel lebih dulu supaya job.update yang memuat relasi mesin
+    // membaca status yang sudah baru (operasi array $transaction berjalan berurutan).
+    const [, updated] = await this.prisma.$transaction([
       this.prisma.machine.update({
         where: { id: machine.id },
         data: { status: asMachineStatus(nextMachine) },
       }),
+      this.prisma.job.update({
+        where: { id: job.id },
+        data: {
+          machines: { connect: { id: machine.id } },
+          ...(konfirmasiPertama
+            ? {
+                assignedById: user.id,
+                confirmedAt: new Date(),
+                lifecycle: asLifecycle(JobLifecycle.DIKONFIRMASI),
+              }
+            : {}),
+        },
+        ...withDetails,
+      }),
     ]);
-    const detail = updated as JobWithDetails;
-    return toJob(detail, detail.molds, machine.machineNumber, detail.extensions);
+    return detailJob(updated as JobWithDetails);
+  }
+
+  // ADMIN_SUNDAYA menarik satu mesin dari booking yang belum dikirim, mis. salah pilih
+  // atau menukar dengan mesin lain. Mesin kembali TERSEDIA. Mesin terakhir tidak boleh
+  // dilepas: booking tanpa mesin sama dengan booking yang tidak disetujui, dan jalur
+  // untuk itu adalah reject. Menukar mesin tunggal dilakukan dengan menambah dulu, baru
+  // melepas yang lama.
+  async releaseMachine(id: string, machineId: string): Promise<Job> {
+    const job = await this.prisma.job.findUnique({
+      where: { id },
+      include: { machines: { select: { id: true, status: true } } },
+    });
+    if (!job) throw new NotFoundException('Job tidak ditemukan');
+    if (!BOLEH_UBAH_MESIN.includes(job.lifecycle as unknown as JobLifecycle)) {
+      throw new ConflictException(
+        `Mesin hanya bisa dilepas sebelum dikirim (lifecycle sekarang ${job.lifecycle})`,
+      );
+    }
+    const machine = job.machines.find((m) => m.id === machineId);
+    if (!machine) throw new NotFoundException('Mesin tidak ada di booking ini');
+    if (job.machines.length === 1) {
+      throw new ConflictException(
+        'Mesin terakhir tidak bisa dilepas; tambahkan mesin pengganti dulu atau tolak booking',
+      );
+    }
+
+    const [, updated] = await this.prisma.$transaction([
+      this.prisma.machine.update({
+        where: { id: machineId },
+        data: {
+          status: asMachineStatus(
+            machineWalk(machine.status as unknown as MachineStatus, MachineStatus.TERSEDIA),
+          ),
+        },
+      }),
+      this.prisma.job.update({
+        where: { id: job.id },
+        data: { machines: { disconnect: { id: machineId } } },
+        ...withDetails,
+      }),
+    ]);
+    return detailJob(updated as JobWithDetails);
   }
 
   // ADMIN_SUNDAYA menolak: DIAJUKAN -> DITOLAK. Belum ada mesin ter-assign di DIAJUKAN.
@@ -189,7 +265,7 @@ export class JobsService {
       await tx.mold.updateMany({ where: { jobId: job.id }, data: { jobId: null } });
       return result;
     });
-    return toJob(updated, updated.molds, updated.machine?.machineNumber, updated.extensions);
+    return detailJob(updated);
   }
 
   // Transisi pasca-assign (ADMIN_SUNDAYA). Mesin sudah ter-assign, berjalan lockstep.
@@ -311,7 +387,7 @@ export class JobsService {
             endDate: true,
             manager: { select: { companyName: true } },
             molds: { select: { kodeMold: true }, orderBy: { kodeMold: 'asc' } },
-            machine: { select: { machineNumber: true } },
+            machines: { select: { machineNumber: true }, orderBy: { machineNumber: 'asc' } },
           },
         },
       },
@@ -322,9 +398,9 @@ export class JobsService {
       jobId: e.jobId,
       jobNumber: e.job.jobNumber,
       companyName: e.job.manager.companyName,
-      // Booking bisa memuat beberapa cetakan; ringkas jadi satu kolom.
+      // Booking bisa memuat beberapa cetakan dan beberapa mesin; ringkas jadi satu kolom.
       moldKode: e.job.molds.map((m) => m.kodeMold).join(', ') || null,
-      machineNumber: e.job.machine?.machineNumber ?? null,
+      machineNumber: e.job.machines.map((m) => m.machineNumber).join(', ') || null,
       additionalDays: e.additionalDays,
       status: e.status as unknown as ExtensionStatus,
       requestedAt: e.requestedAt.toISOString(),
@@ -333,7 +409,8 @@ export class JobsService {
     }));
   }
 
-  // Jalur bersama transisi lifecycle + mesin dalam satu transaksi. data boleh fungsi
+  // Jalur bersama transisi lifecycle + seluruh mesin booking dalam satu transaksi.
+  // Semua mesin booking berjalan lockstep dengan lifecycle job-nya. data boleh fungsi
   // bila butuh field job yang baru termuat (mis. requestedDurationDays).
   private async advance(
     id: string,
@@ -349,29 +426,31 @@ export class JobsService {
     const job = await this.prisma.job.findUnique({ where: { id }, ...withDetails });
     if (!job) throw new NotFoundException('Job tidak ditemukan');
     this.assertLifecycle(job.lifecycle, step.from);
-    if (!job.machineId || !job.machine) {
+    if (!job.machines.length) {
       throw new ConflictException('Job belum memiliki mesin ter-assign');
     }
     nextJobLifecycle(step.from, step.to);
-    const nextMachine = machineWalk(
-      job.machine.status as unknown as MachineStatus,
-      ...step.machinePath,
-    );
+    // Tiap mesin divalidasi dari statusnya sendiri; satu langkah tak sah membatalkan
+    // seluruh transisi sebelum ada tulisan ke DB.
+    const nextMachines = job.machines.map((m) => ({
+      id: m.id,
+      status: asMachineStatus(machineWalk(m.status as unknown as MachineStatus, ...step.machinePath)),
+    }));
     const data = typeof step.data === 'function' ? step.data(job) : (step.data ?? {});
 
-    const [updated] = await this.prisma.$transaction([
+    // Mesin lebih dulu, job terakhir: job.update memuat relasi mesin, jadi harus
+    // membaca status yang sudah baru.
+    const ops = await this.prisma.$transaction([
+      ...nextMachines.map((m) =>
+        this.prisma.machine.update({ where: { id: m.id }, data: { status: m.status } }),
+      ),
       this.prisma.job.update({
         where: { id: job.id },
         data: { ...data, lifecycle: asLifecycle(step.to) },
         ...withDetails,
       }),
-      this.prisma.machine.update({
-        where: { id: job.machineId },
-        data: { status: asMachineStatus(nextMachine) },
-      }),
     ]);
-    const detail = updated as JobWithDetails;
-    return toJob(detail, detail.molds, job.machine.machineNumber, detail.extensions);
+    return detailJob(ops.at(-1) as JobWithDetails);
   }
 
   private tenantScope(user: PrismaUser): Prisma.JobWhereInput {

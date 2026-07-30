@@ -107,7 +107,7 @@ describe('DashboardPenyewaService.job', () => {
         jobNumber: 'SSIP-0001',
         lifecycle: JobLifecycle.AKTIF,
         endDate: inDays(4),
-        machine: { machineNumber: 'IM-03' },
+        machines: [{ machineNumber: 'IM-03' }],
         molds: [
           {
             id: 'md-1',
@@ -145,7 +145,7 @@ describe('DashboardPenyewaService.job', () => {
     // Material terpakai diakumulasi, sisa dihitung dari plan.
     expect(result[0].materialUsedKg).toBe(280);
     expect(result[0].materialRemainingKg).toBe(220);
-    expect(result[0].machineNumber).toBe('IM-03');
+    expect(result[0].machineNumbers).toEqual(['IM-03']);
     expect(result[0].moldKode).toBe('MD-112');
     expect(result[0].moldCavity).toBe(4);
     expect(result[0].achievement).toBe(50); // 150 dari target 300
@@ -161,7 +161,7 @@ describe('DashboardPenyewaService.job', () => {
         jobNumber: 'SSIP-0001',
         lifecycle: JobLifecycle.AKTIF,
         endDate: inDays(10),
-        machine: { machineNumber: 'IM-03' },
+        machines: [{ machineNumber: 'IM-03' }],
         molds: [
           {
             id: 'md-1',
@@ -230,7 +230,7 @@ describe('DashboardPenyewaService.cycleProduction', () => {
         jobNumber: 'SSIP-0231',
         lifecycle: JobLifecycle.AKTIF,
         endDate: inDays(6),
-        machine: { machineNumber: 'IM-03' },
+        machines: [{ machineNumber: 'IM-03' }],
         molds: [
           {
             id: 'md-1',
@@ -261,7 +261,7 @@ describe('DashboardPenyewaService.cycleProduction', () => {
     const [blok] = await svc(prisma).cycleProduction(manager);
 
     expect(blok.jobNumber).toBe('SSIP-0231');
-    expect(blok.machineNumber).toBe('IM-03');
+    expect(blok.machineNumbers).toEqual(['IM-03']);
     expect(blok.molds).toHaveLength(1);
 
     const cycle = blok.molds[0];
@@ -289,7 +289,7 @@ describe('DashboardPenyewaService.cycleProduction', () => {
         jobNumber: 'SSIP-1',
         lifecycle: JobLifecycle.AKTIF,
         endDate: null,
-        machine: null,
+        machines: [],
         molds: [
           {
             id: 'md-1',
@@ -345,7 +345,7 @@ describe('DashboardPenyewaService.moldPlan', () => {
           jobNumber: 'SSIP-0231',
           lifecycle: JobLifecycle.AKTIF,
           endDate: inDays(4),
-          machine: { machineNumber: 'IM-03' },
+          machines: [{ machineNumber: 'IM-03' }],
         },
       },
       // Cetakan yang belum dibooking: tanpa job, angka produksi nol.
@@ -367,7 +367,7 @@ describe('DashboardPenyewaService.moldPlan', () => {
     const [aktif, planning] = await svc(prisma).moldPlan(manager);
 
     expect(aktif.jobNumber).toBe('SSIP-0231');
-    expect(aktif.machineNumber).toBe('IM-03');
+    expect(aktif.machineNumbers).toEqual(['IM-03']);
     expect(aktif.totalGoodProduct).toBe(600);
     expect(aktif.totalReject).toBe(15);
     expect(aktif.achievement).toBe(60);
@@ -378,7 +378,7 @@ describe('DashboardPenyewaService.moldPlan', () => {
     expect(aktif.materialUsagePercent).toBe(72.5);
 
     expect(planning.jobNumber).toBeNull();
-    expect(planning.machineNumber).toBeNull();
+    expect(planning.machineNumbers).toEqual([]);
     expect(planning.totalGoodProduct).toBe(0);
     expect(planning.materialRemainingKg).toBeNull();
     expect(planning.etaHari).toBeNull();

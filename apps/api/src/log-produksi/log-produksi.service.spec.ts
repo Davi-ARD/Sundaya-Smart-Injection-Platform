@@ -10,14 +10,24 @@ import { MoldTrackingService } from '../molds/mold-tracking.service';
 function prismaMock() {
   const client = {
     job: { findUnique: jest.fn() },
-    // Cetakan harus bagian dari booking; plan kosong berarti tanpa batas.
+    // Cetakan harus bagian dari booking (findFirst dengan jobId di where); plan kosong
+    // berarti tanpa batas.
     mold: {
-      findUnique: jest.fn().mockResolvedValue({
+      findFirst: jest.fn().mockResolvedValue({
         id: 'mold-1',
         kodeMold: 'MLD-001',
-        jobId: 'job-1',
+        namaProduk: 'Panel',
+        tonaseTon: 100,
         targetOutput: null,
         estimasiKg: null,
+      }),
+    },
+    // Mesin harus salah satu mesin booking dan tonasenya cukup.
+    machine: {
+      findFirst: jest.fn().mockResolvedValue({
+        id: 'mesin-1',
+        machineNumber: 'IM-001',
+        tonaseTon: 150,
       }),
     },
     logProduksi: {
@@ -51,6 +61,7 @@ const logRow = (over: Record<string, unknown>) => ({
   id: 'log-1',
   jobId: 'job-1',
   moldId: 'mold-1',
+  machineId: null,
   eventType: LogProduksiEventType.MATERIAL_DATANG,
   occurredAt: new Date('2026-08-01'),
   byId: 'ap-1',
@@ -124,6 +135,7 @@ describe('LogProduksiService.append', () => {
       svc(prisma).append(adminPenyewa, 'job-1', {
         moldId: 'mold-1',
       eventType: LogProduksiEventType.PROGRESS_MOLDING,
+        machineId: 'mesin-1',
         occurredAt: PAST_ISO,
       } as never),
     ).rejects.toBeInstanceOf(BadRequestException);
@@ -138,6 +150,7 @@ describe('LogProduksiService.append', () => {
     await svc(prisma).append(adminPenyewa, 'job-1', {
       moldId: 'mold-1',
       eventType: LogProduksiEventType.PROGRESS_MOLDING,
+      machineId: 'mesin-1',
       occurredAt: PAST_ISO,
       progressMolding: ProgressMolding.ONGOING,
     } as never);
@@ -155,6 +168,7 @@ describe('LogProduksiService.append', () => {
     await svc(prisma, advance).append(adminPenyewa, 'job-1', {
       moldId: 'mold-1',
       eventType: LogProduksiEventType.PRODUKSI_HARIAN,
+      machineId: 'mesin-1',
       occurredAt: PAST_ISO,
       goodProduct: 100,
       rejectCount: 2,
@@ -183,10 +197,11 @@ describe('LogProduksiService.append', () => {
   it('produk baik melewati target cetakan -> 400, tidak menulis', async () => {
     const prisma = prismaMock();
     prisma.job.findUnique.mockResolvedValue({ id: 'job-1', managerId: 'mgr-1' });
-    prisma.mold.findUnique.mockResolvedValue({
+    prisma.mold.findFirst.mockResolvedValue({
       id: 'mold-1',
       kodeMold: 'MLD-001',
-      jobId: 'job-1',
+      namaProduk: 'Panel',
+      tonaseTon: 100,
       targetOutput: 500,
       estimasiKg: null,
     });
@@ -198,6 +213,7 @@ describe('LogProduksiService.append', () => {
       svc(prisma).append(adminPenyewa, 'job-1', {
         moldId: 'mold-1',
         eventType: LogProduksiEventType.PRODUKSI_HARIAN,
+        machineId: 'mesin-1',
         occurredAt: PAST_ISO,
         goodProduct: 50,
         rejectCount: 0,
@@ -209,10 +225,11 @@ describe('LogProduksiService.append', () => {
   it('material terpakai melewati plan cetakan -> 400, tidak menulis', async () => {
     const prisma = prismaMock();
     prisma.job.findUnique.mockResolvedValue({ id: 'job-1', managerId: 'mgr-1' });
-    prisma.mold.findUnique.mockResolvedValue({
+    prisma.mold.findFirst.mockResolvedValue({
       id: 'mold-1',
       kodeMold: 'MLD-001',
-      jobId: 'job-1',
+      namaProduk: 'Panel',
+      tonaseTon: 100,
       targetOutput: null,
       estimasiKg: 500,
     });
@@ -224,6 +241,7 @@ describe('LogProduksiService.append', () => {
       svc(prisma).append(adminPenyewa, 'job-1', {
         moldId: 'mold-1',
         eventType: LogProduksiEventType.PRODUKSI_HARIAN,
+        machineId: 'mesin-1',
         occurredAt: PAST_ISO,
         goodProduct: 10,
         rejectCount: 0,
@@ -236,10 +254,11 @@ describe('LogProduksiService.append', () => {
   it('tepat sampai batas plan masih diterima', async () => {
     const prisma = prismaMock();
     prisma.job.findUnique.mockResolvedValue({ id: 'job-1', managerId: 'mgr-1' });
-    prisma.mold.findUnique.mockResolvedValue({
+    prisma.mold.findFirst.mockResolvedValue({
       id: 'mold-1',
       kodeMold: 'MLD-001',
-      jobId: 'job-1',
+      namaProduk: 'Panel',
+      tonaseTon: 100,
       targetOutput: 500,
       estimasiKg: 500,
     });
@@ -253,6 +272,7 @@ describe('LogProduksiService.append', () => {
     await svc(prisma).append(adminPenyewa, 'job-1', {
       moldId: 'mold-1',
       eventType: LogProduksiEventType.PRODUKSI_HARIAN,
+      machineId: 'mesin-1',
       occurredAt: PAST_ISO,
       goodProduct: 50,
       rejectCount: 0,
@@ -265,23 +285,99 @@ describe('LogProduksiService.append', () => {
   it('cetakan di luar booking -> 404', async () => {
     const prisma = prismaMock();
     prisma.job.findUnique.mockResolvedValue({ id: 'job-1', managerId: 'mgr-1' });
-    prisma.mold.findUnique.mockResolvedValue({
-      id: 'mold-9',
-      kodeMold: 'MLD-9',
-      jobId: 'job-lain',
-      targetOutput: null,
-      estimasiKg: null,
-    });
+    // findFirst menyaring jobId, jadi cetakan booking lain tidak ketemu.
+    prisma.mold.findFirst.mockResolvedValue(null);
 
     await expect(
       svc(prisma).append(adminPenyewa, 'job-1', {
         moldId: 'mold-9',
         eventType: LogProduksiEventType.PRODUKSI_HARIAN,
+        machineId: 'mesin-1',
         occurredAt: PAST_ISO,
         goodProduct: 1,
         rejectCount: 0,
       } as never),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('PRODUKSI_HARIAN tanpa machineId -> 400: log harus menyebut mesinnya', async () => {
+    const prisma = prismaMock();
+    prisma.job.findUnique.mockResolvedValue({ id: 'job-1', managerId: 'mgr-1' });
+
+    await expect(
+      svc(prisma).append(adminPenyewa, 'job-1', {
+        moldId: 'mold-1',
+        eventType: LogProduksiEventType.PRODUKSI_HARIAN,
+        occurredAt: PAST_ISO,
+        goodProduct: 10,
+        rejectCount: 0,
+      } as never),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.logProduksi.create).not.toHaveBeenCalled();
+  });
+
+  it('mesin di luar booking -> 404', async () => {
+    const prisma = prismaMock();
+    prisma.job.findUnique.mockResolvedValue({ id: 'job-1', managerId: 'mgr-1' });
+    prisma.machine.findFirst.mockResolvedValue(null);
+
+    await expect(
+      svc(prisma).append(adminPenyewa, 'job-1', {
+        moldId: 'mold-1',
+        eventType: LogProduksiEventType.PRODUKSI_HARIAN,
+        machineId: 'mesin-lain',
+        occurredAt: PAST_ISO,
+        goodProduct: 10,
+        rejectCount: 0,
+      } as never),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('mesin bertonase di bawah cetakan -> 400 walau mesin ada di booking', async () => {
+    const prisma = prismaMock();
+    prisma.job.findUnique.mockResolvedValue({ id: 'job-1', managerId: 'mgr-1' });
+    prisma.mold.findFirst.mockResolvedValue({
+      id: 'mold-1',
+      kodeMold: 'MLD-001',
+      namaProduk: 'Panel',
+      tonaseTon: 200,
+      targetOutput: null,
+      estimasiKg: null,
+    });
+    prisma.machine.findFirst.mockResolvedValue({
+      id: 'mesin-1',
+      machineNumber: 'IM-001',
+      tonaseTon: 150,
+    });
+
+    await expect(
+      svc(prisma).append(adminPenyewa, 'job-1', {
+        moldId: 'mold-1',
+        eventType: LogProduksiEventType.PRODUKSI_HARIAN,
+        machineId: 'mesin-1',
+        occurredAt: PAST_ISO,
+        goodProduct: 10,
+        rejectCount: 0,
+      } as never),
+    ).rejects.toThrow(/IM-001/);
+    expect(prisma.logProduksi.create).not.toHaveBeenCalled();
+  });
+
+  it('MATERIAL_DATANG tidak menyimpan mesin', async () => {
+    const prisma = prismaMock();
+    prisma.job.findUnique.mockResolvedValue({ id: 'job-1', managerId: 'mgr-1' });
+    prisma.logProduksi.create.mockResolvedValue(logRow({}));
+
+    await svc(prisma).append(adminPenyewa, 'job-1', {
+      moldId: 'mold-1',
+      eventType: LogProduksiEventType.MATERIAL_DATANG,
+      occurredAt: PAST_ISO,
+      materialName: 'PP Resin',
+      jumlahKg: 500,
+    } as never);
+
+    expect(prisma.logProduksi.create.mock.calls[0][0].data.machineId).toBeNull();
+    expect(prisma.machine.findFirst).not.toHaveBeenCalled();
   });
 
   it('job tenant lain (managerId != parentId) -> 404, tidak menulis', async () => {
@@ -304,13 +400,15 @@ describe('LogProduksiService.findAll', () => {
   it('timeline job milik tenant, urut occurredAt asc', async () => {
     const prisma = prismaMock();
     prisma.job.findUnique.mockResolvedValue({ id: 'job-1', managerId: 'mgr-1', moldId: 'mold-1' });
-    prisma.logProduksi.findMany.mockResolvedValue([logRow({})]);
+    prisma.logProduksi.findMany.mockResolvedValue([
+      { ...logRow({}), mold: { kodeMold: 'MLD-001' }, machine: { machineNumber: 'IM-001' } },
+    ]);
     const result = await svc(prisma).findAll(adminPenyewa, 'job-1');
-    expect(prisma.logProduksi.findMany.mock.calls[0][0]).toEqual({
-      where: { jobId: 'job-1' },
-      orderBy: { occurredAt: 'asc' },
-    });
-    expect(result).toHaveLength(1);
+    const args = prisma.logProduksi.findMany.mock.calls[0][0];
+    expect(args.where).toEqual({ jobId: 'job-1' });
+    expect(args.orderBy).toEqual({ occurredAt: 'asc' });
+    expect(result[0].kodeMold).toBe('MLD-001');
+    expect(result[0].machineNumber).toBe('IM-001');
   });
 
   it('job tidak ada -> 404', async () => {

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { User as PrismaUser } from '@prisma/client';
 import {
   ExtensionRequestRow,
@@ -74,6 +74,8 @@ export class JobsController {
     return this.jobs.requestExtension(user, id, dto);
   }
 
+  // Meminjamkan satu mesin ke booking. Dipanggil berulang: mesin pertama sekaligus
+  // menyetujui booking, mesin berikutnya menambah jumlah pinjaman.
   @Roles(Role.ADMIN_SUNDAYA)
   @Patch(':id/assign')
   assign(
@@ -82,6 +84,16 @@ export class JobsController {
     @Body() dto: AssignJobDto,
   ): Promise<Job> {
     return this.jobs.assign(user, id, dto);
+  }
+
+  // Menarik satu mesin dari booking yang belum dikirim.
+  @Roles(Role.ADMIN_SUNDAYA)
+  @Delete(':id/machines/:machineId')
+  releaseMachine(
+    @Param('id') id: string,
+    @Param('machineId') machineId: string,
+  ): Promise<Job> {
+    return this.jobs.releaseMachine(id, machineId);
   }
 
   @Roles(Role.ADMIN_SUNDAYA)

@@ -9,7 +9,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 function prismaMock() {
   const client = {
     job: { findUnique: jest.fn() },
-    mold: { findUnique: jest.fn().mockResolvedValue({ kodeMold: 'MLD-001', jobId: 'job-1' }) },
+    mold: { findFirst: jest.fn().mockResolvedValue({ kodeMold: 'MLD-001' }) },
     logPenerimaan: { create: jest.fn(), findMany: jest.fn() },
   };
   return {

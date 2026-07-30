@@ -1,10 +1,26 @@
-import { Job, JobMold, RentalExtension } from '@mold-tracker/shared';
+import { Job, JobMachine, JobMold, RentalExtension } from '@mold-tracker/shared';
 import {
   Job as PrismaJob,
   Mold as PrismaMold,
   RentalExtension as PrismaRentalExtension,
 } from '@prisma/client';
 import { computeJobStatus } from './job-status';
+
+// Mesin yang dipinjamkan ke booking. Tidak dipasangkan ke cetakan tertentu: pasangan
+// cetakan-mesin yang benar-benar dipakai dicatat per event di Log Produksi.
+export type MachineRow = {
+  id: string;
+  machineNumber: string;
+  tonaseTon: number;
+  status: string;
+};
+
+export const toJobMachine = (m: MachineRow): JobMachine => ({
+  machineId: m.id,
+  machineNumber: m.machineNumber,
+  tonaseTon: m.tonaseTon,
+  status: m.status as unknown as JobMachine['status'],
+});
 
 // Cetakan di dalam booking. Plan dan tonase dibaca dari Mold, tidak diduplikasi
 // di Job, jadi tidak ada dua sumber angka rencana yang bisa berbeda.
@@ -28,7 +44,7 @@ export function toJobMold(m: PrismaMold): JobMold {
 export function toJob(
   j: PrismaJob & { manager?: { companyName: string | null } },
   molds: PrismaMold[] = [],
-  machineNumber?: string,
+  machines: MachineRow[] = [],
   extensions: PrismaRentalExtension[] = [],
   now: Date = new Date(),
 ): Job {
@@ -37,9 +53,9 @@ export function toJob(
     id: j.id,
     jobNumber: j.jobNumber,
     molds: molds.map(toJobMold),
+    machines: machines.map(toJobMachine),
+    requestedMachineCount: j.requestedMachineCount,
     managerId: j.managerId,
-    machineId: j.machineId,
-    machineNumber,
     companyName: j.manager?.companyName ?? null,
     assignedById: j.assignedById,
     lifecycle,

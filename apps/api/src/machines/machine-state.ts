@@ -9,7 +9,8 @@ import { MachineStatus as MS } from '@mold-tracker/shared';
 export const MACHINE_FLOW: Record<MS, MS[]> = {
   [MS.TERSEDIA]: [MS.DIAJUKAN],
   [MS.DIAJUKAN]: [MS.DIKONFIRMASI, MS.TERSEDIA], // TERSEDIA saat sewa ditolak
-  [MS.DIKONFIRMASI]: [MS.DIKIRIM],
+  // TERSEDIA saat mesin ditarik dari booking sebelum dikirim (mis. ditukar mesin lain).
+  [MS.DIKONFIRMASI]: [MS.DIKIRIM, MS.TERSEDIA],
   [MS.DIKIRIM]: [MS.AKTIF],
   [MS.AKTIF]: [MS.SELESAI_SEWA],
   [MS.SELESAI_SEWA]: [MS.DIKEMBALIKAN],

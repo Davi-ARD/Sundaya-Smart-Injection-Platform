@@ -20,16 +20,22 @@ import {
   RejectJobRequest,
 } from '@mold-tracker/shared';
 
-// Booking oleh MANAGER_PENYEWA: satu atau lebih cetakan, tanpa machineId (mesin
-// di-assign Admin Sundaya). Plan material dan target output tidak ditanyakan lagi
-// karena sudah tersimpan di masing-masing cetakan. jobNumber dan lifecycle
-// (DIAJUKAN) diset service, bukan diterima dari client.
+// Booking oleh MANAGER_PENYEWA: satu atau lebih cetakan plus jumlah mesin yang ingin
+// dipinjam, tanpa menentukan mesin mana (itu wewenang Admin Sundaya). Plan material dan
+// target output tidak ditanyakan lagi karena sudah tersimpan di masing-masing cetakan.
+// jobNumber dan lifecycle (DIAJUKAN) diset service, bukan diterima dari client.
 export class CreateJobDto implements CreateJobRequest {
   @IsArray()
   @ArrayMinSize(1)
   @ArrayUnique()
   @IsString({ each: true })
   moldIds: string[];
+
+  // Batas atas menjaga salah ketik tidak memesan seluruh armada sekaligus.
+  @IsInt()
+  @IsPositive()
+  @Max(20)
+  requestedMachineCount: number;
 
   @IsInt()
   @IsPositive()
@@ -43,6 +49,7 @@ export class CreateJobDto implements CreateJobRequest {
   catatan?: string;
 }
 
+// Menambah satu mesin ke booking. Dipanggil berulang sampai jumlah permintaan terpenuhi.
 export class AssignJobDto implements AssignJobRequest {
   @IsString()
   @MinLength(1)

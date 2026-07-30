@@ -9,10 +9,18 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { MoldTrackingService } from '../molds/mold-tracking.service';
 import { assertNotFuture } from '../common/time';
+import { machineForMold, moldInJob } from '../common/log-refs';
 import { CreateLogProduksiDto } from './dto';
 import { toLogProduksi } from './log-produksi.mapper';
 
 const STAF_SUNDAYA: Role[] = [Role.SUPER_ADMIN, Role.ADMIN_SUNDAYA, Role.TEKNISI_SUNDAYA];
+
+// Event yang benar-benar terjadi di atas mesin, jadi wajib menyebut mesin mana.
+// MATERIAL_DATANG tidak menyentuh mesin.
+const EVENT_DI_MESIN: LogProduksiEventType[] = [
+  LogProduksiEventType.PRODUKSI_HARIAN,
+  LogProduksiEventType.PROGRESS_MOLDING,
+];
 
 @Injectable()
 export class LogProduksiService {
@@ -22,27 +30,36 @@ export class LogProduksiService {
   ) {}
 
   // Timeline event Layer 2 satu job (urut kejadian). Semua pihak tenant + staf baca.
+  // Kode cetakan dan nomor mesin ikut dimuat supaya timeline bisa menyebut pasangan
+  // "cetakan X di mesin Y" tanpa pemanggilan tambahan dari web.
   async findAll(user: PrismaUser, jobId: string): Promise<LogProduksi[]> {
     await this.getJobInTenant(user, jobId);
     const logs = await this.prisma.logProduksi.findMany({
       where: { jobId },
       orderBy: { occurredAt: 'asc' },
+      include: {
+        mold: { select: { kodeMold: true } },
+        machine: { select: { machineNumber: true } },
+      },
     });
-    return logs.map(toLogProduksi);
+    return logs.map((l) => toLogProduksi(l, l.mold.kodeMold, l.machine?.machineNumber ?? null));
   }
 
   // Append-only (Admin Penyewa): hanya field milik eventType yang disimpan.
   // Koreksi dilakukan lewat event baru, bukan update/delete.
   //
-  // Event dicatat per cetakan karena batas output dan material ditetapkan per
-  // cetakan. Event PRODUKSI_HARIAN menandai cetakan itu benar-benar dipakai di
-  // mesin, jadi tracking-nya ikut maju ke PRODUCTION (idempoten: event kedua dan
-  // seterusnya tidak mengubah apa pun karena advance() hanya bergerak maju).
+  // Event dicatat per pasangan cetakan-mesin. Batas output dan material ditetapkan per
+  // cetakan, dan booking meminjamkan beberapa mesin tanpa memasangkannya ke cetakan,
+  // jadi log inilah satu-satunya tempat yang tahu cetakan mana berjalan di mesin mana.
+  // Event PRODUKSI_HARIAN menandai cetakan itu benar-benar dipakai di mesin, jadi
+  // tracking-nya ikut maju ke PRODUCTION (idempoten: event kedua dan seterusnya tidak
+  // mengubah apa pun karena advance() hanya bergerak maju).
   async append(user: PrismaUser, jobId: string, dto: CreateLogProduksiDto): Promise<LogProduksi> {
     // Event Layer 2 mencatat kejadian yang sudah terjadi, bukan rencana.
     assertNotFuture(dto.occurredAt, 'occurredAt');
     await this.getJobInTenant(user, jobId);
-    const mold = await this.getMoldInJob(jobId, dto.moldId);
+    const mold = await moldInJob(this.prisma, jobId, dto.moldId);
+    const machine = await this.resolveMachine(jobId, dto, mold);
     const eventData = this.buildEventData(dto);
     if (dto.eventType === LogProduksiEventType.PRODUKSI_HARIAN) {
       await this.assertWithinPlan(mold, dto);
@@ -53,6 +70,7 @@ export class LogProduksiService {
         data: {
           jobId,
           moldId: dto.moldId,
+          machineId: machine?.id ?? null,
           byId: user.id,
           eventType: dto.eventType as unknown as $Enums.LogProduksiEventType,
           occurredAt: new Date(dto.occurredAt),
@@ -63,21 +81,22 @@ export class LogProduksiService {
       if (dto.eventType === LogProduksiEventType.PRODUKSI_HARIAN) {
         await this.moldTracking.advance(tx, dto.moldId, MoldTrackingStatus.PRODUCTION, user.id);
       }
-      return toLogProduksi(log);
+      return toLogProduksi(log, mold.kodeMold, machine?.machineNumber ?? null);
     });
   }
 
-  // Cetakan harus benar-benar bagian dari booking ini, supaya log tidak nyasar ke
-  // cetakan booking lain (yang plan-nya berbeda).
-  private async getMoldInJob(jobId: string, moldId: string) {
-    const mold = await this.prisma.mold.findUnique({
-      where: { id: moldId },
-      select: { id: true, kodeMold: true, jobId: true, targetOutput: true, estimasiKg: true },
-    });
-    if (!mold || mold.jobId !== jobId) {
-      throw new NotFoundException('Cetakan tidak ada di booking ini');
+  // Event yang berjalan di atas mesin wajib menyebut mesinnya; mesin harus salah satu
+  // mesin booking dan tonasenya harus sanggup menahan cetakan itu.
+  private async resolveMachine(
+    jobId: string,
+    dto: CreateLogProduksiDto,
+    mold: { kodeMold: string; tonaseTon: number },
+  ) {
+    if (!EVENT_DI_MESIN.includes(dto.eventType)) return null;
+    if (!dto.machineId) {
+      throw new BadRequestException(`${dto.eventType} wajib menyebut machineId`);
     }
-    return mold;
+    return machineForMold(this.prisma, jobId, dto.machineId, mold);
   }
 
   // Plan cetakan adalah batas keras, bukan sekadar pembanding: akumulasi produk baik

@@ -97,7 +97,7 @@ export class DashboardPenyewaService {
       where: { managerId: user.id, lifecycle: { in: BERJALAN } },
       orderBy: { createdAt: 'desc' },
       include: {
-        machine: { select: { machineNumber: true } },
+        machines: { select: { machineNumber: true }, orderBy: { machineNumber: 'asc' } },
         molds: {
           orderBy: { kodeMold: 'asc' },
           include: {
@@ -114,7 +114,8 @@ export class DashboardPenyewaService {
       jobId: job.id,
       jobNumber: job.jobNumber,
       lifecycle: job.lifecycle as unknown as JobLifecycle,
-      machineNumber: job.machine?.machineNumber ?? null,
+      machineNumbers: job.machines.map((m) => m.machineNumber),
+      requestedMachineCount: job.requestedMachineCount,
       sisaHariSewa: remainingDays(job.endDate, now),
       molds: job.molds.map((mold) => this.toMoldCycle(mold, mold.logProduksi)),
     }));
@@ -175,7 +176,7 @@ export class DashboardPenyewaService {
       where: { managerId, lifecycle: AKTIF },
       orderBy: { createdAt: 'desc' },
       include: {
-        machine: { select: { machineNumber: true } },
+        machines: { select: { machineNumber: true }, orderBy: { machineNumber: 'asc' } },
         molds: {
           orderBy: { kodeMold: 'asc' },
           include: { logProduksi: { orderBy: { occurredAt: 'desc' } } },
@@ -193,10 +194,12 @@ export class DashboardPenyewaService {
           jobId: job.id,
           jobNumber: job.jobNumber,
           lifecycle: job.lifecycle as unknown as JobLifecycle,
-          machineNumber: job.machine?.machineNumber ?? null,
+          machineNumbers: job.machines.map((m) => m.machineNumber),
+          moldId: mold.id,
           moldKode: mold.kodeMold,
           moldProduk: mold.namaProduk,
           moldCavity: mold.cavity,
+          moldTonaseTon: mold.tonaseTon,
           progressMolding: stats.progressMolding,
           targetOutput: mold.targetOutput,
           achievement: achievementPercent(stats.totalGoodProduct, mold.targetOutput),
@@ -225,10 +228,11 @@ export class DashboardPenyewaService {
       include: {
         job: { select: { jobNumber: true } },
         mold: { select: { kodeMold: true } },
+        machine: { select: { machineNumber: true } },
       },
     });
 
-    return logs.map(({ job, mold, ...log }) => ({
+    return logs.map(({ job, mold, machine, ...log }) => ({
       ...log,
       eventType: log.eventType as unknown as LogProduksiEventType,
       progressMolding: log.progressMolding as unknown as ProgressMolding | null,
@@ -236,6 +240,7 @@ export class DashboardPenyewaService {
       createdAt: log.createdAt.toISOString(),
       jobNumber: job.jobNumber,
       moldKode: mold.kodeMold,
+      machineNumber: machine?.machineNumber ?? null,
     }));
   }
 
@@ -248,7 +253,11 @@ export class DashboardPenyewaService {
       orderBy: { createdAt: 'desc' },
       include: {
         logProduksi: { orderBy: { occurredAt: 'desc' } },
-        job: { include: { machine: { select: { machineNumber: true } } } },
+        job: {
+          include: {
+            machines: { select: { machineNumber: true }, orderBy: { machineNumber: 'asc' } },
+          },
+        },
       },
     });
 
@@ -269,7 +278,7 @@ export class DashboardPenyewaService {
         jobId: job?.id ?? null,
         jobNumber: job?.jobNumber ?? null,
         lifecycle: (job?.lifecycle as unknown as JobLifecycle | undefined) ?? null,
-        machineNumber: job?.machine?.machineNumber ?? null,
+        machineNumbers: job?.machines.map((m) => m.machineNumber) ?? [],
         progressMolding: stats.progressMolding,
         targetOutput: mold.targetOutput,
         totalGoodProduct: stats.totalGoodProduct,

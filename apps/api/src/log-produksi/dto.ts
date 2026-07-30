@@ -18,6 +18,13 @@ export class CreateLogProduksiDto implements CreateLogProduksiRequest {
   @MinLength(1)
   moldId: string;
 
+  // Mesin yang menjalankan cetakan itu. Wajib untuk PRODUKSI_HARIAN dan
+  // PROGRESS_MOLDING (ditegakkan service), tidak dipakai MATERIAL_DATANG.
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  machineId?: string;
+
   @IsEnum(LogProduksiEventType)
   eventType: LogProduksiEventType;
 
