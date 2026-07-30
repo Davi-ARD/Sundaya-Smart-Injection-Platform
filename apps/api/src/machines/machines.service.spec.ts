@@ -1,4 +1,4 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 import { Role, WarrantyStatus } from '@mold-tracker/shared';
 import { User as PrismaUser } from '@prisma/client';
 import { MachinesService } from './machines.service';
@@ -10,6 +10,8 @@ function prismaMock() {
   return {
     machine: {
       findUnique: jest.fn(),
+      // findFirst dipakai generator nomor mesin untuk mencari nomor tertinggi.
+      findFirst: jest.fn().mockResolvedValue(null),
       findMany: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
@@ -20,10 +22,8 @@ function prismaMock() {
 const adminSundaya = { id: 'admin-1', role: Role.ADMIN_SUNDAYA } as unknown as PrismaUser;
 
 const createDto: CreateMachineDto = {
-  machineNumber: 'IM-10',
   spesifikasi: 'Injection molding 150 ton',
   tonaseTon: 150,
-  standardRatio: 2,
   warrantyStart: '2025-01-01',
   warrantyDurationMonths: 24,
 };
@@ -31,12 +31,12 @@ const createDto: CreateMachineDto = {
 describe('MachinesService.create', () => {
   it('menyimpan tonaseTon, owner = user Sundaya pembuat, dan warranty dihitung', async () => {
     const prisma = prismaMock();
-    prisma.machine.findUnique.mockResolvedValue(null); // nomor bebas
     prisma.machine.create.mockImplementation(({ data }: { data: Record<string, unknown> }) => ({
       id: 'm-1',
       ...data,
       status: 'TERSEDIA',
       operationalStatus: 'STANDBY',
+      statusBeforeMaintenance: null,
       isArchived: false,
       createdAt: new Date('2025-01-01'),
     }));
@@ -53,13 +53,40 @@ describe('MachinesService.create', () => {
     expect(result.operationalStatus).toBe('STANDBY');
   });
 
-  it('menolak nomor mesin duplikat dengan 409', async () => {
+  it('menghasilkan nomor mesin pertama IM-001 saat belum ada mesin', async () => {
     const prisma = prismaMock();
-    prisma.machine.findUnique.mockResolvedValue({ id: 'ada' }); // nomor terpakai
+    prisma.machine.findFirst.mockResolvedValue(null);
+    prisma.machine.create.mockImplementation(({ data }: { data: Record<string, unknown> }) => ({
+      id: 'm-1',
+      ...data,
+      status: 'TERSEDIA',
+      operationalStatus: 'STANDBY',
+      statusBeforeMaintenance: null,
+      isArchived: false,
+      createdAt: new Date('2025-01-01'),
+    }));
 
     const service = new MachinesService(prisma as unknown as PrismaService);
-    await expect(service.create(adminSundaya, createDto)).rejects.toBeInstanceOf(ConflictException);
-    expect(prisma.machine.create).not.toHaveBeenCalled();
+    const result = await service.create(adminSundaya, createDto);
+    expect(result.machineNumber).toBe('IM-001');
+  });
+
+  it('melanjutkan nomor dari yang tertinggi, bukan dari jumlah baris', async () => {
+    const prisma = prismaMock();
+    prisma.machine.findFirst.mockResolvedValue({ machineNumber: 'IM-014' });
+    prisma.machine.create.mockImplementation(({ data }: { data: Record<string, unknown> }) => ({
+      id: 'm-2',
+      ...data,
+      status: 'TERSEDIA',
+      operationalStatus: 'STANDBY',
+      statusBeforeMaintenance: null,
+      isArchived: false,
+      createdAt: new Date('2025-01-01'),
+    }));
+
+    const service = new MachinesService(prisma as unknown as PrismaService);
+    const result = await service.create(adminSundaya, createDto);
+    expect(result.machineNumber).toBe('IM-015');
   });
 });
 

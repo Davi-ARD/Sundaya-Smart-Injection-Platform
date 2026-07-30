@@ -30,29 +30,24 @@ import { errorMessage } from '../../lib/errorMessage'
 import { formatDate, nowLocalInput } from '../../lib/format'
 
 
+// Nomor mesin tidak ada di form: digenerate server berpola IM-001.
 type MachineForm = {
-  machineNumber: string
   spesifikasi: string
   tonaseTon: string
-  standardRatio: string
   warrantyStart: string
   warrantyDurationMonths: string
 }
 
 const emptyMachineForm: MachineForm = {
-  machineNumber: '',
   spesifikasi: '',
   tonaseTon: '',
-  standardRatio: '',
   warrantyStart: '',
   warrantyDurationMonths: '',
 }
 
 const formFromMachine = (machine: Machine): MachineForm => ({
-  machineNumber: machine.machineNumber,
   spesifikasi: machine.spesifikasi,
   tonaseTon: String(machine.tonaseTon),
-  standardRatio: String(machine.standardRatio),
   warrantyStart: machine.warrantyStart.slice(0, 10),
   warrantyDurationMonths: String(machine.warrantyDurationMonths),
 })
@@ -194,17 +189,14 @@ export function MachinesPage() {
               const body: UpdateMachineRequest = {
                 spesifikasi: form.spesifikasi,
                 tonaseTon: Number(form.tonaseTon),
-                standardRatio: Number(form.standardRatio),
                 warrantyStart: new Date(form.warrantyStart).toISOString(),
                 warrantyDurationMonths: Number(form.warrantyDurationMonths),
               }
               await api.updateMachine(accessToken, panel.machine.id, body)
             } else {
               const body: CreateMachineRequest = {
-                machineNumber: form.machineNumber.trim(),
                 spesifikasi: form.spesifikasi,
                 tonaseTon: Number(form.tonaseTon),
-                standardRatio: Number(form.standardRatio),
                 warrantyStart: new Date(form.warrantyStart).toISOString(),
                 warrantyDurationMonths: Number(form.warrantyDurationMonths),
               }
@@ -264,25 +256,26 @@ function MachineFormPanel({
   return (
     <SidePanel
       title={isEdit ? 'Edit mesin' : 'Tambah mesin'}
-      subtitle={isEdit ? 'Nomor mesin tidak dapat diubah.' : 'Mesin baru berstatus Tersedia.'}
+      subtitle={
+        isEdit
+          ? 'Nomor mesin tidak dapat diubah.'
+          : 'Nomor mesin dibuat otomatis. Mesin baru berstatus Tersedia dan Standby.'
+      }
       onClose={onClose}
     >
       <form onSubmit={handleSubmit} className="space-y-4">
-        {!isEdit ? (
-          <TextField label="Nomor mesin" value={form.machineNumber} onChange={set('machineNumber')} />
-        ) : null}
         <TextField label="Spesifikasi" value={form.spesifikasi} onChange={set('spesifikasi')} />
-        <FieldGroup>
-          <TextField label="Tonase (ton)" type="number" min={1} value={form.tonaseTon} onChange={set('tonaseTon')} />
-          <TextField
-            label="Standard ratio"
-            type="number"
-            min={0}
-            step="0.1"
-            value={form.standardRatio}
-            onChange={set('standardRatio')}
-          />
-        </FieldGroup>
+        <TextField
+          label="Tonase mesin (ton)"
+          type="number"
+          min={1}
+          value={form.tonaseTon}
+          onChange={set('tonaseTon')}
+        />
+        <p className="-mt-2 text-xs leading-5 text-slate-500">
+          Clamping force mesin. Mesin ini hanya bisa menjalankan cetakan dengan tonase sama atau
+          lebih kecil.
+        </p>
         <FieldGroup>
           <TextField label="Mulai garansi" type="date" value={form.warrantyStart} onChange={set('warrantyStart')} />
           <TextField

@@ -4,7 +4,7 @@ import { ItemPengiriman, LogPengiriman, MoldTrackingStatus, Role } from '@mold-t
 import { PrismaService } from '../prisma/prisma.service';
 import { MoldTrackingService } from '../molds/mold-tracking.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { assertMaterialFields } from '../common/item-pengiriman';
+import { assertMaterialFields, assertMoldRef, moldInJob } from '../common/log-refs';
 import { CreateLogPengirimanDto } from './dto';
 import { toLogPengiriman } from './pengiriman.mapper';
 
@@ -28,16 +28,21 @@ export class PengirimanService {
   async create(user: PrismaUser, dto: CreateLogPengirimanDto): Promise<LogPengiriman> {
     const job = await this.prisma.job.findUnique({
       where: { id: dto.jobId },
-      select: { id: true, jobNumber: true, managerId: true, moldId: true },
+      select: { id: true, jobNumber: true, managerId: true },
     });
     // Job milik tenant lain sama dengan tidak ada: jangan bocorkan keberadaannya.
     if (!job || job.managerId !== user.id) throw new NotFoundException('Job tidak ditemukan');
     assertMaterialFields(dto.item, dto.materialName, dto.jumlahKg);
+    assertMoldRef(dto.item, dto.moldId);
+    const kodeMold = dto.moldId
+      ? (await moldInJob(this.prisma, dto.jobId, dto.moldId)).kodeMold
+      : undefined;
 
     const row = await this.prisma.$transaction(async (tx) => {
       const created = await tx.logPengiriman.create({
         data: {
           jobId: dto.jobId,
+          moldId: dto.moldId,
           item: asItem(dto.item),
           rencanaKirim: new Date(dto.rencanaKirim),
           materialName: dto.materialName,
@@ -47,15 +52,16 @@ export class PengirimanService {
           byId: user.id,
         },
       });
-      if (dto.item === ItemPengiriman.MOLD) {
-        await this.moldTracking.advance(tx, job.moldId, MoldTrackingStatus.DELIVERY, user.id);
+      if (dto.item === ItemPengiriman.MOLD && dto.moldId) {
+        await this.moldTracking.advance(tx, dto.moldId, MoldTrackingStatus.DELIVERY, user.id);
       }
       return created;
     });
 
-    await this.notifySundaya(user, job.jobNumber, dto);
-    return toLogPengiriman(row, job.jobNumber);
+    await this.notifySundaya(user, job.jobNumber, dto, kodeMold);
+    return toLogPengiriman(row, job.jobNumber, kodeMold);
   }
+
 
   // Scoping tenant: Manager lihat log job miliknya; staf Sundaya lihat semua
   // (opsional filter jobId). Admin Penyewa tidak mengakses modul ini.
@@ -66,18 +72,25 @@ export class PengirimanService {
         job: STAF_SUNDAYA.includes(user.role as Role) ? undefined : { managerId: user.id },
       },
       orderBy: { rencanaKirim: 'desc' },
-      include: { job: { select: { jobNumber: true } } },
+      include: { job: { select: { jobNumber: true } }, mold: { select: { kodeMold: true } } },
     });
-    return rows.map((r) => toLogPengiriman(r, r.job.jobNumber));
+    return rows.map((r) => toLogPengiriman(r, r.job.jobNumber, r.mold?.kodeMold));
   }
 
-  private async notifySundaya(user: PrismaUser, jobNumber: string, dto: CreateLogPengirimanDto) {
+  private async notifySundaya(
+    user: PrismaUser,
+    jobNumber: string,
+    dto: CreateLogPengirimanDto,
+    kodeMold?: string,
+  ) {
     const staf = await this.prisma.user.findMany({
       where: { role: $Enums.Role.ADMIN_SUNDAYA, isActive: true },
       select: { id: true },
     });
     const barang =
-      dto.item === ItemPengiriman.MOLD ? 'Mold' : `Material ${dto.materialName ?? ''}`.trim();
+      dto.item === ItemPengiriman.MOLD
+        ? `Cetakan ${kodeMold ?? ''}`.trim()
+        : `Material ${dto.materialName ?? ''}`.trim();
     const tanggal = new Date(dto.rencanaKirim).toLocaleDateString('id-ID', {
       day: '2-digit',
       month: 'short',

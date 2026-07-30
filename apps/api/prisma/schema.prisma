@@ -167,10 +167,11 @@ model Notification {
 
 model Machine {
   id                     String                   @id @default(cuid())
+  // Digenerate service dengan pola IM-001 berurutan, bukan diinput manual.
   machineNumber          String                   @unique
   spesifikasi            String
+  // Clamping force mesin. Mesin hanya boleh menjalankan mold dengan tonase <= ini.
   tonaseTon              Int
-  standardRatio          Float
   status                 MachineStatus            @default(TERSEDIA) // sumbu ketersediaan/rental
   operationalStatus      MachineOperationalStatus @default(STANDBY)  // sumbu realtime Layer 1
   // Status operasional sebelum maintenance dimulai, dipakai untuk memulihkan
@@ -189,12 +190,21 @@ model Machine {
   createdAt              DateTime                 @default(now())
 
   owner           User              @relation(fields: [ownerId], references: [id])
+  // Relasi banyak-ke-banyak: satu booking dipinjami beberapa mesin, dan satu mesin
+  // dipakai beberapa booking sepanjang waktu (riwayat tetap terbaca setelah sewa
+  // selesai). Ketersediaan tetap dijaga kolom status, bukan oleh relasi ini.
   jobs            Job[]
+  logProduksi     LogProduksi[]
   operationalData OperationalData[]
   maintenances    Maintenance[]
 }
 
-// Cetakan milik Manager Penyewa. Satu mold menghasilkan satu Job.
+// Cetakan milik Manager Penyewa. Satu booking (Job) bisa memuat beberapa cetakan,
+// tapi satu cetakan hanya ikut satu booking: jobId null berarti belum dibooking.
+// Plan material dan target output tinggal di sini (diisi saat merancang cetakan),
+// jadi form booking tidak menanyakannya lagi. Keduanya menjadi batas keras di
+// Log Produksi: output tidak boleh melewati targetOutput, material terpakai tidak
+// boleh melewati estimasiKg.
 model Mold {
   id                String             @id @default(cuid())
   kodeMold          String             @unique
@@ -203,6 +213,7 @@ model Mold {
   tonaseTon         Int
   deskripsi         String?
   managerId         String
+  jobId             String?
   trackingStatus    MoldTrackingStatus @default(PLANNING)
   planMaterialUtama String?
   estimasiKg        Float?
@@ -210,8 +221,13 @@ model Mold {
   createdAt         DateTime           @default(now())
 
   manager        User                @relation(fields: [managerId], references: [id])
-  job            Job?
+  job            Job?                @relation(fields: [jobId], references: [id])
   trackingEvents MoldTrackingEvent[]
+  logProduksi    LogProduksi[]
+  logPengiriman  LogPengiriman[]
+  logPenerimaan  LogPenerimaan[]
+
+  @@index([jobId])
 }
 
 // Histori pergerakan mold (append-only). Timestamp RECEIVED dipakai sebagai
@@ -229,25 +245,27 @@ model MoldTrackingEvent {
   @@index([moldId])
 }
 
-// Production Job (evolve dari Rental). Mesin di-assign Admin Sundaya, null saat booking.
+// Production Job (evolve dari Rental). Satu booking memuat satu atau lebih cetakan
+// (relasi Mold.jobId) dan satu mesin untuk seluruh booking: cetakan di dalamnya
+// dikerjakan bergantian di mesin itu. Mesin di-assign Admin Sundaya, null saat booking.
+//
+// Plan material, target output, dan tonase tidak diduplikasi di sini melainkan
+// dibaca dari tiap Mold. Lokasi tujuan dibuang: single-provider, tujuannya selalu
+// lokasi Sundaya.
 model Job {
   id                    String       @id @default(cuid())
   jobNumber             String       @unique
-  moldId                String       @unique // 1 job = 1 mold
   managerId             String
-  machineId             String? // di-assign Admin Sundaya
   assignedById          String?
   lifecycle             JobLifecycle @default(DIAJUKAN)
   jobStatus             JobStatus    @default(ON_SCHEDULE)
+  // Jumlah mesin yang diminta penyewa. Sundaya meminjamkan mesin sebanyak ini secara
+  // bertahap; tidak ada pemasangan mesin ke cetakan tertentu.
+  requestedMachineCount Int          @default(1)
   requestedDurationDays Int
-  destinationLocation   String
   startDate             DateTime?
   endDate               DateTime?
-  // Plan diisi Manager saat booking.
-  planMaterialUtama     String?
-  estimasiMaterialKg    Float?
-  materialTambahan      String?
-  targetOutput          Float?
+  catatan               String?
   confirmedAt           DateTime?
   shippedAt             DateTime?
   receivedAt            DateTime?
@@ -255,10 +273,10 @@ model Job {
   rejectionReason       String?
   createdAt             DateTime     @default(now())
 
-  mold          Mold              @relation(fields: [moldId], references: [id])
+  molds         Mold[]
+  machines      Machine[]
   manager       User              @relation("JobManager", fields: [managerId], references: [id])
   assignedBy    User?             @relation("JobAssignedBy", fields: [assignedById], references: [id])
-  machine       Machine?          @relation(fields: [machineId], references: [id])
   extensions    RentalExtension[]
   logProduksi   LogProduksi[]
   logPengiriman LogPengiriman[]
@@ -271,6 +289,9 @@ model Job {
 model LogPengiriman {
   id           String         @id @default(cuid())
   jobId        String
+  // Wajib untuk item MOLD: booking bisa memuat beberapa cetakan, jadi log harus
+  // menyebut cetakan mana yang dikirim. Null untuk item MATERIAL.
+  moldId       String?
   item         ItemPengiriman
   rencanaKirim DateTime
   // Khusus item MATERIAL.
@@ -281,8 +302,9 @@ model LogPengiriman {
   byId         String
   createdAt    DateTime       @default(now())
 
-  job Job  @relation(fields: [jobId], references: [id])
-  by  User @relation("LogPengirimanBy", fields: [byId], references: [id])
+  job  Job  @relation(fields: [jobId], references: [id])
+  mold Mold? @relation(fields: [moldId], references: [id])
+  by   User @relation("LogPengirimanBy", fields: [byId], references: [id])
 
   @@index([jobId, rencanaKirim])
 }
@@ -294,6 +316,8 @@ model LogPengiriman {
 model LogPenerimaan {
   id           String         @id @default(cuid())
   jobId        String
+  // Wajib untuk item MOLD (lihat LogPengiriman). Null untuk item MATERIAL.
+  moldId       String?
   item         ItemPengiriman
   diterimaAt   DateTime
   // Khusus item MATERIAL.
@@ -305,8 +329,9 @@ model LogPenerimaan {
   byId         String
   createdAt    DateTime       @default(now())
 
-  job Job  @relation(fields: [jobId], references: [id])
-  by  User @relation("LogPenerimaanBy", fields: [byId], references: [id])
+  job  Job  @relation(fields: [jobId], references: [id])
+  mold Mold? @relation(fields: [moldId], references: [id])
+  by   User @relation("LogPenerimaanBy", fields: [byId], references: [id])
 
   @@index([jobId, diterimaAt])
 }
@@ -327,27 +352,40 @@ model RentalExtension {
 model LogProduksi {
   id         String               @id @default(cuid())
   jobId      String
+  // Cetakan yang dicatat. Batas output dan material ditetapkan per cetakan, jadi
+  // tiap event harus menyebut cetakan mana supaya batasnya bisa ditegakkan.
+  moldId     String
+  // Mesin yang menjalankan cetakan itu pada event ini. Booking meminjamkan beberapa
+  // mesin tanpa memasangkannya ke cetakan, jadi pasangan sebenarnya baru diketahui
+  // dari log ini. Wajib untuk PRODUKSI_HARIAN dan PROGRESS_MOLDING (ditegakkan service),
+  // null untuk MATERIAL_DATANG yang tidak menyentuh mesin.
+  machineId  String?
   eventType  LogProduksiEventType
   occurredAt DateTime
   byId       String
   catatan    String?
-  // MATERIAL_DATANG. occurredAt dipakai sebagai aktual-tiba material di Log Pengiriman.
-  materialName        String?
-  jumlahKg            Float?
-  noSuratJalan        String?
-  // PRODUKSI_HARIAN
-  goodProduct         Int?
-  rejectCount         Int?
-  materialRemainingKg Float?
+  // MATERIAL_DATANG
+  materialName   String?
+  jumlahKg       Float?
+  noSuratJalan   String?
+  // PRODUKSI_HARIAN. materialUsedKg = material yang dipakai hari itu; sisa dihitung
+  // sistem sebagai Mold.estimasiKg minus akumulasi terpakai.
+  goodProduct    Int?
+  rejectCount    Int?
+  materialUsedKg Float?
   // PROGRESS_MOLDING
   progressMolding    ProgressMolding?
   keteranganProgress String?
   createdAt          DateTime         @default(now())
 
-  job Job  @relation(fields: [jobId], references: [id])
-  by  User @relation(fields: [byId], references: [id])
+  job     Job      @relation(fields: [jobId], references: [id])
+  mold    Mold     @relation(fields: [moldId], references: [id])
+  machine Machine? @relation(fields: [machineId], references: [id])
+  by      User     @relation(fields: [byId], references: [id])
 
   @@index([jobId, occurredAt])
+  @@index([moldId, eventType])
+  @@index([machineId])
 }
 
 // Operational Data (Layer 1, append-only, diinput Teknisi Sundaya). Sumbu waktu

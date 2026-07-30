@@ -17,6 +17,7 @@ import { TableSkeleton } from '../../components/ui/Skeleton'
 import { FieldGroup, SelectField, TextAreaField, TextField } from '../../components/ui/FormField'
 import { useToast } from '../../components/ui/Toast'
 import { errorMessage } from '../../lib/errorMessage'
+import { useMoldPicker } from '../../lib/useMoldPicker'
 import { optionalText } from '../../lib/form'
 import { formatDate, formatDateTime, todayInput } from '../../lib/format'
 
@@ -78,6 +79,7 @@ export function PengirimanPage() {
 
   const moldColumns: Column<LogPengiriman>[] = [
     jobColumn,
+    { header: 'Cetakan', cell: (l) => l.kodeMold ?? <span className="text-slate-400">-</span> },
     rencanaColumn,
     catatanColumn,
     dicatatColumn,
@@ -199,7 +201,7 @@ function PengirimanFormPanel({
   const toast = useToast()
   const isMold = item === ItemPengiriman.MOLD
 
-  const [jobId, setJobId] = useState(jobs[0]?.id ?? '')
+  const { jobId, moldId, setMoldId, pilihJob, jobOptions, moldOptions } = useMoldPicker(jobs)
   const [rencanaKirim, setRencanaKirim] = useState(todayInput())
   const [materialName, setMaterialName] = useState('')
   const [jumlahKg, setJumlahKg] = useState('')
@@ -214,6 +216,7 @@ function PengirimanFormPanel({
       const base = {
         jobId,
         item,
+        moldId: isMold ? moldId : undefined,
         rencanaKirim: new Date(rencanaKirim).toISOString(),
         catatan: optionalText(catatan),
       }
@@ -246,12 +249,15 @@ function PengirimanFormPanel({
       onClose={onClose}
     >
       <form onSubmit={handleSubmit} className="space-y-4">
-        <SelectField
-          label="Job"
-          value={jobId}
-          onChange={setJobId}
-          options={jobs.map((job) => ({ value: job.id, label: job.jobNumber }))}
-        />
+        <SelectField label="Job" value={jobId} onChange={pilihJob} options={jobOptions} />
+        {isMold ? (
+          <SelectField
+            label="Cetakan"
+            value={moldId}
+            onChange={setMoldId}
+            options={moldOptions}
+          />
+        ) : null}
         <TextField
           label="Rencana kirim"
           type="date"
@@ -287,7 +293,7 @@ function PengirimanFormPanel({
           <Button type="button" variant="secondary" onClick={onClose}>
             Batal
           </Button>
-          <Button type="submit" disabled={isSaving || !jobId}>
+          <Button type="submit" disabled={isSaving || !jobId || (isMold && !moldId)}>
             {isSaving ? 'Menyimpan...' : 'Simpan'}
           </Button>
         </div>

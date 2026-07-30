@@ -7,7 +7,6 @@ import {
   JobStatus,
   type ExtensionRequestRow,
   type Job,
-  type Mold,
   type SundayaDashboard,
 } from '@mold-tracker/shared'
 import { useAuth } from '../auth/authContextValue'
@@ -51,22 +50,19 @@ export function SundayaDashboardPage() {
 
   const [summary, setSummary] = useState<SundayaDashboard | null>(null)
   const [jobs, setJobs] = useState<Job[]>([])
-  const [molds, setMolds] = useState<Mold[]>([])
   const [extensions, setExtensions] = useState<ExtensionRequestRow[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
   const load = useCallback(async () => {
     setIsLoading(true)
     try {
-      const [dashboard, jobList, moldList, extensionList] = await Promise.all([
+      const [dashboard, jobList, extensionList] = await Promise.all([
         api.getSundayaDashboard(accessToken),
         api.listJobs(accessToken),
-        api.listMolds(accessToken),
         api.listExtensions(accessToken),
       ])
       setSummary(dashboard)
       setJobs(jobList)
-      setMolds(moldList)
       setExtensions(extensionList)
     } catch (caught) {
       toast.error(errorMessage(caught, 'Gagal memuat dashboard'))
@@ -79,7 +75,6 @@ export function SundayaDashboardPage() {
     void load()
   }, [load])
 
-  const moldById = useMemo(() => new Map(molds.map((m) => [m.id, m])), [molds])
   const ongoingJobs = useMemo(() => jobs.filter((j) => ONGOING_LIFECYCLES.includes(j.lifecycle)), [jobs])
   const pendingApprovalCount = useMemo(
     () => jobs.filter((j) => j.lifecycle === JobLifecycle.DIAJUKAN).length,
@@ -92,8 +87,20 @@ export function SundayaDashboardPage() {
 
   const progressColumns: Column<Job>[] = [
     { header: 'Penyewa', cell: (j) => j.companyName ?? <span className="text-slate-400">-</span> },
-    { header: 'Mesin', cell: (j) => j.machineNumber ?? <span className="text-slate-400">Belum assign</span> },
-    { header: 'Cetakan', cell: (j) => moldById.get(j.moldId)?.kodeMold ?? <span className="text-slate-400">-</span> },
+    {
+      header: 'Mesin',
+      cell: (j) =>
+        j.machines.length ? (
+          j.machines.map((m) => m.machineNumber).join(', ')
+        ) : (
+          <span className="text-slate-400">Belum dipinjami</span>
+        ),
+    },
+    {
+      header: 'Cetakan',
+      cell: (j) =>
+        j.molds.length ? j.molds.map((m) => m.kodeMold).join(', ') : <span className="text-slate-400">-</span>,
+    },
     { header: 'Selesai sewa', cell: (j) => formatDate(j.endDate) },
     { header: 'Status', cell: (j) => <Badge tone={jobStatusTone[j.jobStatus]}>{jobStatusLabel[j.jobStatus]}</Badge> },
   ]

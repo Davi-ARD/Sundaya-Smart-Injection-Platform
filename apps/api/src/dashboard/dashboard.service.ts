@@ -83,31 +83,26 @@ export class DashboardService {
         where: { machineId: { in: machineIds }, type: $Enums.MaintenanceType.CORRECTIVE },
         select: { machineId: true, startedAt: true, scheduledAt: true, completedAt: true },
       }),
+      // Log Produksi menyebut mesinnya sendiri, jadi tally Layer 2 langsung per mesin
+      // tanpa perlu menebak lewat job (satu booking kini punya beberapa mesin).
       this.prisma.logProduksi.groupBy({
-        by: ['jobId'],
-        where: { eventType: $Enums.LogProduksiEventType.PRODUKSI_HARIAN },
+        by: ['machineId'],
+        where: {
+          eventType: $Enums.LogProduksiEventType.PRODUKSI_HARIAN,
+          machineId: { in: machineIds },
+        },
         _sum: { goodProduct: true, rejectCount: true },
       }),
     ]);
 
-    // Peta jobId -> machineId supaya tally Layer 2 bisa dijumlahkan per mesin.
-    const jobs = await this.prisma.job.findMany({
-      where: { machineId: { in: machineIds } },
-      select: { id: true, machineId: true },
-    });
-    const machineOfJob = new Map(jobs.map((j) => [j.id, j.machineId as string]));
-
     const eventsBy = this.groupBy(rows, (r) => r.machineId);
     const correctiveBy = this.groupBy(corrective, (c) => c.machineId);
-    const qualityBy = new Map<string, QualityTally>();
-    for (const q of qualityRows) {
-      const machineId = machineOfJob.get(q.jobId);
-      if (!machineId) continue;
-      const acc = qualityBy.get(machineId) ?? { goodProduct: 0, rejectCount: 0 };
-      acc.goodProduct += q._sum.goodProduct ?? 0;
-      acc.rejectCount += q._sum.rejectCount ?? 0;
-      qualityBy.set(machineId, acc);
-    }
+    const qualityBy = new Map<string, QualityTally>(
+      qualityRows.map((q) => [
+        q.machineId as string,
+        { goodProduct: q._sum.goodProduct ?? 0, rejectCount: q._sum.rejectCount ?? 0 },
+      ]),
+    );
 
     // Rata-rata hanya atas mesin yang punya event Layer 1: mesin tanpa data tidak
     // menarik rata-rata armada ke nol.
@@ -174,12 +169,12 @@ export class DashboardService {
     });
   }
 
-  // Quality mesin ini = akumulasi produksi harian (Layer 2) dari job yang memakainya.
+  // Quality mesin ini = akumulasi produksi harian (Layer 2) yang tercatat di mesin ini.
   private async qualityFor(machineId: string): Promise<QualityTally> {
     const agg = await this.prisma.logProduksi.aggregate({
       where: {
         eventType: $Enums.LogProduksiEventType.PRODUKSI_HARIAN,
-        job: { machineId },
+        machineId,
       },
       _sum: { goodProduct: true, rejectCount: true },
     });

@@ -1,22 +1,16 @@
-import { IsDateString, IsInt, IsNumber, IsOptional, IsPositive, IsString, MinLength } from 'class-validator';
+import { IsDateString, IsInt, IsOptional, IsPositive, IsString, MinLength } from 'class-validator';
 import { CreateMachineRequest, UpdateMachineRequest } from '@mold-tracker/shared';
 
+// machineNumber tidak diterima dari client: digenerate service berurutan.
 export class CreateMachineDto implements CreateMachineRequest {
-  @IsString()
-  @MinLength(1)
-  machineNumber: string;
-
   @IsString()
   @MinLength(1)
   spesifikasi: string;
 
+  // Clamping force mesin. Mesin hanya boleh menjalankan mold bertonase <= angka ini.
   @IsInt()
   @IsPositive()
   tonaseTon: number;
-
-  @IsNumber()
-  @IsPositive()
-  standardRatio: number;
 
   @IsDateString()
   warrantyStart: string;
@@ -36,11 +30,6 @@ export class UpdateMachineDto implements UpdateMachineRequest {
   @IsInt()
   @IsPositive()
   tonaseTon?: number;
-
-  @IsOptional()
-  @IsNumber()
-  @IsPositive()
-  standardRatio?: number;
 
   @IsOptional()
   @IsDateString()

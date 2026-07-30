@@ -4,11 +4,14 @@ import { ItemPengiriman, LogPengiriman } from '@mold-tracker/shared';
 export function toLogPengiriman(
   row: PrismaLogPengiriman,
   jobNumber?: string,
+  kodeMold?: string,
 ): LogPengiriman {
   return {
     id: row.id,
     jobId: row.jobId,
     jobNumber,
+    moldId: row.moldId,
+    kodeMold,
     item: row.item as unknown as ItemPengiriman,
     rencanaKirim: row.rencanaKirim.toISOString(),
     materialName: row.materialName,

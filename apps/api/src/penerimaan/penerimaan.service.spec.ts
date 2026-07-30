@@ -9,6 +9,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 function prismaMock() {
   const client = {
     job: { findUnique: jest.fn() },
+    mold: { findFirst: jest.fn().mockResolvedValue({ kodeMold: 'MLD-001' }) },
     logPenerimaan: { create: jest.fn(), findMany: jest.fn() },
   };
   return {
@@ -35,6 +36,7 @@ const jobRow = { id: 'job-1', jobNumber: 'SSIP-1', managerId: 'mgr-1', moldId: '
 const row = (over: Record<string, unknown> = {}) => ({
   id: 'lt-1',
   jobId: 'job-1',
+  moldId: 'mold-1',
   item: ItemPengiriman.MOLD,
   diterimaAt: new Date('2026-08-06'),
   materialName: null,
@@ -57,6 +59,7 @@ describe('PenerimaanService.create', () => {
     await svc(prisma, advance).create(adminSundaya, {
       jobId: 'job-1',
       item: ItemPengiriman.MOLD,
+      moldId: 'mold-1',
       diterimaAt: PAST_ISO,
     });
 
@@ -111,6 +114,7 @@ describe('PenerimaanService.create', () => {
     await svc(prisma, jest.fn(), notify).create(adminSundaya, {
       jobId: 'job-1',
       item: ItemPengiriman.MOLD,
+      moldId: 'mold-1',
       diterimaAt: PAST_ISO,
     });
 
@@ -130,6 +134,7 @@ describe('PenerimaanService.create', () => {
       svc(prisma).create(adminSundaya, {
         jobId: 'x',
         item: ItemPengiriman.MOLD,
+        moldId: 'mold-1',
         diterimaAt: PAST_ISO,
       }),
     ).rejects.toBeInstanceOf(NotFoundException);

@@ -19,6 +19,7 @@ import type {
   CreatePenyewaAdminRequest,
   CreateStaffRequest,
   Job,
+  JobCycleProduction,
   JobDashboard,
   JobLifecycle,
   LogPenerimaan,
@@ -223,6 +224,10 @@ export const api = {
     return request<Job>('PATCH', `/jobs/${id}/assign`, token, body)
   },
 
+  async releaseJobMachine(token: string | null, id: string, machineId: string): Promise<Job> {
+    return request<Job>('DELETE', `/jobs/${id}/machines/${machineId}`, token)
+  },
+
   async rejectJob(token: string | null, id: string, body: RejectJobRequest): Promise<Job> {
     return request<Job>('PATCH', `/jobs/${id}/reject`, token, body)
   },
@@ -248,6 +253,14 @@ export const api = {
   },
 
   // ===================== Perpanjangan sewa =====================
+  async createExtension(
+    token: string | null,
+    jobId: string,
+    body: CreateExtensionRequest,
+  ): Promise<RentalExtension> {
+    return request<RentalExtension>('POST', `/jobs/${jobId}/extensions`, token, body)
+  },
+
   async listExtensions(token: string | null): Promise<ExtensionRequestRow[]> {
     return request<ExtensionRequestRow[]>('GET', '/jobs/extensions', token)
   },
@@ -319,6 +332,10 @@ export const api = {
 
   async getManagerDashboard(token: string | null): Promise<ManagerDashboard> {
     return request<ManagerDashboard>('GET', '/dashboard/manager', token)
+  },
+
+  async getCycleProduction(token: string | null): Promise<JobCycleProduction[]> {
+    return request<JobCycleProduction[]>('GET', '/dashboard/manager/cycle-production', token)
   },
 
   async getJobDashboard(token: string | null): Promise<JobDashboard[]> {

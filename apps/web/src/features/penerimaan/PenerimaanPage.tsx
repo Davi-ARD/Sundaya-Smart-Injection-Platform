@@ -19,6 +19,7 @@ import { TableSkeleton } from '../../components/ui/Skeleton'
 import { FieldGroup, SelectField, TextAreaField, TextField } from '../../components/ui/FormField'
 import { useToast } from '../../components/ui/Toast'
 import { errorMessage } from '../../lib/errorMessage'
+import { useMoldPicker } from '../../lib/useMoldPicker'
 import { optionalText } from '../../lib/form'
 import { formatDate, formatDateTime, nowLocalInput } from '../../lib/format'
 
@@ -84,6 +85,7 @@ export function PenerimaanPage() {
 
   const moldColumns: Column<LogPenerimaan>[] = [
     jobColumn,
+    { header: 'Cetakan', cell: (l) => l.kodeMold ?? <span className="text-slate-400">-</span> },
     diterimaColumn,
     kondisiColumn,
     { header: 'Catatan', cell: (l) => l.catatan ?? <span className="text-slate-400">-</span> },
@@ -105,7 +107,10 @@ export function PenerimaanPage() {
     { header: 'Job', cell: (l) => <span className="font-semibold text-slate-900">{l.jobNumber ?? '-'}</span> },
     {
       header: 'Item',
-      cell: (l) => (l.item === ItemPengiriman.MOLD ? 'Cetakan' : `Material ${l.materialName ?? ''}`.trim()),
+      cell: (l) =>
+        l.item === ItemPengiriman.MOLD
+          ? `Cetakan ${l.kodeMold ?? ''}`.trim()
+          : `Material ${l.materialName ?? ''}`.trim(),
     },
     { header: 'Jumlah', cell: (l) => (l.jumlahKg != null ? `${l.jumlahKg} kg` : '-') },
     { header: 'Rencana kirim', cell: (l) => formatDate(l.rencanaKirim) },
@@ -231,7 +236,7 @@ function PenerimaanFormPanel({
   const toast = useToast()
   const isMold = item === ItemPengiriman.MOLD
 
-  const [jobId, setJobId] = useState(jobs[0]?.id ?? '')
+  const { jobId, moldId, setMoldId, pilihJob, jobOptions, moldOptions } = useMoldPicker(jobs)
   const [diterimaAt, setDiterimaAt] = useState(nowLocalInput())
   const [materialName, setMaterialName] = useState('')
   const [jumlahKg, setJumlahKg] = useState('')
@@ -247,6 +252,7 @@ function PenerimaanFormPanel({
       const base = {
         jobId,
         item,
+        moldId: isMold ? moldId : undefined,
         diterimaAt: new Date(diterimaAt).toISOString(),
         kondisi: optionalText(kondisi),
         catatan: optionalText(catatan),
@@ -280,12 +286,15 @@ function PenerimaanFormPanel({
       onClose={onClose}
     >
       <form onSubmit={handleSubmit} className="space-y-4">
-        <SelectField
-          label="Job"
-          value={jobId}
-          onChange={setJobId}
-          options={jobs.map((job) => ({ value: job.id, label: job.jobNumber }))}
-        />
+        <SelectField label="Job" value={jobId} onChange={pilihJob} options={jobOptions} />
+        {isMold ? (
+          <SelectField
+            label="Cetakan"
+            value={moldId}
+            onChange={setMoldId}
+            options={moldOptions}
+          />
+        ) : null}
         <TextField
           label="Waktu diterima"
           type="datetime-local"
@@ -327,7 +336,7 @@ function PenerimaanFormPanel({
           <Button type="button" variant="secondary" onClick={onClose}>
             Batal
           </Button>
-          <Button type="submit" disabled={isSaving || !jobId}>
+          <Button type="submit" disabled={isSaving || !jobId || (isMold && !moldId)}>
             {isSaving ? 'Menyimpan...' : 'Simpan'}
           </Button>
         </div>

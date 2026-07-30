@@ -23,8 +23,9 @@ tiap perusahaan penyewa punya datanya sendiri yang terisolasi (tenant per
 perusahaan penyewa). Jangan membangun abstraksi "penyedia" yang generik.
 
 Entitas utama sistem: **Production Job**. Satu Booking menghasilkan satu
-Production Job, yang menjadi pusat seluruh transaksi: booking, mold
-tracking, operasional mesin, log produksi, material, sampai laporan akhir.
+Production Job yang bisa memuat **beberapa cetakan sekaligus**, dan menjadi pusat
+seluruh transaksi: booking, mold tracking, operasional mesin, log produksi,
+material, sampai laporan akhir.
 
 ## 2. Prinsip inti: Dual Layer Manufacturing Information System
 
@@ -35,7 +36,7 @@ fitur baru. Ada dua jenis data yang terpisah dan tidak boleh dicampur:
 |---|---|---|
 | Diinput oleh | Teknisi Sundaya | Admin Penyewa (berada di lokasi Sundaya) |
 | Sifat data | Real time | Event log / timeline |
-| Contoh field | Setup, Running, Cycle Time | Material datang, Log produksi harian (Good/Reject/Material remaining), Progress molding (Planning / Ongoing / Sudah diproduksi) |
+| Contoh field | Setup, Running, Cycle Time | Material datang, Log produksi harian (Good/Reject/Material terpakai), Progress molding (Planning / Ongoing / Sudah diproduksi) |
 | Aturan hapus | Tidak boleh dihapus, hanya dikoreksi via event baru | Append-only event; koreksi via event baru |
 | Menghasilkan | Availability, Performance, Utilization, MTBF, MTTR | Quality, Production Report, Material Report, Customer Dashboard, Production Progress |
 
@@ -73,8 +74,8 @@ Rental Management. Tanggung jawab ini dipecah antara dua peran staf Sundaya:
   mesin, jadwal mesin, rental management, monitoring OEE & dashboard, rencana
   maintenance, laporan. Tidak menginput status mesin real-time.
 - **Teknisi Sundaya (operasional lapangan):** input Operational Data Layer 1
-  (status mesin real-time, cycle time, downtime + alasan, running hour),
-  eksekusi setup mold dan maintenance. Tidak mengelola booking/assign/rental.
+  (status mesin Setup/Running dan cycle time), eksekusi setup mold dan
+  maintenance. Tidak mengelola booking/assign/rental.
 
 **Penyewa bertanggung jawab atas:** Mold & booking & rencana pengiriman
 (Manager), Material & Log Produksi di lokasi Sundaya (Admin Penyewa).
@@ -138,9 +139,12 @@ Ringkasan akses:
 
 1. Manager Penyewa daftarkan cetakan/mold beserta plan material & target.
    Mold otomatis berstatus **Planning**.
-2. Manager Penyewa booking: memilih mold yang akan dikirim, plan material, dan
-   waktu sewa. **Tidak memilih mesin** saat booking.
-3. Admin Sundaya approval **dan assign mesin**.
+2. Manager Penyewa booking: memilih **satu atau beberapa cetakan** yang akan
+   dikirim, **jumlah mesin yang ingin dipinjam**, plus waktu sewa dan catatan.
+   **Tidak memilih mesin mana** saat booking, dan tidak mengisi plan material atau
+   target output lagi (sudah ada di cetakan).
+3. Admin Sundaya approval **dan meminjamkan mesin ke booking itu satu per satu**
+   sampai jumlah permintaan terpenuhi. Mesin tidak dipasangkan ke cetakan tertentu.
 4. Manager Penyewa mencatat **Log Pengiriman** cetakan: kapan mold akan dikirim
    ke Sundaya. Mold otomatis menjadi **Delivery**, Admin Sundaya dapat notifikasi.
 5. Admin Sundaya mencatat **Log Penerimaan** cetakan saat barang tiba. Mold
@@ -148,9 +152,9 @@ Ringkasan akses:
 6. Teknisi setup mold, lalu mesin running (status Layer 1 Setup lalu Running).
 7. Teknisi input Operational Data (Layer 1): status mesin dan cycle time.
 8. Admin Penyewa (datang ke Sundaya) input **Log Produksi** (timeline):
-   material datang, produksi harian, progress molding. Produksi harian pertama
-   otomatis memindahkan mold ke **Production**. Mesin yang dipakai terlihat dari
-   assign Sundaya.
+   material datang, produksi harian, progress molding. Tiap event produksi wajib
+   menyebut **cetakan mana di mesin mana**, karena mesin dipinjamkan tanpa
+   dipasangkan. Produksi harian pertama otomatis memindahkan mold ke **Production**.
 9. Admin Sundaya menekan tombol selesai produksi: mold menjadi **Send Back**.
 10. Admin Sundaya menekan tombol selesai: mold menjadi **Completed**.
 
@@ -178,12 +182,32 @@ tracking tidak bisa dipalsukan lewat tombol.
 
 **Catatan flow booking (penting):**
 - Manager Penyewa punya master mold & mengajukan booking.
-- Booking = pilih **cetakan yang akan dikirim** + **plan material** + **plan waktu**.
-- **Mesin di-assign Admin Sundaya**, bukan dipilih Manager.
-- Admin Penyewa di Sundaya melihat mesin assigned lewat Log produksi / dashboard job.
+- Booking = pilih **satu atau beberapa cetakan** + **jumlah mesin** + **plan waktu**
+  + **catatan**. Satu cetakan hanya boleh ikut satu booking; booking yang ditolak
+  melepas cetakannya supaya bisa dibooking ulang.
+- Plan material dan target output **tidak diisi di booking**: keduanya milik
+  cetakan, diisi sekali saat Manager merancang cetakan.
+- **Mesin dipinjamkan, bukan dipasangkan.** Sundaya memasukkan beberapa mesin ke satu
+  booking; tidak ada aturan satu cetakan satu mesin. Penyewa yang minta 2 mesin untuk
+  10 cetakan bebas menjalankan cetakan mana pun di antara kedua mesin itu, dan boleh
+  bertukar kapan saja.
+- Konsekuensinya, **Log Produksi wajib menyebut pasangannya**: cetakan mana berjalan di
+  mesin mana pada event itu. Itulah satu-satunya catatan pasangan yang sebenarnya.
+- **Tonase mesin adalah batas atas, bukan angka yang harus sama.** Mesin 150 ton
+  sanggup menjalankan cetakan 100 ton, tapi tidak cetakan 200 ton. Saat meminjamkan,
+  syaratnya cuma mesin itu sanggup **cetakan terkecil** di booking (kalau tidak, mesin
+  itu tidak berguna di sana); kecocokan per pasangan ditegakkan saat Log Produksi
+  dicatat, beserta nomor mesin yang ditolak.
+- Susunan mesin masih bisa diubah selama booking belum dikirim: mesin bisa ditambah atau
+  ditarik kembali ke Tersedia. Mesin terakhir tidak bisa ditarik (booking tanpa mesin
+  sama dengan booking yang tidak disetujui, jalurnya reject).
+- **Nomor job menyebut kode cetakannya**, mis. `JOB-MDA1-MDB2-001`, supaya penyewa tahu
+  job itu tugas untuk cetakan mana. Tiga cetakan atau lebih diringkas jadi
+  `JOB-MDA1-MDB2-DLL-003`; tiga digit terakhir sekuens penjaga keunikan.
+- Admin Penyewa di Sundaya melihat mesin pinjaman lewat Log Produksi / dashboard job.
 
 **Catatan pembagian tampilan (penting):**
-- **Tampilan Admin Sundaya** = tab Booking (approval + assign mesin + lifecycle),
+- **Tampilan Admin Sundaya** = tab Booking (approval + peminjaman mesin + lifecycle),
   Log Penerimaan, mold tracking, mesin, rencana maintenance, dashboard OEE
   (baca saja).
 - **Tampilan Teknisi Sundaya** = input status mesin real-time (Layer 1, hanya
@@ -195,9 +219,17 @@ tracking tidak bisa dipalsukan lewat tombol.
 
 **Catatan Log Produksi (penting):**
 - Menggantikan konsep "Daily Production Audit".
-- Semua event dalam **satu timeline** per job/mold.
+- Event dicatat **per cetakan**, bukan per booking: satu booking bisa memuat
+  beberapa cetakan dan batasnya ditetapkan per cetakan.
+- Semua event dalam **satu timeline** per cetakan.
 - Jenis event: Material datang | Log produksi harian | Progress molding
   (Planning / Ongoing / Sudah diproduksi).
+- **Plan cetakan adalah batas keras, bukan pembanding.** Akumulasi produk baik
+  tidak boleh melewati target output cetakan, dan akumulasi material terpakai
+  tidak boleh melewati plan material cetakan. Keduanya ditolak sistem beserta
+  sisa kuotanya. Plan yang kosong berarti tidak dibatasi.
+- Produksi harian mencatat **material terpakai hari itu**, bukan sisa material.
+  Sisa dihitung sistem: plan minus akumulasi terpakai.
 
 **Catatan Log Pengiriman (fitur Manager Penyewa):**
 - Milik **Manager Penyewa**. Isinya murni **log informasi**: kapan mold dan
@@ -244,6 +276,10 @@ dan hanya oleh Admin Sundaya.
 
 **Progress molding** (status di Log Produksi, Layer 2):
 Planning, Ongoing, Sudah diproduksi
+
+**Nomor mesin** digenerate sistem berpola IM-001 berurutan, tidak diinput manual.
+
+**Tonase mesin** adalah clamping force: batas atas cetakan yang bisa dijalankan.
 
 **Machine status** (sumbu operasional realtime):
 Standby, Setup, Running, Maintenance
@@ -293,6 +329,11 @@ Yang diinput manual hanyalah event mentah: status mesin + waktu + cycle time
 (Teknisi), event Log Produksi (Admin Penyewa), Log Pengiriman (Manager), Log
 Penerimaan dan jadwal maintenance (Admin Sundaya). Sisanya turunan.
 
+**Material diperlakukan sebagai kuota, bukan target.** Plan material cetakan
+adalah batas maksimal pemakaian: sisa kuota, persentase pemakaian, dan penolakan
+saat melewati batas semuanya dihitung sistem. Tidak ada lagi pembandingan rencana
+kedatangan vs aktual.
+
 Event yang mencatat kejadian nyata (status mesin, Log Produksi, Log Penerimaan)
 **tidak boleh bertanggal masa depan**: durasi antar-event dihitung dari
 timestamp-nya, jadi satu tanggal masa depan merusak seluruh hitungan OEE.
@@ -321,8 +362,16 @@ Machine, notifications, reports, dan komponen UI web.
   domain. Kalau butuh mold pindah status, cari event pemicunya, bukan bikin
   endpoint baru. Hanya Send Back dan Completed yang manual (Admin Sundaya).
 - **Dashboard read-only (semua role).** Dashboard hanya membaca informasi.
-  Tombol navigasi ke tab lain boleh; aksi yang mengubah data tidak. Approval,
-  assign mesin, dan lifecycle job ada di tab Booking Admin Sundaya.
+  Tombol navigasi ke tab lain boleh; aksi yang mengubah data tidak, termasuk panel
+  detail. Approval, assign mesin, dan lifecycle job ada di tab Booking Admin
+  Sundaya; detail cetakan ada di tab Cetakan.
+- **Satu booking bisa memuat beberapa cetakan** (relasi Mold.jobId). Jangan
+  kembalikan asumsi satu job sama dengan satu cetakan. Plan material dan target
+  output dibaca dari Mold, jangan diduplikasi ke Job.
+- **Plan cetakan adalah batas keras di Log Produksi.** Kalau menambah field
+  produksi, pikirkan dulu apakah ia perlu ikut dibatasi plan.
+- `standardRatio` sudah dihapus dari mesin. Jangan dikembalikan tanpa pemakai
+  perhitungan yang jelas.
 - Admin Sundaya (approval/assign/rental/penerimaan/OEE) dan Teknisi Sundaya
   (input Layer 1 real-time) adalah dua peran terpisah; jangan gabung kembali.
 - Booking mesin, Cetakan, dan Log Pengiriman hanya milik Manager Penyewa;

@@ -135,9 +135,13 @@ Basis `schema.prisma:112-132`.
 
 ### [EVOLVE] Rental menjadi Job
 Basis `schema.prisma:134-157`.
-- Rename model `Rental` menjadi `Job`. `jobNumber String @unique` (SSIP-xxxx).
+- Rename model `Rental` menjadi `Job`. `jobNumber String @unique`, dibentuk dari kode
+  cetakan plus sekuens (`JOB-MDA1-MDB2-001`) supaya nomornya menyebut isi jobnya.
 - `moldId String` relasi ke Mold (baru).
-- `machineId String?` **jadi nullable** (di-assign Admin Sundaya, bukan saat booking).
+- Relasi mesin **banyak-ke-banyak** (`Job.machines` / `Machine.jobs`, tabel implisit
+  `_JobToMachine`): satu booking dipinjami beberapa mesin, satu mesin dipakai beberapa
+  booking sepanjang waktu sehingga riwayat tetap terbaca. Kolom `Job.machineId` lama
+  dibuang. `requestedMachineCount Int` menyimpan jumlah mesin yang diminta penyewa.
 - Buang `penyediaId` + relasi RentalPenyedia (single-provider). Penyedia
   implisit Sundaya.
 - `penyewaId` menjadi `managerId` (Manager Penyewa yang booking).
@@ -150,6 +154,13 @@ Basis `schema.prisma:134-157`.
   returnedAt/rejectionReason`.
 - `rencanaKirimMold` dihapus: rencana kirim dicatat Manager di LogPengiriman,
   bukan sekali saat booking.
+- **`moldId` unique dihapus.** Relasi dibalik menjadi `Mold.jobId`, jadi satu
+  booking memuat banyak cetakan (`Job.molds Mold[]`) sementara satu cetakan tetap
+  hanya ikut satu booking.
+- `destinationLocation` dihapus (single-provider: tujuannya selalu Sundaya).
+  `planMaterialUtama`, `estimasiMaterialKg`, `materialTambahan`, `targetOutput`
+  dihapus: semuanya dibaca dari Mold, tidak diduplikasi.
+- Tambah `catatan String?` untuk catatan booking.
 - Relasi baru: `logPengiriman LogPengiriman[]`, `logPenerimaan LogPenerimaan[]`.
 
 ### [BARU] Mold (Cetakan)
@@ -170,10 +181,14 @@ Basis `schema.prisma:134-157`.
 
 ### [BARU] LogProduksi (Layer 2, append-only, gabungan pengganti ProductionBatch)
 Single-table timeline dengan kolom nullable per jenis event.
-- `id`, `jobId`, `eventType LogProduksiEventType`, `occurredAt DateTime`,
-  `byId` (Admin Penyewa), `catatan String?`, `createdAt`.
+- `id`, `jobId`, `moldId`, `machineId String?`, `eventType LogProduksiEventType`,
+  `occurredAt DateTime`, `byId` (Admin Penyewa), `catatan String?`, `createdAt`.
+- `machineId` wajib untuk `PRODUKSI_HARIAN` dan `PROGRESS_MOLDING` (ditegakkan service),
+  null untuk `MATERIAL_DATANG` yang tidak menyentuh mesin. Mesin dipinjamkan ke booking
+  tanpa dipasangkan ke cetakan, jadi tabel inilah satu-satunya catatan pasangan
+  cetakan-mesin yang sebenarnya, sekaligus sumber Quality per mesin.
 - Material datang: `materialName String?`, `jumlahKg Float?`, `noSuratJalan String?`.
-- Produksi harian: `goodProduct Int?`, `rejectCount Int?`, `materialRemainingKg Float?`.
+- Produksi harian: `goodProduct Int?`, `rejectCount Int?`, `materialUsedKg Float?`.
 - Progress molding: `progressMolding ProgressMolding?`, `keteranganProgress String?`.
 - Append-only: tanpa update/delete; koreksi lewat event baru.
 - ponytail: satu tabel kolom-nullable lebih ringkas dari 3 tabel event; naikkan
@@ -184,7 +199,16 @@ Single-table timeline dengan kolom nullable per jenis event.
   ProductionBatch lama: pindah ke sini hanya jika alur review masih dipakai;
   default buang sampai diminta (belum ada di wireframe/PROJECT_CONTEXT baru).
 
+### [EVOLVE] Mold (tambahan)
+- Tambah `jobId String?`: booking yang memuat cetakan ini, null berarti belum
+  dibooking. Booking yang ditolak mengosongkannya kembali.
+- `targetOutput` dan `estimasiKg` naik peran menjadi **batas keras** yang
+  ditegakkan Log Produksi, bukan sekadar angka rencana.
+- Relasi baru: `logProduksi`, `logPengiriman`, `logPenerimaan`.
+
 ### [BARU] OperationalData (Layer 1, append-only, realtime Teknisi)
+- `machineNumber` digenerate service berpola `IM-001` berurutan (bukan input).
+  `standardRatio` dihapus: data mati sejak modul batches dikarantina.
 - `id`, `machineId`, `status MachineOperationalStatus`, `cycleTimeSec Float?`,
   `occurredAt DateTime`, `byId` (Teknisi), `catatan String?`.
 - Append-only. Sumber hitung Availability, Performance, dan Utilization.
@@ -255,10 +279,38 @@ lebih dulu).
 
 **Job/booking lifecycle (RentalStatus):**
 ```
-DIAJUKAN -> (DITOLAK | DIKONFIRMASI+assign mesin) -> DIKIRIM -> AKTIF ->
+DIAJUKAN -> (DITOLAK | DIKONFIRMASI+mesin pertama) -> DIKIRIM -> AKTIF ->
 SELESAI_SEWA -> DIKEMBALIKAN -> SELESAI
 ```
-Assign mesin hanya boleh oleh Admin Sundaya, hanya saat transisi ke DIKONFIRMASI.
+**Mesin dipinjamkan, bukan dipasangkan.** `PATCH /jobs/:id/assign` menambah satu mesin
+ke booking dan hanya boleh oleh Admin Sundaya. Mesin pertama sekaligus memindahkan
+lifecycle DIAJUKAN -> DIKONFIRMASI; mesin berikutnya lewat endpoint yang sama tanpa
+menyentuh lifecycle. `DELETE /jobs/:id/machines/:machineId` menarik satu mesin kembali ke
+TERSEDIA. Keduanya hanya berlaku selama lifecycle DIAJUKAN atau DIKONFIRMASI (sebelum
+mesin dikirim), dan mesin terakhir tidak bisa ditarik.
+
+Seluruh mesin booking berjalan lockstep dengan lifecycle job-nya: transisi lifecycle
+memvalidasi jalur tiap mesin dari statusnya masing-masing lalu memperbarui semuanya
+dalam satu transaksi (status mesin ditulis lebih dulu supaya payload job yang memuat
+relasi mesin tidak basi).
+
+**Tonase mesin adalah batas atas, bukan kesamaan persis.** Karena cetakan tidak
+dipasangkan ke mesin, syarat saat meminjamkan hanya `machine.tonaseTon >=
+min(mold.tonaseTon)` di booking itu (400 bila mesin tidak sanggup satu cetakan pun).
+Kecocokan per pasangan ditegakkan saat Log Produksi dicatat:
+`machine.tonaseTon >= mold.tonaseTon` (400 menyebut nomor mesin dan kode cetakannya).
+
+**Batas plan per cetakan (Log Produksi).** Plan cetakan menjadi kuota, ditegakkan
+saat append event `PRODUKSI_HARIAN`:
+
+```
+sum(goodProduct)    + baru <= Mold.targetOutput   (400 bila lewat, sebut sisa)
+sum(materialUsedKg) + baru <= Mold.estimasiKg     (400 bila lewat, sebut sisa)
+```
+
+Plan yang null berarti tidak dibatasi. Event dicatat per pasangan cetakan-mesin
+(`LogProduksi.moldId` + `machineId`); cetakan harus benar-benar bagian dari booking itu
+dan mesin harus salah satu mesin pinjaman booking itu (404 bila bukan).
 
 **Machine operationalStatus (Layer 1):** Teknisi hanya menyetel SETUP dan RUNNING
 lewat `POST /machines/:id/operational`; tiap perubahan menulis OperationalData event
@@ -312,7 +364,7 @@ dekat dengan pihak yang tahu (`apps/api/src/dashboard/metrics.ts`):
 |---|---|---|
 | Availability | Layer 1 + Maintenance | `operating / PPT`, PPT = total minus MAINTENANCE terencana, loss = durasi SETUP + maintenance CORRECTIVE |
 | Performance | Layer 1 | `IDEAL_CYCLE_TIME_SEC / rata-rata cycleTimeSec`, dibatasi maksimum 1 |
-| Quality | Layer 2 | `good / (good + reject)` dari LogProduksi PRODUKSI_HARIAN |
+| Quality | Layer 2 | `good / (good + reject)` dari LogProduksi PRODUKSI_HARIAN mesin itu |
 | OEE | hasil kali | `Availability x Performance x Quality` |
 | Utilization | Layer 1 | `durasi RUNNING / total durasi terpantau` |
 | MTBF / MTTR | Maintenance | operating per kejadian CORRECTIVE, dan rata-rata durasinya |

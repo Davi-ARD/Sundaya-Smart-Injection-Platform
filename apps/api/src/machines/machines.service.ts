@@ -1,8 +1,4 @@
-import {
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { $Enums, Prisma, User as PrismaUser } from '@prisma/client';
 import { Machine, MachineStatus, WarrantyStatus } from '@mold-tracker/shared';
 import { PrismaService } from '../prisma/prisma.service';
@@ -13,6 +9,9 @@ import { computeWarranty } from './warranty';
 // ponytail: enum shared dan Prisma nominal berbeda, cast di batang DB saja.
 const asMachineStatus = (s: MachineStatus) => s as unknown as $Enums.MachineStatus;
 const asWarrantyStatus = (s: WarrantyStatus) => s as unknown as $Enums.WarrantyStatus;
+
+// Awalan nomor mesin (Injection Molding). Nomor digenerate IM-001, IM-002, dst.
+const MACHINE_PREFIX = 'IM';
 
 @Injectable()
 export class MachinesService {
@@ -39,15 +38,13 @@ export class MachinesService {
   // Hanya ADMIN_SUNDAYA (dijaga controller). Owner selalu user Sundaya pembuat:
   // single-provider ditegakkan di sini, bukan lewat kolom bebas dari client.
   async create(user: PrismaUser, dto: CreateMachineDto): Promise<Machine> {
-    await this.ensureNumberFree(dto.machineNumber);
     const warrantyStart = new Date(dto.warrantyStart);
     const { warrantyEnd, warrantyStatus } = computeWarranty(warrantyStart, dto.warrantyDurationMonths);
     const m = await this.prisma.machine.create({
       data: {
-        machineNumber: dto.machineNumber,
+        machineNumber: await this.nextMachineNumber(),
         spesifikasi: dto.spesifikasi,
         tonaseTon: dto.tonaseTon,
-        standardRatio: dto.standardRatio,
         ownerId: user.id,
         warrantyStart,
         warrantyDurationMonths: dto.warrantyDurationMonths,
@@ -66,7 +63,6 @@ export class MachinesService {
     const data: Prisma.MachineUpdateInput = {
       spesifikasi: dto.spesifikasi,
       tonaseTon: dto.tonaseTon,
-      standardRatio: dto.standardRatio,
     };
 
     // Warranty dihitung ulang bila start atau durasi berubah.
@@ -103,8 +99,20 @@ export class MachinesService {
     return m;
   }
 
-  private async ensureNumberFree(machineNumber: string) {
-    const existing = await this.prisma.machine.findUnique({ where: { machineNumber } });
-    if (existing) throw new ConflictException('Nomor mesin sudah dipakai');
+  // Nomor mesin digenerate berurutan dengan pola IM-001, bukan diinput manual.
+  // Nomor tertinggi yang ada dipakai sebagai acuan (bukan jumlah baris), supaya
+  // mesin yang pernah dihapus tidak membuat nomor terpakai ulang.
+  //
+  // ponytail: cukup satu query max + retry pada bentrok unik. Naikkan ke sequence
+  // Postgres kalau nanti ada pembuatan mesin paralel yang ramai.
+  private async nextMachineNumber(): Promise<string> {
+    const last = await this.prisma.machine.findFirst({
+      where: { machineNumber: { startsWith: `${MACHINE_PREFIX}-` } },
+      orderBy: { machineNumber: 'desc' },
+      select: { machineNumber: true },
+    });
+    const lastSeq = last ? Number(last.machineNumber.slice(MACHINE_PREFIX.length + 1)) : 0;
+    const next = (Number.isFinite(lastSeq) ? lastSeq : 0) + 1;
+    return `${MACHINE_PREFIX}-${String(next).padStart(3, '0')}`;
   }
 }

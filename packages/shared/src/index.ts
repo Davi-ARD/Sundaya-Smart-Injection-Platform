@@ -141,7 +141,6 @@ export interface Machine {
   machineNumber: string;
   spesifikasi: string;
   tonaseTon: number;
-  standardRatio: number; // output standar per kg material
   status: MachineStatus; // sumbu ketersediaan
   operationalStatus: MachineOperationalStatus; // sumbu realtime Layer 1
   // Status sebelum maintenance, dipakai memulihkan mesin saat maintenance selesai.
@@ -163,6 +162,7 @@ export interface Mold {
   tonaseTon: number;
   deskripsi: string | null;
   managerId: string;
+  jobId: string | null; // null berarti belum dibooking
   trackingStatus: MoldTrackingStatus;
   planMaterialUtama: string | null;
   estimasiKg: number | null;
@@ -178,25 +178,48 @@ export interface MoldTrackingEvent {
   byId: string;
 }
 
+// Ringkasan satu cetakan di dalam booking. Plan dan tonase dibaca dari Mold, tidak
+// diduplikasi di Job, supaya tidak ada dua sumber angka rencana.
+export interface JobMold {
+  moldId: string;
+  kodeMold: string;
+  namaProduk: string;
+  cavity: number;
+  tonaseTon: number;
+  trackingStatus: MoldTrackingStatus;
+  planMaterialUtama: string | null;
+  estimasiKg: number | null;
+  targetOutput: number | null;
+}
+
+// Mesin yang dipinjamkan ke satu booking. Mesin tidak dipasangkan ke cetakan
+// tertentu: penyewa bebas menjalankan cetakan mana pun di mesin mana pun selama
+// tonasenya cukup. Pasangan cetakan-mesin yang benar-benar dipakai dicatat per
+// event di Log Produksi.
+export interface JobMachine {
+  machineId: string;
+  machineNumber: string;
+  tonaseTon: number;
+  status: MachineStatus;
+}
+
 export interface Job {
   id: string;
   jobNumber: string;
-  moldId: string;
+  // Satu booking memuat satu atau lebih cetakan dan beberapa mesin sekaligus.
+  molds: JobMold[];
+  machines: JobMachine[];
+  // Jumlah mesin yang diminta penyewa; Admin Sundaya memenuhinya bertahap.
+  requestedMachineCount: number;
   managerId: string;
-  machineId: string | null; // null sebelum di-assign Admin Sundaya
-  machineNumber?: string;
   companyName?: string | null; // perusahaan penyewa, untuk tampilan staf Sundaya
   assignedById: string | null;
   lifecycle: JobLifecycle;
   jobStatus: JobStatus;
   requestedDurationDays: number;
-  destinationLocation: string;
   startDate: ISODateString | null;
   endDate: ISODateString | null;
-  planMaterialUtama: string | null;
-  estimasiMaterialKg: number | null;
-  materialTambahan: string | null;
-  targetOutput: number | null;
+  catatan: string | null;
   confirmedAt: ISODateString | null;
   shippedAt: ISODateString | null;
   receivedAt: ISODateString | null;
@@ -218,6 +241,13 @@ export interface RentalExtension {
 export interface LogProduksi {
   id: string;
   jobId: string;
+  // Cetakan yang dicatat: batas output dan material ditetapkan per cetakan.
+  moldId: string;
+  kodeMold?: string;
+  // Mesin yang dipakai cetakan itu pada event ini. Wajib untuk PRODUKSI_HARIAN dan
+  // PROGRESS_MOLDING; null pada MATERIAL_DATANG yang tidak menyentuh mesin.
+  machineId: string | null;
+  machineNumber?: string | null;
   eventType: LogProduksiEventType;
   occurredAt: ISODateString;
   byId: string;
@@ -226,10 +256,11 @@ export interface LogProduksi {
   materialName: string | null;
   jumlahKg: number | null;
   noSuratJalan: string | null;
-  // PRODUKSI_HARIAN
+  // PRODUKSI_HARIAN. materialUsedKg = material yang dipakai hari itu; sisa kuota
+  // dihitung sistem dari Mold.estimasiKg minus akumulasi terpakai.
   goodProduct: number | null;
   rejectCount: number | null;
-  materialRemainingKg: number | null;
+  materialUsedKg: number | null;
   // PROGRESS_MOLDING
   progressMolding: ProgressMolding | null;
   keteranganProgress: string | null;
@@ -270,6 +301,9 @@ export interface LogPengiriman {
   id: string;
   jobId: string;
   jobNumber?: string;
+  // Wajib untuk item MOLD: booking bisa memuat beberapa cetakan.
+  moldId: string | null;
+  kodeMold?: string;
   item: ItemPengiriman;
   rencanaKirim: ISODateString;
   // Khusus item MATERIAL.
@@ -286,6 +320,9 @@ export interface LogPenerimaan {
   id: string;
   jobId: string;
   jobNumber?: string;
+  // Wajib untuk item MOLD: booking bisa memuat beberapa cetakan.
+  moldId: string | null;
+  kodeMold?: string;
   item: ItemPengiriman;
   diterimaAt: ISODateString;
   // Khusus item MATERIAL.
@@ -345,11 +382,10 @@ export interface UpdateProfileRequest {
 }
 
 // Mesin
+// machineNumber digenerate server (pola IM-001 berurutan), tidak diinput.
 export interface CreateMachineRequest {
-  machineNumber: string;
   spesifikasi: string;
   tonaseTon: number;
-  standardRatio: number;
   warrantyStart: ISODateString;
   warrantyDurationMonths: number;
 }
@@ -357,7 +393,6 @@ export interface CreateMachineRequest {
 export interface UpdateMachineRequest {
   spesifikasi?: string;
   tonaseTon?: number;
-  standardRatio?: number;
   warrantyStart?: ISODateString;
   warrantyDurationMonths?: number;
 }
@@ -412,20 +447,20 @@ export interface UpdateMoldTrackingRequest {
   status: MoldTrackingStatus;
 }
 
-// Booking / Job. Manager mengajukan tanpa memilih mesin. Rencana kirim mold
-// tidak lagi di sini: Manager mencatatnya lewat Log Pengiriman.
+// Booking / Job. Manager memilih satu atau lebih cetakan plus jumlah mesin yang
+// ingin dipinjam, tanpa menentukan mesin mana. Plan material dan target output tidak
+// ditanyakan lagi: sudah diisi saat merancang cetakan. Rencana kirim dicatat terpisah
+// lewat Log Pengiriman.
 export interface CreateJobRequest {
-  moldId: string;
+  moldIds: string[];
+  requestedMachineCount: number;
   requestedDurationDays: number;
-  destinationLocation: string;
   startDate: ISODateString;
-  planMaterialUtama?: string;
-  estimasiMaterialKg?: number;
-  materialTambahan?: string;
-  targetOutput?: number;
+  catatan?: string;
 }
 
-// Admin Sundaya approve dan assign mesin sekaligus.
+// Admin Sundaya menambah satu mesin ke booking. Mesin pertama sekaligus menyetujui
+// booking; mesin berikutnya ditambahkan lewat endpoint yang sama.
 export interface AssignJobRequest {
   machineId: string;
 }
@@ -444,6 +479,10 @@ export interface DecideExtensionRequest {
 
 // Log Produksi (Layer 2, Admin Penyewa). Append-only.
 export interface CreateLogProduksiRequest {
+  moldId: string;
+  // Wajib untuk PRODUKSI_HARIAN dan PROGRESS_MOLDING: log harus menyebut cetakan itu
+  // dipakai di mesin mana. Mesin harus salah satu mesin booking dan tonasenya cukup.
+  machineId?: string;
   eventType: LogProduksiEventType;
   occurredAt: ISODateString;
   catatan?: string;
@@ -454,7 +493,7 @@ export interface CreateLogProduksiRequest {
   // PRODUKSI_HARIAN
   goodProduct?: number;
   rejectCount?: number;
-  materialRemainingKg?: number;
+  materialUsedKg?: number;
   // PROGRESS_MOLDING
   progressMolding?: ProgressMolding;
   keteranganProgress?: string;
@@ -464,6 +503,7 @@ export interface CreateLogProduksiRequest {
 // Field material hanya untuk item MATERIAL.
 export interface CreateLogPengirimanRequest {
   jobId: string;
+  moldId?: string; // wajib untuk item MOLD
   item: ItemPengiriman;
   rencanaKirim: ISODateString;
   materialName?: string;
@@ -475,6 +515,7 @@ export interface CreateLogPengirimanRequest {
 // Log Penerimaan (Admin Sundaya). Item MOLD memindahkan tracking ke RECEIVED.
 export interface CreateLogPenerimaanRequest {
   jobId: string;
+  moldId?: string; // wajib untuk item MOLD
   item: ItemPengiriman;
   diterimaAt: ISODateString;
   materialName?: string;
@@ -538,6 +579,7 @@ export interface ExtensionRequestRow {
   jobNumber: string;
   companyName: string | null;
   moldKode: string | null;
+  // Gabungan nomor mesin booking ini (bisa lebih dari satu), sama gaya dengan moldKode.
   machineNumber: string | null;
   additionalDays: number;
   status: ExtensionStatus;
@@ -553,21 +595,28 @@ export interface ManagerDashboard {
   avgAchievement: number;
 }
 
-// Dashboard job di lokasi (Admin Penyewa). Ringkasan per job aktif tenant.
+// Dashboard job di lokasi (Admin Penyewa). Satu baris per cetakan pada booking aktif.
+// Mesin ditampilkan sebagai daftar: cetakan mana pun boleh dijalankan di mesin mana
+// pun dalam booking itu, jadi tidak ada satu mesin milik satu cetakan.
 export interface JobDashboard {
   jobId: string;
   jobNumber: string;
   lifecycle: JobLifecycle;
-  machineNumber: string | null;
-  moldKode: string; // cetakan yang dipakai job ini
+  machineNumbers: string[];
+  moldId: string;
+  moldKode: string;
   moldProduk: string;
   moldCavity: number;
+  moldTonaseTon: number;
   progressMolding: ProgressMolding | null; // progress molding terakhir
   targetOutput: number | null;
   achievement: number; // persen good product terhadap target
   totalGoodProduct: number;
   totalReject: number;
-  materialRemainingKg: number | null; // sisa material terakhir dilaporkan
+  // Kuota material: plan dari cetakan, terpakai dari akumulasi Log Produksi.
+  planMaterialKg: number | null;
+  materialUsedKg: number;
+  materialRemainingKg: number | null; // plan minus terpakai
   endDate: ISODateString | null;
   sisaHariSewa: number | null; // sisa masa sewa mesin, negatif berarti lewat
   latestLogAt: ISODateString | null;
@@ -578,6 +627,9 @@ export interface JobDashboard {
 export interface JobLogEntry extends LogProduksi {
   jobNumber: string;
   moldKode: string;
+  // Pasangan cetakan-mesin pada event ini, supaya timeline bisa menyebut
+  // "cetakan X di mesin Y" secara spesifik.
+  machineNumber: string | null;
 }
 
 // Perkembangan plan mold (Manager Penyewa). Satu baris per cetakan, menggabung
@@ -593,7 +645,7 @@ export interface MoldPlanRow {
   jobId: string | null;
   jobNumber: string | null;
   lifecycle: JobLifecycle | null;
-  machineNumber: string | null;
+  machineNumbers: string[]; // mesin booking cetakan ini, kosong bila belum ada
   progressMolding: ProgressMolding | null;
   targetOutput: number | null;
   totalGoodProduct: number;
@@ -603,12 +655,53 @@ export interface MoldPlanRow {
   sisaHariSewa: number | null;
   etaHari: number | null; // perkiraan hari sampai target tercapai
   planMaterialUtama: string | null;
-  estimasiKg: number | null; // rencana material dari planning awal
-  materialDatangKg: number; // akumulasi MATERIAL_DATANG
-  materialTerpakaiKg: number | null;
+  // Kuota material: plan (estimasiKg) adalah batas keras, terpakai adalah akumulasi
+  // materialUsedKg dari Log Produksi, sisa adalah selisihnya.
+  estimasiKg: number | null;
+  materialUsedKg: number;
   materialRemainingKg: number | null;
-  materialTambahan: string | null;
+  materialUsagePercent: number | null; // terpakai terhadap plan
   endDate: ISODateString | null;
+}
+
+// Cycle production per cetakan (Manager Penyewa): capaian produksi terhadap target
+// dan pemakaian material terhadap kuota, plus rekap harian. Semua turunan Log Produksi.
+export interface MoldCycleProduction {
+  moldId: string;
+  kodeMold: string;
+  namaProduk: string;
+  targetOutput: number | null;
+  totalGoodProduct: number;
+  totalReject: number;
+  totalOutput: number; // good + reject
+  achievement: number; // persen good terhadap target
+  rejectRate: number; // persen reject terhadap total output
+  remainingTarget: number | null; // target minus good
+  planMaterialUtama: string | null;
+  planMaterialKg: number | null;
+  materialUsedKg: number;
+  materialRemainingKg: number | null;
+  materialUsagePercent: number | null;
+  harian: DailyCycleEntry[]; // terbaru dulu
+}
+
+export interface DailyCycleEntry {
+  occurredAt: ISODateString;
+  goodProduct: number;
+  rejectCount: number;
+  materialUsedKg: number | null;
+  catatan: string | null;
+}
+
+// Cycle production dikelompokkan per booking, satu blok per job di dashboard Manager.
+export interface JobCycleProduction {
+  jobId: string;
+  jobNumber: string;
+  lifecycle: JobLifecycle;
+  machineNumbers: string[];
+  requestedMachineCount: number;
+  sisaHariSewa: number | null;
+  molds: MoldCycleProduction[];
 }
 
 // =====================================================================

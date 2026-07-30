@@ -11,7 +11,6 @@ export function toMachine(m: PrismaMachine): Machine {
     machineNumber: m.machineNumber,
     spesifikasi: m.spesifikasi,
     tonaseTon: m.tonaseTon,
-    standardRatio: m.standardRatio,
     status: m.status as unknown as Machine['status'],
     operationalStatus: m.operationalStatus as unknown as Machine['operationalStatus'],
     statusBeforeMaintenance:
