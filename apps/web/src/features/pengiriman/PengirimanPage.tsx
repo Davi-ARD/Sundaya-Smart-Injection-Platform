@@ -1,39 +1,47 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Info, Truck } from 'lucide-react'
-import { DeliveryStatus, type DeliveryRow } from '@mold-tracker/shared'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { Boxes, Info, PackagePlus, Plus } from 'lucide-react'
+import {
+  ItemPengiriman,
+  type CreateLogPengirimanRequest,
+  type Job,
+  type LogPengiriman,
+} from '@mold-tracker/shared'
 import { useAuth } from '../auth/authContextValue'
 import { api } from '../../lib/api'
-import { Card, StatCard } from '../../components/ui/Card'
+import { Button } from '../../components/ui/Button'
+import { Card } from '../../components/ui/Card'
 import { DataTable, type Column } from '../../components/ui/DataTable'
-import { DeliveryStatusBadge } from '../../components/ui/Badge'
+import { EmptyState } from '../../components/ui/EmptyState'
+import { SidePanel } from '../../components/ui/SidePanel'
 import { TableSkeleton } from '../../components/ui/Skeleton'
+import { FieldGroup, SelectField, TextAreaField, TextField } from '../../components/ui/FormField'
 import { useToast } from '../../components/ui/Toast'
 import { errorMessage } from '../../lib/errorMessage'
-import { formatDate } from '../../lib/format'
+import { optionalText } from '../../lib/form'
+import { formatDate, formatDateTime, todayInput } from '../../lib/format'
 
-// Selisih hari: negatif berarti lebih awal dari rencana.
-const formatSelisih = (days: number | null) => {
-  if (days == null) return <span className="text-slate-400">-</span>
-  if (days > 0) return <span className="font-semibold text-amber-700">+{days} hari</span>
-  if (days < 0) return <span className="font-semibold text-emerald-700">{days} hari</span>
-  return <span className="font-semibold text-emerald-700">Tepat waktu</span>
-}
-
-const ARRIVED = [DeliveryStatus.TIBA_ONTIME, DeliveryStatus.TIBA_TERLAMBAT]
-
-// Log Pengiriman: tampilan turunan read-only. Rencana berasal dari Booking dan
-// Cetakan, aktual dari Log Produksi dan Mold Tracking. Tidak ada input di sini.
+// Log Pengiriman (Manager Penyewa): catatan kapan mold dan material akan dikirim
+// ke Sundaya. Mold dan material dipisah jadi dua daftar dalam satu tab. Mencatat
+// pengiriman mold otomatis memindahkan status tracking mold ke Delivery, dan
+// Admin Sundaya langsung menerima notifikasinya.
 export function PengirimanPage() {
   const { accessToken } = useAuth()
   const toast = useToast()
 
-  const [rows, setRows] = useState<DeliveryRow[]>([])
+  const [logs, setLogs] = useState<LogPengiriman[]>([])
+  const [jobs, setJobs] = useState<Job[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [panelItem, setPanelItem] = useState<ItemPengiriman | null>(null)
 
   const load = useCallback(async () => {
     setIsLoading(true)
     try {
-      setRows(await api.listPengiriman(accessToken))
+      const [logList, jobList] = await Promise.all([
+        api.listPengiriman(accessToken),
+        api.listJobs(accessToken),
+      ])
+      setLogs(logList)
+      setJobs(jobList)
     } catch (caught) {
       toast.error(errorMessage(caught, 'Gagal memuat log pengiriman'))
     } finally {
@@ -45,31 +53,46 @@ export function PengirimanPage() {
     void load()
   }, [load])
 
-  // Ringkasan dihitung dari baris yang sudah dimuat, bukan endpoint terpisah.
-  const summary = useMemo(() => {
-    const arrived = rows.filter((row) => ARRIVED.includes(row.status))
-    const onTime = arrived.filter((row) => row.status === DeliveryStatus.TIBA_ONTIME)
-    const overdue = rows.filter((row) => row.status === DeliveryStatus.BELUM_TIBA)
-    const lateDays = arrived
-      .filter((row) => (row.selisihHari ?? 0) > 0)
-      .map((row) => row.selisihHari as number)
-    return {
-      onTimeRate: arrived.length ? Math.round((onTime.length / arrived.length) * 100) : 100,
-      arrivedCount: arrived.length,
-      overdueCount: overdue.length,
-      avgLate: lateDays.length
-        ? Math.round((lateDays.reduce((a, b) => a + b, 0) / lateDays.length) * 10) / 10
-        : 0,
-    }
-  }, [rows])
+  const moldLogs = useMemo(() => logs.filter((l) => l.item === ItemPengiriman.MOLD), [logs])
+  const materialLogs = useMemo(
+    () => logs.filter((l) => l.item === ItemPengiriman.MATERIAL),
+    [logs],
+  )
 
-  const columns: Column<DeliveryRow>[] = [
-    { header: 'Item', cell: (r) => <span className="font-semibold text-slate-900">{r.item}</span> },
-    { header: 'Sumber rencana', cell: (r) => r.sumberRencana },
-    { header: 'Rencana tiba', cell: (r) => formatDate(r.rencanaTiba) },
-    { header: 'Aktual tiba', cell: (r) => formatDate(r.aktualTiba) },
-    { header: 'Selisih', cell: (r) => formatSelisih(r.selisihHari) },
-    { header: 'Status', cell: (r) => <DeliveryStatusBadge status={r.status} /> },
+  const jobColumn: Column<LogPengiriman> = {
+    header: 'Job',
+    cell: (l) => <span className="font-semibold text-slate-900">{l.jobNumber ?? '-'}</span>,
+  }
+  const rencanaColumn: Column<LogPengiriman> = {
+    header: 'Rencana kirim',
+    cell: (l) => formatDate(l.rencanaKirim),
+  }
+  const catatanColumn: Column<LogPengiriman> = {
+    header: 'Catatan',
+    cell: (l) => l.catatan ?? <span className="text-slate-400">-</span>,
+  }
+  const dicatatColumn: Column<LogPengiriman> = {
+    header: 'Dicatat',
+    cell: (l) => <span className="text-xs text-slate-400">{formatDateTime(l.createdAt)}</span>,
+  }
+
+  const moldColumns: Column<LogPengiriman>[] = [
+    jobColumn,
+    rencanaColumn,
+    catatanColumn,
+    dicatatColumn,
+  ]
+
+  const materialColumns: Column<LogPengiriman>[] = [
+    jobColumn,
+    { header: 'Material', cell: (l) => l.materialName ?? '-' },
+    { header: 'Jumlah', cell: (l) => (l.jumlahKg != null ? `${l.jumlahKg} kg` : '-') },
+    {
+      header: 'No. surat jalan',
+      cell: (l) => l.noSuratJalan ?? <span className="text-slate-400">-</span>,
+    },
+    rencanaColumn,
+    dicatatColumn,
   ]
 
   return (
@@ -77,55 +100,198 @@ export function PengirimanPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold tracking-tight text-slate-900">Log Pengiriman</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Perbandingan rencana kirim dan aktual kedatangan mold serta material di Sundaya.
+          Catat kapan cetakan dan material akan dikirim ke Sundaya. Admin Sundaya langsung
+          diberi tahu setiap ada rencana pengiriman baru.
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          label="Ketepatan kedatangan"
-          value={`${summary.onTimeRate}%`}
-          hint={`${summary.arrivedCount} item sudah tiba`}
-          tone={summary.onTimeRate >= 80 ? 'emerald' : 'amber'}
-        />
-        <StatCard label="Item sudah tiba" value={summary.arrivedCount} tone="brand" />
-        <StatCard
-          label="Belum tiba (overdue)"
-          value={summary.overdueCount}
-          hint="Melewati tanggal rencana"
-          tone={summary.overdueCount > 0 ? 'rose' : 'slate'}
-        />
-        <StatCard
-          label="Rata-rata keterlambatan"
-          value={summary.avgLate ? `${summary.avgLate} hari` : '-'}
-          tone={summary.avgLate ? 'amber' : 'slate'}
-        />
-      </div>
-
-      <Card className="mt-5">
+      <Card
+        title="Pengiriman cetakan"
+        subtitle="Mencatat pengiriman cetakan memindahkan status tracking-nya ke Delivery."
+        actions={
+          <Button
+            size="sm"
+            onClick={() => setPanelItem(ItemPengiriman.MOLD)}
+            disabled={jobs.length === 0}
+          >
+            <Plus className="h-3.5 w-3.5" /> Catat cetakan
+          </Button>
+        }
+      >
         {isLoading ? (
-          <TableSkeleton rows={5} columns={6} />
-        ) : rows.length === 0 ? (
-          <div className="grid place-items-center py-14 text-center">
-            <span className="grid h-12 w-12 place-items-center rounded-xl bg-brand-50 text-brand-700">
-              <Truck className="h-6 w-6" />
-            </span>
-            <p className="mt-3 text-sm font-semibold text-slate-800">Belum ada rencana pengiriman</p>
-            <p className="mt-1 max-w-sm text-sm text-slate-500">
-              Baris muncul otomatis setelah Anda mengisi rencana kirim mold dan plan material pada
-              form Booking.
-            </p>
-          </div>
+          <TableSkeleton rows={3} columns={4} />
+        ) : moldLogs.length === 0 ? (
+          <EmptyState
+            icon={Boxes}
+            title="Belum ada rencana pengiriman cetakan"
+            message={
+              jobs.length === 0
+                ? 'Ajukan booking terlebih dahulu sebelum mencatat pengiriman.'
+                : 'Catat rencana pengiriman cetakan agar Sundaya bisa bersiap menerimanya.'
+            }
+          />
         ) : (
-          <DataTable columns={columns} rows={rows} rowKey={(r) => `${r.jobId}-${r.item}`} />
+          <DataTable columns={moldColumns} rows={moldLogs} rowKey={(l) => l.id} />
+        )}
+      </Card>
+
+      <Card
+        className="mt-5"
+        title="Pengiriman material"
+        subtitle="Material dicatat terpisah beserta jumlah dan nomor surat jalan."
+        actions={
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => setPanelItem(ItemPengiriman.MATERIAL)}
+            disabled={jobs.length === 0}
+          >
+            <Plus className="h-3.5 w-3.5" /> Catat material
+          </Button>
+        }
+      >
+        {isLoading ? (
+          <TableSkeleton rows={3} columns={5} />
+        ) : materialLogs.length === 0 ? (
+          <EmptyState
+            icon={PackagePlus}
+            title="Belum ada rencana pengiriman material"
+            message="Catat material yang akan dikirim beserta perkiraan jumlahnya."
+          />
+        ) : (
+          <DataTable columns={materialColumns} rows={materialLogs} rowKey={(l) => l.id} />
         )}
       </Card>
 
       <p className="mt-4 flex items-start gap-2 text-xs leading-5 text-slate-500">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-        Halaman ini hanya menampilkan hasil hitung sistem. Rencana diubah lewat Booking dan Cetakan;
-        aktual kedatangan berasal dari Log Produksi dan status tracking mold.
+        Halaman ini murni catatan rencana pengiriman. Konfirmasi barang benar-benar tiba dicatat
+        Admin Sundaya di Log Penerimaan, dan Anda akan menerima notifikasinya.
       </p>
+
+      {panelItem ? (
+        <PengirimanFormPanel
+          item={panelItem}
+          jobs={jobs}
+          onClose={() => setPanelItem(null)}
+          onSaved={() => {
+            setPanelItem(null)
+            void load()
+          }}
+        />
+      ) : null}
     </div>
+  )
+}
+
+function PengirimanFormPanel({
+  item,
+  jobs,
+  onClose,
+  onSaved,
+}: {
+  item: ItemPengiriman
+  jobs: Job[]
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const { accessToken } = useAuth()
+  const toast = useToast()
+  const isMold = item === ItemPengiriman.MOLD
+
+  const [jobId, setJobId] = useState(jobs[0]?.id ?? '')
+  const [rencanaKirim, setRencanaKirim] = useState(todayInput())
+  const [materialName, setMaterialName] = useState('')
+  const [jumlahKg, setJumlahKg] = useState('')
+  const [noSuratJalan, setNoSuratJalan] = useState('')
+  const [catatan, setCatatan] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault()
+    setIsSaving(true)
+    try {
+      const base = {
+        jobId,
+        item,
+        rencanaKirim: new Date(rencanaKirim).toISOString(),
+        catatan: optionalText(catatan),
+      }
+      const body: CreateLogPengirimanRequest = isMold
+        ? base
+        : {
+            ...base,
+            materialName: materialName.trim(),
+            jumlahKg: Number(jumlahKg),
+            noSuratJalan: optionalText(noSuratJalan),
+          }
+      await api.createPengiriman(accessToken, body)
+      toast.success(isMold ? 'Rencana pengiriman cetakan dicatat' : 'Rencana pengiriman material dicatat')
+      onSaved()
+    } catch (caught) {
+      toast.error(errorMessage(caught, 'Gagal mencatat pengiriman'))
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <SidePanel
+      title={isMold ? 'Catat pengiriman cetakan' : 'Catat pengiriman material'}
+      subtitle={
+        isMold
+          ? 'Status tracking cetakan otomatis menjadi Delivery.'
+          : 'Material dicatat terpisah dari cetakan.'
+      }
+      onClose={onClose}
+    >
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <SelectField
+          label="Job"
+          value={jobId}
+          onChange={setJobId}
+          options={jobs.map((job) => ({ value: job.id, label: job.jobNumber }))}
+        />
+        <TextField
+          label="Rencana kirim"
+          type="date"
+          value={rencanaKirim}
+          onChange={setRencanaKirim}
+        />
+
+        {!isMold ? (
+          <>
+            <TextField label="Nama material" value={materialName} onChange={setMaterialName} />
+            <FieldGroup>
+              <TextField
+                label="Jumlah (kg)"
+                type="number"
+                min={0}
+                step="0.1"
+                value={jumlahKg}
+                onChange={setJumlahKg}
+              />
+              <TextField
+                label="No. surat jalan"
+                required={false}
+                value={noSuratJalan}
+                onChange={setNoSuratJalan}
+              />
+            </FieldGroup>
+          </>
+        ) : null}
+
+        <TextAreaField label="Catatan" value={catatan} onChange={setCatatan} />
+
+        <div className="flex justify-end gap-2 pt-2">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Batal
+          </Button>
+          <Button type="submit" disabled={isSaving || !jobId}>
+            {isSaving ? 'Menyimpan...' : 'Simpan'}
+          </Button>
+        </div>
+      </form>
+    </SidePanel>
   )
 }

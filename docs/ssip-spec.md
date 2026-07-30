@@ -52,10 +52,16 @@ Sinkron di `apps/api/prisma/schema.prisma` dan `packages/shared/src/index.ts`.
 SUPER_ADMIN, ADMIN_SUNDAYA, TEKNISI_SUNDAYA, MANAGER_PENYEWA, ADMIN_PENYEWA
 ```
 
-**MoldTrackingStatus** (baru, 10-state linear, tracking fisik mold):
+**MoldTrackingStatus** (6-state linear, tracking fisik mold):
 ```
-PLANNING, READY_DELIVERY, DELIVERY, RECEIVED, WAITING_PRODUCTION,
-ON_MACHINE, PRODUCTION, REPAIR, SEND_BACK, COMPLETED
+PLANNING, DELIVERY, RECEIVED, PRODUCTION, SEND_BACK, COMPLETED
+```
+Empat status pertama digerakkan otomatis oleh event domain (bagian 5), hanya
+SEND_BACK dan COMPLETED yang manual dan khusus ADMIN_SUNDAYA.
+
+**ItemPengiriman** (jenis barang di Log Pengiriman dan Log Penerimaan):
+```
+MOLD, MATERIAL
 ```
 
 **ProgressMolding** (baru, Layer 2):
@@ -63,16 +69,18 @@ ON_MACHINE, PRODUCTION, REPAIR, SEND_BACK, COMPLETED
 PLANNING, ONGOING, SUDAH_DIPRODUKSI
 ```
 
-**MachineOperationalStatus** (baru, Layer 1 realtime, field kedua Machine):
+**MachineOperationalStatus** (Layer 1 realtime, field kedua Machine):
 ```
-RUNNING, SETUP, STANDBY, BREAKDOWN, MAINTENANCE
+STANDBY, SETUP, RUNNING, MAINTENANCE
 ```
+Teknisi hanya boleh menginput SETUP dan RUNNING (konstanta `TEKNISI_INPUT_STATUS`
+di shared, ditegakkan DTO). STANDBY hanya default mesin baru. MAINTENANCE disetel
+modul Maintenance, yang menyimpan `Machine.statusBeforeMaintenance` saat mulai dan
+memulihkannya saat selesai.
 
-**DowntimeReason** (baru, six big losses, dilampirkan saat status non-Running):
-```
-BREAKDOWN, SETUP_ADJUSTMENT, MINOR_STOP, REDUCED_SPEED,
-STARTUP_REJECT, PRODUCTION_REJECT
-```
+`DowntimeReason` dihapus: dengan Teknisi hanya memilih SETUP dan RUNNING, lima dari
+enam reason code tidak lagi terjangkau input, dan setup sudah terbaca dari status
+itu sendiri. Six big losses tetap tercakup lewat sumber lain (bagian 6a).
 
 **LogProduksiEventType** (baru, jenis event timeline Layer 2):
 ```
@@ -89,10 +97,8 @@ ON_SCHEDULE, WARNING, CRITICAL, COMPLETED
 PREVENTIVE, CORRECTIVE
 ```
 
-**DeliveryStatus** (dihitung, tidak disimpan; dipakai di view Log Pengiriman):
-```
-DIRENCANAKAN, DIKIRIM, TIBA_ONTIME, TIBA_TERLAMBAT, BELUM_TIBA
-```
+`DeliveryStatus` dihapus bersama view banding rencana vs aktual: Log Pengiriman
+sekarang log informasi biasa (bagian 6).
 
 **Dipertahankan dari enum lama:** `MachineStatus` (dipakai sebagai
 `rentalStatus`, siklus ketersediaan), `WarrantyStatus`, `RentalStatus`
@@ -140,9 +146,11 @@ Basis `schema.prisma:134-157`.
   dan progress.
 - Tambah plan fields: `planMaterialUtama String?`, `estimasiMaterialKg Float?`,
   `materialTambahan String?`, `targetOutput Float?`.
-- Tambah `rencanaKirimMold DateTime?` (sumber rencana untuk Log Pengiriman).
 - Tambah `assignedById String?`, pertahankan `confirmedAt/shippedAt/receivedAt/
   returnedAt/rejectionReason`.
+- `rencanaKirimMold` dihapus: rencana kirim dicatat Manager di LogPengiriman,
+  bukan sekali saat booking.
+- Relasi baru: `logPengiriman LogPengiriman[]`, `logPenerimaan LogPenerimaan[]`.
 
 ### [BARU] Mold (Cetakan)
 - `id`, `kodeMold String @unique`, `namaProduk`, `cavity Int`, `tonaseTon Int`,
@@ -156,11 +164,9 @@ Basis `schema.prisma:134-157`.
 ### [BARU] MoldTrackingEvent (append-only histori pergerakan mold)
 - `id`, `moldId`, `status MoldTrackingStatus`, `at DateTime @default(now())`,
   `byId`.
-- Dipakai untuk timestamp transisi. **`RECEIVED.at`** adalah sumber aktual-tiba
-  mold di Log Pengiriman.
-- ponytail: kalau kanban cukup pakai status current saja tanpa histori, tabel
-  ini bisa ditunda; tapi Log Pengiriman butuh timestamp RECEIVED, jadi minimal
-  simpan event RECEIVED. Diputuskan: simpan semua transisi (kecil, audit gratis).
+- Dipakai untuk timestamp transisi dan jejak audit siapa yang memicunya. Ditulis
+  baik oleh transisi manual maupun otomatis (`advance`), jadi papan tracking punya
+  riwayat lengkap tanpa input tambahan.
 
 ### [BARU] LogProduksi (Layer 2, append-only, gabungan pengganti ProductionBatch)
 Single-table timeline dengan kolom nullable per jenis event.
@@ -179,24 +185,39 @@ Single-table timeline dengan kolom nullable per jenis event.
   default buang sampai diminta (belum ada di wireframe/PROJECT_CONTEXT baru).
 
 ### [BARU] OperationalData (Layer 1, append-only, realtime Teknisi)
-- `id`, `machineId`, `status MachineOperationalStatus`,
-  `downtimeReason DowntimeReason?`, `cycleTimeSec Float?`,
+- `id`, `machineId`, `status MachineOperationalStatus`, `cycleTimeSec Float?`,
   `occurredAt DateTime`, `byId` (Teknisi), `catatan String?`.
-- Append-only. Sumber hitung Availability, Performance, Quality, OEE,
-  Utilization, MTBF, MTTR, total downtime, six big losses.
+- Append-only. Sumber hitung Availability, Performance, dan Utilization.
+- `cycleTimeSec` = durasi satu siklus molding penuh, kanonik dalam detik. UI
+  memakai `hmsToSeconds`/`secondsToHms` dari shared untuk input dan tampilan
+  jam + menit + detik.
+- `occurredAt` tidak boleh bertanggal masa depan (`assertNotFuture`), karena durasi
+  tiap status dihitung dari jarak antar-event.
 
 ### [BARU] Maintenance
 - `id`, `machineId`, `type MaintenanceType`, `scheduledAt DateTime`,
-  `status` (Terjadwal/Berlangsung/Selesai; enum kecil atau string),
+  `startedAt DateTime?`, `completedAt DateTime?`, `status MaintenanceStatus`,
   `notes String?`, `byId`, `createdAt`.
+- `startedAt`/`completedAt` diisi saat transisi status; durasi pada maintenance
+  CORRECTIVE menjadi sumber MTBF dan MTTR.
+
+### [BARU] LogPengiriman (Manager Penyewa)
+- `id`, `jobId`, `item ItemPengiriman`, `rencanaKirim DateTime`, `catatan String?`,
+  `byId`, `createdAt`; khusus MATERIAL: `materialName String?`, `jumlahKg Float?`,
+  `noSuratJalan String?`.
+
+### [BARU] LogPenerimaan (Admin Sundaya)
+- Sama seperti LogPengiriman, dengan `diterimaAt DateTime` menggantikan
+  `rencanaKirim`, plus `kondisi String?`.
 
 ### [REUSE] Notification (`schema.prisma:98-110`), RentalExtension
 (`schema.prisma:159-168`, extension request Manager tetap valid),
 ConditionCheck (evaluasi: dipakai untuk Repair mold? pertahankan bila relevan).
 
-### Tanpa model: LogPengiriman
-Murni turunan (bagian 6). Tidak ada tabel, tidak ada input. Query gabungan
-rencana (Job) vs aktual (LogProduksi + MoldTrackingEvent).
+### [EVOLVE] Machine (tambahan)
+- Tambah `statusBeforeMaintenance MachineOperationalStatus?`: status operasional
+  sebelum maintenance dimulai, dipakai memulihkan mesin saat maintenance selesai.
+  Null di luar masa maintenance.
 
 ### Material (stok per job)
 Turunan dari event LogProduksi (material datang minus material remaining).
@@ -204,13 +225,33 @@ ponytail: belum bikin model Material master; tambah bila butuh katalog grade.
 
 ## 5. State machine
 
-**Mold tracking (linear, satu arah kecuali Repair):**
+**Mold tracking (linear satu arah, sebagian besar otomatis):**
 ```
-PLANNING -> READY_DELIVERY -> DELIVERY -> RECEIVED -> WAITING_PRODUCTION ->
-ON_MACHINE -> PRODUCTION -> (REPAIR -> ON_MACHINE)* -> SEND_BACK -> COMPLETED
+PLANNING -> DELIVERY -> RECEIVED -> PRODUCTION -> SEND_BACK -> COMPLETED
 ```
-Transisi hanya lewat service layer (aturan tim). Peta transisi konstan, bukan
-library state machine (ponytail, sejalan konvensi rentals lama).
+Transisi hanya lewat service layer (aturan tim). Peta transisi konstan
+(`MOLD_TRACKING_FLOW` di shared), bukan library state machine.
+
+Pemicu tiap status:
+
+| Status | Pemicu | Jalur |
+|---|---|---|
+| PLANNING | `POST /molds` (Manager) | default schema |
+| DELIVERY | `POST /pengiriman` item MOLD (Manager) | `MoldTrackingService.advance` |
+| RECEIVED | `POST /penerimaan` item MOLD (Admin Sundaya) | `MoldTrackingService.advance` |
+| PRODUCTION | `POST /jobs/:id/logs` eventType PRODUKSI_HARIAN (Admin Penyewa) | `MoldTrackingService.advance` |
+| SEND_BACK | `PATCH /molds/:id/tracking` (ADMIN_SUNDAYA) | `transition` |
+| COMPLETED | `PATCH /molds/:id/tracking` (ADMIN_SUNDAYA) | `transition` |
+
+`advance(tx, moldId, target, byId)` dipanggil di dalam transaksi service pemicu,
+jadi log dan transisi status jadi satu unit atomik. Sifatnya **idempoten dan hanya
+maju**: bila `moldRank(current) >= moldRank(target)` fungsi tidak menulis apa pun,
+sehingga event domain yang terulang tidak menggandakan MoldTrackingEvent dan tidak
+menurunkan status. Lompatan maju diizinkan (mis. penerimaan dicatat tanpa log kirim
+lebih dulu).
+
+`transition` menolak status yang seharusnya otomatis dengan 409
+(`assertManualTransition`), supaya papan tracking tidak bisa dipalsukan via tombol.
 
 **Job/booking lifecycle (RentalStatus):**
 ```
@@ -219,31 +260,69 @@ SELESAI_SEWA -> DIKEMBALIKAN -> SELESAI
 ```
 Assign mesin hanya boleh oleh Admin Sundaya, hanya saat transisi ke DIKONFIRMASI.
 
-**Machine operationalStatus (Layer 1, bebas, di-set Teknisi):**
-RUNNING/SETUP/STANDBY/BREAKDOWN/MAINTENANCE. Tiap perubahan tulis
-OperationalData event. Tidak ada urutan wajib.
+**Machine operationalStatus (Layer 1):** Teknisi hanya menyetel SETUP dan RUNNING
+lewat `POST /machines/:id/operational`; tiap perubahan menulis OperationalData event
+dan tidak ada urutan wajib. STANDBY hanya default mesin baru.
+
+MAINTENANCE tidak diinput Teknisi melainkan efek samping modul Maintenance:
+
+```
+maintenance BERLANGSUNG -> simpan statusBeforeMaintenance, mesin jadi MAINTENANCE
+maintenance SELESAI      -> mesin pulih ke statusBeforeMaintenance (fallback STANDBY)
+```
+
+Selama mesin MAINTENANCE, `POST /machines/:id/operational` dibalas 409: input
+Teknisi akan tertimpa pemulihan status saat maintenance selesai. Bila mesin sudah
+MAINTENANCE dari record lain, `statusBeforeMaintenance` tidak ditimpa supaya status
+semula yang pertama tersimpan tetap yang dipulihkan.
 
 **Machine rentalStatus (enum lama):** dipertahankan seperti alur rental
 existing.
 
-## 6. Log Pengiriman (aturan turunan, tanpa input manual)
+## 6. Log Pengiriman dan Log Penerimaan
 
-Baris per item rencana kirim. Untuk tiap Job dengan `rencanaKirimMold` terisi
-dan/atau plan material:
-- **Rencana tiba** = `Job.rencanaKirimMold` (dan plan material dari Job/Mold).
-- **Aktual tiba material** = `occurredAt` event LogProduksi `MATERIAL_DATANG`
-  terkait job.
-- **Aktual tiba mold** = `at` event MoldTrackingEvent `RECEIVED` terkait mold.
-- **Selisih** = aktual minus rencana (hari).
-- **DeliveryStatus** dihitung:
-  - `DIRENCANAKAN`: belum ada aktual, rencana belum lewat.
-  - `BELUM_TIBA`: belum ada aktual, rencana sudah lewat (overdue).
-  - `TIBA_ONTIME`: aktual ada, selisih <= 0.
-  - `TIBA_TERLAMBAT`: aktual ada, selisih > 0.
-- Ringkasan: on-time delivery rate, rata-rata keterlambatan, jumlah overdue.
+Dua modul terpisah yang saling melengkapi, masing-masing memisahkan item MOLD dan
+MATERIAL lewat enum `ItemPengiriman` (satu tabel, kolom `item`).
 
-Endpoint read-only, contoh `GET /jobs/:id/pengiriman` atau
-`GET /pengiriman?managerId=...`. Tidak ada POST/PUT.
+**LogPengiriman (Manager Penyewa).** Log informasi kapan barang akan dikirim ke
+Sundaya, bukan pembanding rencana vs aktual. Field: `item`, `rencanaKirim`, dan
+untuk MATERIAL: `materialName`, `jumlahKg`, `noSuratJalan`. Item MOLD memajukan
+tracking mold ke DELIVERY. `rencanaKirim` boleh bertanggal depan (memang rencana).
+
+**LogPenerimaan (Admin Sundaya).** Konfirmasi barang tiba di lokasi Sundaya. Field
+sama plus `kondisi`, dengan `diterimaAt` menggantikan `rencanaKirim`. Item MOLD
+memajukan tracking mold ke RECEIVED. `diterimaAt` tidak boleh bertanggal depan.
+
+**Integrasi notifikasi (dua arah).** `POST /pengiriman` memberi notifikasi ke semua
+ADMIN_SUNDAYA aktif (link `/penerimaan`); `POST /penerimaan` memberi notifikasi ke
+Manager pemilik job (link `/pengiriman`). Notifikasi dikirim **setelah** transaksi
+sukses supaya tidak terkirim untuk transaksi yang gagal.
+
+**Batas dengan Layer 2.** LogPenerimaan item MATERIAL dan LogProduksi
+`MATERIAL_DATANG` mencatat dua kejadian fisik berbeda: yang pertama kedatangan di
+gerbang Sundaya (tanggung jawab Sundaya), yang kedua material masuk stok lantai
+produksi (tanggung jawab Penyewa). Bukan duplikasi, dan dual-layer tetap terjaga.
+
+## 6a. Perhitungan OEE lintas layer
+
+Reason code manual dihapus, jadi tiga dimensi OEE diambil dari sumber yang paling
+dekat dengan pihak yang tahu (`apps/api/src/dashboard/metrics.ts`):
+
+| Dimensi | Sumber | Rumus |
+|---|---|---|
+| Availability | Layer 1 + Maintenance | `operating / PPT`, PPT = total minus MAINTENANCE terencana, loss = durasi SETUP + maintenance CORRECTIVE |
+| Performance | Layer 1 | `IDEAL_CYCLE_TIME_SEC / rata-rata cycleTimeSec`, dibatasi maksimum 1 |
+| Quality | Layer 2 | `good / (good + reject)` dari LogProduksi PRODUKSI_HARIAN |
+| OEE | hasil kali | `Availability x Performance x Quality` |
+| Utilization | Layer 1 | `durasi RUNNING / total durasi terpantau` |
+| MTBF / MTTR | Maintenance | operating per kejadian CORRECTIVE, dan rata-rata durasinya |
+
+Maintenance memperoleh `startedAt` dan `completedAt` agar durasi korektif terukur.
+Tanpa laporan cycle time, Performance dipatok 100 persen (data belum masuk, bukan
+mesin lambat). Tanpa produksi tercatat, Quality dipatok 100 persen.
+
+`IDEAL_CYCLE_TIME_SEC` masih konstanta di shared. ponytail: cycle time ideal per mold
+belum jadi master data; naikkan ke field Mold bila tiap produk butuh angka sendiri.
 
 ## 7. Matriks RBAC (ringkas)
 
@@ -256,11 +335,14 @@ Endpoint read-only, contoh `GET /jobs/:id/pengiriman` atau
 | Booking (ajukan) | - | R | - | RW | - |
 | Approval + assign mesin | - | RW | - | - | - |
 | Rental management | - | RW | - | R (miliknya) | - |
-| Mold tracking (ubah status) | - | RW | (setup) | R | R |
+| Mold tracking (baca papan) | - | R | R | R | R |
+| Mold tracking (tutup siklus: Send Back, Completed) | - | RW | - | - | - |
+| Log Pengiriman | - | R | - | RW | - |
+| Log Penerimaan | R | RW | - | R (miliknya) | - |
 | Machine operationalData (Layer 1) | - | R | RW | - | - |
 | Maintenance | - | R | RW | - | - |
 | Log Produksi (Layer 2) | - | R | - | R | RW |
-| Log Pengiriman (read-only turunan) | - | R | - | R | - |
+| Notifikasi (milik sendiri) | R | RW | RW | RW | RW |
 | Dashboard Sundaya / OEE | - | RW | R | - | - |
 | Dashboard Manager | - | - | - | R | - |
 | Dashboard job (di lokasi) | - | - | - | - | R |
@@ -289,21 +371,29 @@ Modul yang berubah/baru. Detail request/response ditulis saat implementasi.
   (role staf redirect internal). `me` tetap.
 - **User:** ganti `/operators` menjadi pengelolaan Admin Penyewa oleh Manager
   (`/penyewa-admins`). Endpoint staf (buat Admin/Teknisi) khusus Super Admin.
-- **Mesin:** tambah `operationalStatus`. Endpoint input Layer 1 (Teknisi):
-  `POST /machines/:id/operational` (status + reason + cycle time).
-  `complete-maintenance` lama menjadi bagian modul Maintenance.
-- **Cetakan (baru):** `GET/POST/PATCH /molds`, `PATCH /molds/:id/tracking`
-  (transisi status, service-guarded).
-- **Booking/Job (evolve rentals):** `POST /jobs` (Manager, tanpa mesin),
-  `PATCH /jobs/:id/assign` (Admin Sundaya), lifecycle transitions,
+- **Mesin:** tambah `operationalStatus` dan `statusBeforeMaintenance`. Input Layer 1
+  (Teknisi): `POST /machines/:id/operational` (status SETUP/RUNNING + cycle time,
+  tanpa reason code). Ditolak 409 bila mesin sedang MAINTENANCE.
+- **Cetakan:** `GET/POST/PATCH /molds` (GET juga untuk staf Sundaya),
+  `PATCH /molds/:id/tracking` hanya untuk SEND_BACK dan COMPLETED (ADMIN_SUNDAYA).
+- **Booking/Job (evolve rentals):** `POST /jobs` (Manager, tanpa mesin dan tanpa
+  rencanaKirimMold), `PATCH /jobs/:id/assign` (Admin Sundaya), lifecycle transitions,
   `GET /jobs` scoped.
-- **Log Produksi (baru, Admin Penyewa):** `GET /jobs/:id/logs`,
-  `POST /jobs/:id/logs` (append event, tanpa update/delete).
-- **Log Pengiriman (baru, read-only):** `GET /jobs/:id/pengiriman` atau
-  `GET /pengiriman`.
-- **Maintenance (baru, Teknisi):** `GET/POST/PATCH /maintenance`.
-- **Reports/Dashboard:** tambah OEE/MTBF/MTTR/six losses (Sundaya), delivery
-  variance (Manager). Reuse `production/efficiency.ts` sebagai basis hitung.
+- **Log Produksi (Admin Penyewa):** `GET /jobs/:id/logs`, `POST /jobs/:id/logs`
+  (append event, tanpa update/delete). PRODUKSI_HARIAN memicu mold PRODUCTION.
+- **Log Pengiriman (Manager):** `GET /pengiriman`, `POST /pengiriman`. Bukan lagi
+  view turunan; item MOLD memicu mold DELIVERY dan menotifikasi Admin Sundaya.
+- **Log Penerimaan (baru, Admin Sundaya):** `GET /penerimaan`, `POST /penerimaan`.
+  Item MOLD memicu mold RECEIVED dan menotifikasi Manager pemilik job.
+- **Maintenance (Teknisi):** `GET/POST /maintenance`,
+  `PATCH /maintenance/:id/status`. Transisi status ikut menggerakkan
+  `Machine.operationalStatus` (set MAINTENANCE lalu pulihkan).
+- **Notifikasi (un-quarantine):** `GET /notifications`,
+  `PATCH /notifications/:id/read`, `PATCH /notifications/read-all`. Modul dipindah
+  dari `legacy/` ke `src/` dan di-wire; sebelumnya web memanggil endpoint yang
+  belum ada.
+- **Reports/Dashboard:** OEE/MTBF/MTTR lintas layer (bagian 6a). `ManagerDashboard`
+  kehilangan `onTimeDeliveryRate` seiring hilangnya banding rencana vs aktual.
 
 ## 10. Inventaris reuse (jangan dibangun ulang)
 

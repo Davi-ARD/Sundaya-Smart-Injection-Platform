@@ -8,6 +8,7 @@ import {
   ClipboardList,
   Factory,
   Gauge,
+  Inbox,
   LayoutDashboard,
   LogOut,
   PanelLeft,
@@ -60,6 +61,12 @@ const sundayaItems: MenuItem[] = [
     to: '/staff/booking',
     icon: CalendarPlus,
     roles: [Role.SUPER_ADMIN, Role.ADMIN_SUNDAYA, Role.TEKNISI_SUNDAYA],
+  },
+  {
+    label: 'Log Penerimaan',
+    to: '/penerimaan',
+    icon: Inbox,
+    roles: [Role.SUPER_ADMIN, Role.ADMIN_SUNDAYA],
   },
   {
     label: 'Mesin',

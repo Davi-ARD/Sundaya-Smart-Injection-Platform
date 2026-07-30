@@ -30,7 +30,6 @@ type FormState = {
   requestedDurationDays: string
   destinationLocation: string
   startDate: string
-  rencanaKirimMold: string
   planMaterialUtama: string
   estimasiMaterialKg: string
   materialTambahan: string
@@ -42,7 +41,6 @@ const emptyForm: FormState = {
   requestedDurationDays: '30',
   destinationLocation: '',
   startDate: '',
-  rencanaKirimMold: '',
   planMaterialUtama: '',
   estimasiMaterialKg: '',
   materialTambahan: '',
@@ -201,7 +199,6 @@ export function BookingPage() {
               estimasiMaterialKg: optionalNumber(form.estimasiMaterialKg),
               materialTambahan: optionalText(form.materialTambahan),
               targetOutput: optionalNumber(form.targetOutput),
-              rencanaKirimMold: form.rencanaKirimMold ? toIso(form.rencanaKirimMold) : undefined,
             }
             await api.createJob(accessToken, body)
           }}
@@ -351,18 +348,10 @@ function BookingFormPanel({
             onChange={set('destinationLocation')}
           />
 
-          <TextField
-            label="Rencana kirim mold ke Sundaya"
-            type="date"
-            required={false}
-            value={form.rencanaKirimMold}
-            onChange={set('rencanaKirimMold')}
-          />
-
           <div className="flex items-start gap-2 rounded-lg bg-brand-50/70 px-3 py-2.5 text-xs leading-5 text-brand-900 ring-1 ring-inset ring-brand-600/10">
             <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            Tanggal rencana kirim menjadi pembanding di Log Pengiriman. Isi sekarang agar
-            keterlambatan dapat terpantau otomatis.
+            Rencana kirim cetakan dan material dicatat terpisah di tab Log Pengiriman setelah
+            booking dibuat.
           </div>
 
           <TextField

@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { $Enums, User as PrismaUser } from '@prisma/client';
 import {
-  DeliveryStatus,
   JobDashboard,
   JobLifecycle,
   JobLogEntry,
@@ -12,7 +11,6 @@ import {
   ProgressMolding,
 } from '@mold-tracker/shared';
 import { PrismaService } from '../prisma/prisma.service';
-import { PengirimanService } from '../pengiriman/pengiriman.service';
 import { remainingDays } from '../jobs/job-status';
 
 const round = (n: number, d = 1) => {
@@ -23,27 +21,21 @@ const round = (n: number, d = 1) => {
 // Mold yang secara fisik ada di Sundaya (sudah diterima, belum dikirim balik).
 const AT_SUNDAYA = [
   MoldTrackingStatus.RECEIVED,
-  MoldTrackingStatus.WAITING_PRODUCTION,
-  MoldTrackingStatus.ON_MACHINE,
   MoldTrackingStatus.PRODUCTION,
-  MoldTrackingStatus.REPAIR,
 ] as unknown as $Enums.MoldTrackingStatus[];
 
 const AKTIF = JobLifecycle.AKTIF as unknown as $Enums.JobLifecycle;
 
 @Injectable()
 export class DashboardPenyewaService {
-  constructor(
-    private prisma: PrismaService,
-    private pengiriman: PengirimanService,
-  ) {}
+  constructor(private prisma: PrismaService) {}
 
-  // Dashboard Manager: ringkasan tenant sendiri. onTimeDeliveryRate memakai
-  // ulang Log Pengiriman (B4) agar rencana vs aktual dihitung satu tempat.
+  // Dashboard Manager: ringkasan tenant sendiri, murni turunan data yang sudah ada
+  // (mold tracking, job, Log Produksi). Read-only, tanpa aksi.
   async manager(user: PrismaUser): Promise<ManagerDashboard> {
     const managerId = user.id;
 
-    const [moldsAtSundaya, ongoing, goodAgg, targetedJobs, rows] = await Promise.all([
+    const [moldsAtSundaya, ongoing, goodAgg, targetedJobs] = await Promise.all([
       this.prisma.mold.count({ where: { managerId, trackingStatus: { in: AT_SUNDAYA } } }),
       this.prisma.job.count({ where: { managerId, lifecycle: AKTIF } }),
       this.prisma.logProduksi.aggregate({
@@ -54,23 +46,13 @@ export class DashboardPenyewaService {
         where: { managerId, targetOutput: { not: null } },
         select: { id: true, targetOutput: true },
       }),
-      this.pengiriman.list(user),
     ]);
-
-    const avgAchievement = await this.avgAchievement(targetedJobs);
-    const arrived = rows.filter(
-      (r) => r.status === DeliveryStatus.TIBA_ONTIME || r.status === DeliveryStatus.TIBA_TERLAMBAT,
-    );
-    const onTime = arrived.filter((r) => r.status === DeliveryStatus.TIBA_ONTIME);
-    // ponytail: tanpa kedatangan -> 100 (tidak ada yang terlambat).
-    const onTimeDeliveryRate = arrived.length ? round((onTime.length / arrived.length) * 100) : 100;
 
     return {
       moldsAtSundaya,
       ongoing,
       totalGoodProduct: goodAgg._sum.goodProduct ?? 0,
-      avgAchievement,
-      onTimeDeliveryRate,
+      avgAchievement: await this.avgAchievement(targetedJobs),
     };
   }
 
@@ -209,7 +191,6 @@ export class DashboardPenyewaService {
             : round(stats.materialDatangKg - stats.materialRemainingKg),
         materialRemainingKg: stats.materialRemainingKg,
         materialTambahan: job?.materialTambahan ?? null,
-        rencanaKirimMold: job?.rencanaKirimMold?.toISOString() ?? null,
         endDate: job?.endDate?.toISOString() ?? null,
       };
     });

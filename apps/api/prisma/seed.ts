@@ -14,6 +14,8 @@ async function main() {
   await prisma.maintenance.deleteMany();
   await prisma.operationalData.deleteMany();
   await prisma.logProduksi.deleteMany();
+  await prisma.logPenerimaan.deleteMany();
+  await prisma.logPengiriman.deleteMany();
   await prisma.moldTrackingEvent.deleteMany();
   await prisma.rentalExtension.deleteMany();
   await prisma.job.deleteMany();

@@ -1,20 +1,18 @@
-import { IsDateString, IsEnum, IsNumber, IsOptional, IsPositive, IsString } from 'class-validator';
+import { IsDateString, IsIn, IsNumber, IsOptional, IsPositive, IsString } from 'class-validator';
 import {
   CreateOperationalDataRequest,
-  DowntimeReason,
   MachineOperationalStatus,
+  TEKNISI_INPUT_STATUS,
 } from '@mold-tracker/shared';
 
-// Validasi bentuk dasar di DTO; aturan bergantung status (reason wajib/dilarang)
-// ditegakkan di service karena bergantung nilai field lain.
+// Teknisi hanya boleh menyetel SETUP atau RUNNING. STANDBY hanya status awal
+// mesin baru; MAINTENANCE disetel modul Maintenance, bukan diinput di sini.
 export class CreateOperationalDataDto implements CreateOperationalDataRequest {
-  @IsEnum(MachineOperationalStatus)
+  @IsIn(TEKNISI_INPUT_STATUS)
   status: MachineOperationalStatus;
 
-  @IsOptional()
-  @IsEnum(DowntimeReason)
-  downtimeReason?: DowntimeReason;
-
+  // Durasi satu siklus molding penuh dalam detik. UI merakitnya dari input
+  // jam + menit + detik lewat hmsToSeconds di packages/shared.
   @IsOptional()
   @IsNumber()
   @IsPositive()

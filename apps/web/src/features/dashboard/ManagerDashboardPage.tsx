@@ -177,7 +177,8 @@ export function ManagerDashboardPage() {
         </Card>
       ) : (
         <>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {/* Pencapaian target punya kartunya sendiri di bawah, jadi tidak diulang di sini. */}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <StatCard
               label="Cetakan di Sundaya"
               value={summary.moldsAtSundaya}
@@ -190,12 +191,6 @@ export function ManagerDashboardPage() {
               value={summary.totalGoodProduct.toLocaleString('id-ID')}
               hint="Akumulasi dari Log Produksi"
               tone="emerald"
-            />
-            <StatCard
-              label="Ketepatan pengiriman"
-              value={`${summary.onTimeDeliveryRate}%`}
-              hint="Dari Log Pengiriman"
-              tone={summary.onTimeDeliveryRate >= 80 ? 'emerald' : 'amber'}
             />
           </div>
 

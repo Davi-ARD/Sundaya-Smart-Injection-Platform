@@ -5,14 +5,15 @@ import { CurrentUser, Roles } from '../auth/decorators';
 import { MoldTrackingService } from './mold-tracking.service';
 import { UpdateMoldTrackingDto } from './mold-tracking.dto';
 
-// Transisi tracking mold (Dev A), terpisah dari MoldsController (CRUD Manager).
-// ADMIN_SUNDAYA boleh semua transisi; TEKNISI_SUNDAYA hanya setup/produksi
-// (ditegakkan di service). Path :id/tracking tidak bertabrakan dengan :id (update).
+// Transisi tracking mold, terpisah dari MoldsController (CRUD Manager). Hanya
+// dua transisi penutup siklus yang manual (SEND_BACK, COMPLETED) dan khusus
+// ADMIN_SUNDAYA; sisanya otomatis dari event domain (ditegakkan di service).
+// Path :id/tracking tidak bertabrakan dengan :id (update).
 @Controller('molds')
 export class MoldTrackingController {
   constructor(private tracking: MoldTrackingService) {}
 
-  @Roles(Role.ADMIN_SUNDAYA, Role.TEKNISI_SUNDAYA)
+  @Roles(Role.ADMIN_SUNDAYA)
   @Patch(':id/tracking')
   transition(
     @CurrentUser() user: PrismaUser,

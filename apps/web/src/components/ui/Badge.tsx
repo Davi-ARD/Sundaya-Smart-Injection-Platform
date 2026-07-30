@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react'
 import {
-  DeliveryStatus,
   ExtensionStatus,
   JobLifecycle,
   MachineOperationalStatus,
@@ -79,7 +78,6 @@ const machineOperationalTone: Record<MachineOperationalStatus, BadgeTone> = {
   [MachineOperationalStatus.RUNNING]: 'emerald',
   [MachineOperationalStatus.SETUP]: 'sky',
   [MachineOperationalStatus.STANDBY]: 'slate',
-  [MachineOperationalStatus.BREAKDOWN]: 'rose',
   [MachineOperationalStatus.MAINTENANCE]: 'amber',
 }
 
@@ -87,7 +85,6 @@ export const machineOperationalLabel: Record<MachineOperationalStatus, string> =
   [MachineOperationalStatus.RUNNING]: 'Running',
   [MachineOperationalStatus.SETUP]: 'Setup',
   [MachineOperationalStatus.STANDBY]: 'Standby',
-  [MachineOperationalStatus.BREAKDOWN]: 'Breakdown',
   [MachineOperationalStatus.MAINTENANCE]: 'Maintenance',
 }
 
@@ -159,53 +156,24 @@ export function ExtensionStatusBadge({ status }: { status: ExtensionStatus }) {
 // --- Mold tracking (fisik cetakan) ---
 const moldTrackingTone: Record<MoldTrackingStatus, BadgeTone> = {
   [MoldTrackingStatus.PLANNING]: 'slate',
-  [MoldTrackingStatus.READY_DELIVERY]: 'amber',
   [MoldTrackingStatus.DELIVERY]: 'sky',
   [MoldTrackingStatus.RECEIVED]: 'sky',
-  [MoldTrackingStatus.WAITING_PRODUCTION]: 'amber',
-  [MoldTrackingStatus.ON_MACHINE]: 'brand',
   [MoldTrackingStatus.PRODUCTION]: 'brand',
-  [MoldTrackingStatus.REPAIR]: 'rose',
   [MoldTrackingStatus.SEND_BACK]: 'amber',
   [MoldTrackingStatus.COMPLETED]: 'emerald',
 }
 
 export const moldTrackingLabel: Record<MoldTrackingStatus, string> = {
   [MoldTrackingStatus.PLANNING]: 'Planning',
-  [MoldTrackingStatus.READY_DELIVERY]: 'Ready Delivery',
   [MoldTrackingStatus.DELIVERY]: 'Delivery',
   [MoldTrackingStatus.RECEIVED]: 'Received',
-  [MoldTrackingStatus.WAITING_PRODUCTION]: 'Waiting Production',
-  [MoldTrackingStatus.ON_MACHINE]: 'On Machine',
-  [MoldTrackingStatus.PRODUCTION]: 'Production',
-  [MoldTrackingStatus.REPAIR]: 'Repair',
+  [MoldTrackingStatus.PRODUCTION]: 'On Machine (Production)',
   [MoldTrackingStatus.SEND_BACK]: 'Send Back',
   [MoldTrackingStatus.COMPLETED]: 'Completed',
 }
 
 export function MoldTrackingBadge({ status }: { status: MoldTrackingStatus }) {
   return <Badge tone={moldTrackingTone[status]}>{moldTrackingLabel[status]}</Badge>
-}
-
-// --- Delivery status (Log Pengiriman, dihitung) ---
-const deliveryTone: Record<DeliveryStatus, BadgeTone> = {
-  [DeliveryStatus.DIRENCANAKAN]: 'slate',
-  [DeliveryStatus.DIKIRIM]: 'sky',
-  [DeliveryStatus.TIBA_ONTIME]: 'emerald',
-  [DeliveryStatus.TIBA_TERLAMBAT]: 'amber',
-  [DeliveryStatus.BELUM_TIBA]: 'rose',
-}
-
-export const deliveryLabel: Record<DeliveryStatus, string> = {
-  [DeliveryStatus.DIRENCANAKAN]: 'Direncanakan',
-  [DeliveryStatus.DIKIRIM]: 'Dikirim',
-  [DeliveryStatus.TIBA_ONTIME]: 'Tiba On-time',
-  [DeliveryStatus.TIBA_TERLAMBAT]: 'Tiba Terlambat',
-  [DeliveryStatus.BELUM_TIBA]: 'Belum Tiba',
-}
-
-export function DeliveryStatusBadge({ status }: { status: DeliveryStatus }) {
-  return <Badge tone={deliveryTone[status]}>{deliveryLabel[status]}</Badge>
 }
 
 // --- Progress molding (Layer 2) ---

@@ -6,17 +6,13 @@ import {
   ProgressMoldingBadge,
   moldTrackingLabel,
 } from '../../components/ui/Badge'
-import { formatDate, formatNumber, formatSisaHari } from '../../lib/format'
+import { formatNumber, formatSisaHari } from '../../lib/format'
 
-// Jalur utama tracking fisik mold. REPAIR adalah cabang dari PRODUCTION, jadi
-// hanya ikut ditampilkan ketika cetakan sedang berada di sana.
+// Jalur tracking fisik mold, linear tanpa cabang.
 const MAIN_FLOW = [
   MoldTrackingStatus.PLANNING,
-  MoldTrackingStatus.READY_DELIVERY,
   MoldTrackingStatus.DELIVERY,
   MoldTrackingStatus.RECEIVED,
-  MoldTrackingStatus.WAITING_PRODUCTION,
-  MoldTrackingStatus.ON_MACHINE,
   MoldTrackingStatus.PRODUCTION,
   MoldTrackingStatus.SEND_BACK,
   MoldTrackingStatus.COMPLETED,
@@ -24,10 +20,7 @@ const MAIN_FLOW = [
 
 // Rangkaian status tracking dengan posisi saat ini ditebalkan.
 export function MoldTrackingSteps({ current }: { current: MoldTrackingStatus }) {
-  const steps =
-    current === MoldTrackingStatus.REPAIR
-      ? [...MAIN_FLOW.slice(0, 7), MoldTrackingStatus.REPAIR, ...MAIN_FLOW.slice(7)]
-      : MAIN_FLOW
+  const steps = MAIN_FLOW
   const currentIndex = steps.indexOf(current)
 
   return (
@@ -96,7 +89,6 @@ export function MoldPlanDetail({ row }: { row: MoldPlanRow }) {
             value={formatSisaHari(row.sisaHariSewa)}
             tone={row.sisaHariSewa != null && row.sisaHariSewa <= 3 ? 'amber' : undefined}
           />
-          <Row label="Rencana kirim mold" value={formatDate(row.rencanaKirimMold)} />
         </dl>
       </section>
 

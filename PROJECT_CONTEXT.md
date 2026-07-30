@@ -35,22 +35,33 @@ fitur baru. Ada dua jenis data yang terpisah dan tidak boleh dicampur:
 |---|---|---|
 | Diinput oleh | Teknisi Sundaya | Admin Penyewa (berada di lokasi Sundaya) |
 | Sifat data | Real time | Event log / timeline |
-| Contoh field | Running, Setup, Standby, Breakdown, Maintenance, Cycle Time, Downtime + alasan (reason code), Running Hour, Shot Count | Material datang, Log produksi harian (Good/Reject/Material remaining), Progress molding (Planning / Ongoing / Sudah diproduksi) |
+| Contoh field | Setup, Running, Cycle Time | Material datang, Log produksi harian (Good/Reject/Material remaining), Progress molding (Planning / Ongoing / Sudah diproduksi) |
 | Aturan hapus | Tidak boleh dihapus, hanya dikoreksi via event baru | Append-only event; koreksi via event baru |
-| Menghasilkan | Availability, Performance, Quality, OEE, Utilization, MTBF, MTTR, breakdown six big losses | Production Report, Material Report, Customer Dashboard, Production Progress |
+| Menghasilkan | Availability, Performance, Utilization, MTBF, MTTR | Quality, Production Report, Material Report, Customer Dashboard, Production Progress |
 
 Kalau nanti diminta menambah field atau form baru, selalu tanya: field ini
 masuk Layer 1 (operasional mesin, real-time, milik Teknisi Sundaya) atau
 Layer 2 (log produksi, milik Admin Penyewa)? Jangan campur keduanya dalam
 satu form/tabel.
 
-**Metrik pemantauan mesin (standar industri) tetap milik Layer 1.** Semua
-pengembangan pemantauan mesin (MTBF, MTTR, downtime reason code, six big
-losses, availability breakdown) adalah pengayaan Layer 1, dihitung dari event
-status mesin yang sudah diinput Teknisi. Ini tidak mengubah alur bisnis:
-Teknisi tetap satu-satunya penginput status mesin, hanya form-nya diperkaya
-dengan pilihan alasan downtime. Jangan buat input manual untuk angka yang
-bisa dihitung (lihat bagian 8).
+**Metrik pemantauan mesin dihitung lintas layer.** OEE tidak lagi bergantung
+pada satu daftar reason code yang diinput manual. Sumbernya dipisah menurut
+pihak yang paling tahu:
+
+- **Availability** dari Layer 1: durasi status Setup ditambah maintenance
+  korektif (padanan breakdown).
+- **Performance** dari Layer 1: cycle time aktual yang dilaporkan Teknisi
+  dibanding cycle time ideal.
+- **Quality** dari Layer 2: good product dibanding reject di Log Produksi.
+- **MTBF dan MTTR** dari record Maintenance bertipe korektif.
+
+Teknisi hanya menginput **Setup** dan **Running**. Status Maintenance disetel
+otomatis oleh modul Maintenance, bukan diketik Teknisi. Jangan buat input manual
+untuk angka yang bisa dihitung (lihat bagian 8).
+
+**Cycle time** adalah durasi satu siklus molding penuh (tutup mold, injeksi,
+pendinginan, sampai eject). Disimpan kanonik dalam detik, diinput dan
+ditampilkan sebagai jam + menit + detik.
 
 ## 3. Pembagian tanggung jawab
 
@@ -125,23 +136,45 @@ Ringkasan akses:
 
 ## 5. Business process (urutan end-to-end)
 
-1. Manager Penyewa daftarkan cetakan/mold (status Planning) beserta plan material & target.
+1. Manager Penyewa daftarkan cetakan/mold beserta plan material & target.
+   Mold otomatis berstatus **Planning**.
 2. Manager Penyewa booking: memilih mold yang akan dikirim, plan material, dan
    waktu sewa. **Tidak memilih mesin** saat booking.
 3. Admin Sundaya approval **dan assign mesin**.
-4. Manager Penyewa susun **rencana pengiriman** (Log Pengiriman): kapan mold &
-   material seharusnya dikirim dan tiba di Sundaya.
-5. Penyewa kirim mold (status Ready Delivery lalu Delivery).
-6. Mold diterima Sundaya (Received).
-7. Teknisi setup mold.
-8. Mesin running.
-9. Teknisi input Operational Data (Layer 1), termasuk downtime + alasan.
-10. Admin Penyewa (datang ke Sundaya) input **Log Produksi** (timeline):
-    material datang, produksi harian, progress molding. Mesin yang dipakai
-    terlihat dari assign Sundaya. Tanggal aktual material/mold tiba dari sini
-    menjadi pembanding rencana di Log Pengiriman.
-11. Mold dikirim kembali (Send Back).
-12. Job selesai (Completed).
+4. Manager Penyewa mencatat **Log Pengiriman** cetakan: kapan mold akan dikirim
+   ke Sundaya. Mold otomatis menjadi **Delivery**, Admin Sundaya dapat notifikasi.
+5. Admin Sundaya mencatat **Log Penerimaan** cetakan saat barang tiba. Mold
+   otomatis menjadi **Received**, Manager dapat notifikasi.
+6. Teknisi setup mold, lalu mesin running (status Layer 1 Setup lalu Running).
+7. Teknisi input Operational Data (Layer 1): status mesin dan cycle time.
+8. Admin Penyewa (datang ke Sundaya) input **Log Produksi** (timeline):
+   material datang, produksi harian, progress molding. Produksi harian pertama
+   otomatis memindahkan mold ke **Production**. Mesin yang dipakai terlihat dari
+   assign Sundaya.
+9. Admin Sundaya menekan tombol selesai produksi: mold menjadi **Send Back**.
+10. Admin Sundaya menekan tombol selesai: mold menjadi **Completed**.
+
+## 5a. Mold tracking otomatis (penting)
+
+Status fisik mold **tidak digeser manual** kecuali dua langkah penutup. Peta
+pemicunya:
+
+| Status | Pemicu |
+|---|---|
+| Planning | Manager Penyewa mendaftarkan cetakan |
+| Delivery | Manager Penyewa membuat Log Pengiriman item Mold |
+| Received | Admin Sundaya membuat Log Penerimaan item Mold |
+| Production | Admin Penyewa mencatat produksi harian pertama di Log Produksi |
+| Send Back | Tombol Admin Sundaya di tab Mold Tracking |
+| Completed | Tombol Admin Sundaya di tab Mold Tracking |
+
+Transisi otomatis bersifat **idempoten dan hanya maju**: event domain yang
+terulang tidak menulis event ganda dan tidak menurunkan status. Lompatan maju
+diizinkan karena bisa terjadi secara fisik (Sundaya menerima mold tanpa Manager
+mencatat pengiriman lebih dulu); status menyusul ke kenyataan.
+
+Endpoint transisi manual menolak status yang seharusnya otomatis, supaya papan
+tracking tidak bisa dipalsukan lewat tombol.
 
 **Catatan flow booking (penting):**
 - Manager Penyewa punya master mold & mengajukan booking.
@@ -150,12 +183,13 @@ Ringkasan akses:
 - Admin Penyewa di Sundaya melihat mesin assigned lewat Log produksi / dashboard job.
 
 **Catatan pembagian tampilan (penting):**
-- **Tampilan Admin Sundaya** = approval booking, assign mesin, mold tracking,
-  rental management, dashboard & OEE monitoring, rencana maintenance.
-- **Tampilan Teknisi Sundaya** = input status mesin real-time (Layer 1),
-  eksekusi setup & maintenance.
+- **Tampilan Admin Sundaya** = tab Booking (approval + assign mesin + lifecycle),
+  Log Penerimaan, mold tracking, mesin, rencana maintenance, dashboard OEE
+  (baca saja).
+- **Tampilan Teknisi Sundaya** = input status mesin real-time (Layer 1, hanya
+  Setup dan Running), eksekusi setup & maintenance.
 - **Tampilan Manager** = plan cetakan, booking mesin, Log Pengiriman, dashboard
-  monitoring.
+  monitoring (baca saja).
 - **Tampilan Admin Penyewa** = khusus orang yang datang ke Sundaya (dashboard
   job + Log produksi). Tidak ada menu Cetakan / Booking / Log Pengiriman.
 
@@ -165,27 +199,34 @@ Ringkasan akses:
 - Jenis event: Material datang | Log produksi harian | Progress molding
   (Planning / Ongoing / Sudah diproduksi).
 
-**Catatan Log Pengiriman (penting, fitur Manager, read-only, tanpa input manual):**
-- Milik **Manager Penyewa** saja. Tujuannya membandingkan **rencana** kapan
-  material/mold seharusnya dikirim ke Sundaya vs **aktual** kedatangannya.
-- **Tidak ada form input di layar ini sama sekali.** Sisi rencana maupun
-  aktual sama-sama di-derive, tidak ada satu pun field yang diketik ulang
-  khusus untuk Log Pengiriman.
-- Sisi **rencana** diambil otomatis dari planning yang sudah diisi Manager di
-  tempat lain: tanggal pada field "Rencana kirim mold ke Sundaya" dan plan
-  material (material utama, material tambahan, estimasi kg) di form Booking
-  mesin (bagian 5, langkah 2) dan Cetakan. Begitu Manager mengisi rencana
-  kirim saat booking, baris Log Pengiriman muncul otomatis; tidak ada input
-  rencana kedua kalinya.
-- Sisi **aktual** di-derive dari Layer 2 (Log Produksi event "Material datang"
-  untuk material, dan Mold Tracking status "Received" untuk mold).
-- Ini menjaga dual-layer sekaligus single-source-of-truth planning: rencana
-  hanya diisi sekali (saat Booking/Cetakan), aktual hanya diisi sekali (saat
-  Log Produksi/Mold Tracking). Log Pengiriman murni tampilan pembanding +
-  hitungan sistem, tidak menyimpan input barunya sendiri.
-- Sistem menghitung selisih (on-time / terlambat berapa hari) dan status
-  pengiriman (lihat enum bagian 6). Manager memakai ini untuk memantau apakah
-  pasokan datang sesuai rencana.
+**Catatan Log Pengiriman (fitur Manager Penyewa):**
+- Milik **Manager Penyewa**. Isinya murni **log informasi**: kapan mold dan
+  material akan dikirim ke Sundaya. Bukan lagi pembanding rencana vs aktual.
+- **Mold dan material dipisah** jadi dua daftar, tetap dalam satu tab. Baris
+  material menyimpan nama material, jumlah kg, dan nomor surat jalan; baris mold
+  tidak memakai field itu.
+- Mencatat item **Mold** memindahkan tracking mold ke Delivery secara otomatis.
+- Admin Sundaya menerima notifikasi tiap ada log pengiriman baru, dan boleh
+  membacanya untuk mengantisipasi kedatangan.
+
+**Catatan Log Penerimaan (fitur Admin Sundaya):**
+- Milik **Admin Sundaya**. Konfirmasi bahwa mold atau material benar-benar tiba
+  di lokasi Sundaya, dicatat manual.
+- **Mold dan material dipisah** jadi dua daftar, tetap dalam satu tab.
+- Mencatat item **Mold** memindahkan tracking mold ke Received secara otomatis.
+- Manager Penyewa pemilik job menerima notifikasi tiap ada penerimaan baru, dan
+  boleh membaca log job miliknya.
+- **Berbeda dari Log Produksi event "Material datang" (Layer 2).** Log Penerimaan
+  mencatat kedatangan di gerbang Sundaya (tanggung jawab logistik Sundaya),
+  sedangkan MATERIAL_DATANG mencatat material masuk stok lantai produksi
+  (tanggung jawab Penyewa). Dua kejadian fisik yang berbeda, jadi dual-layer
+  tetap terjaga.
+
+**Catatan dashboard (penting, semua role):**
+Dashboard tiap role hanya untuk **membaca informasi**, bukan menjalankan aksi
+atau mengakses fitur. Tombol yang mengarahkan ke tab terkait tetap boleh. Aksi
+approval booking, assign mesin, dan transisi lifecycle job milik tab Booking
+Admin Sundaya, bukan dashboard.
 
 **Packing & Shipment (belum di-scope):**
 Field lama dari blueprint untuk status barang jadi (dikemas / dikirim ke
@@ -195,23 +236,25 @@ Kalau nanti ditambah, paling natural sebagai jenis event timeline.
 ## 6. Status enums (gunakan persis ini, jangan improvisasi nama status baru)
 
 **Mold Tracking status** (urutan linear, sisi tracking fisik mold):
-Planning, Ready Delivery, Delivery, Received, Waiting Production,
-On Machine, Production, Repair, Send Back, Completed
+Planning, Delivery, Received, Production, Send Back, Completed
+
+Empat status pertama **tidak digeser manual**, melainkan otomatis dari event
+domain (lihat bagian 5a). Hanya Send Back dan Completed yang ditekan tombol,
+dan hanya oleh Admin Sundaya.
 
 **Progress molding** (status di Log Produksi, Layer 2):
 Planning, Ongoing, Sudah diproduksi
 
-**Machine status** (input Teknisi):
-Running, Setup, Standby, Breakdown, Maintenance
+**Machine status** (sumbu operasional realtime):
+Standby, Setup, Running, Maintenance
 
-**Downtime reason code** (dilampirkan Teknisi saat status non-produktif,
-mengikuti kerangka six big losses OEE):
-Breakdown, Setup & Adjustment, Minor Stop, Reduced Speed, Startup Reject,
-Production Reject. Reason code ini memperkaya input Layer 1 yang sudah ada,
-bukan form baru terpisah.
+Hanya **Setup** dan **Running** yang diinput Teknisi. **Standby** hanya status
+awal saat mesin pertama didaftarkan Admin Sundaya. **Maintenance** disetel
+otomatis saat maintenance berlangsung dan dipulihkan ke status sebelumnya saat
+maintenance selesai. Tidak ada reason code yang diinput manual.
 
-**Delivery status** (Log Pengiriman, dihitung dari rencana vs aktual):
-Direncanakan, Dikirim, Tiba On-time, Tiba Terlambat, Belum Tiba (Overdue)
+**Item pengiriman/penerimaan** (Log Pengiriman dan Log Penerimaan):
+Mold, Material
 
 **Production Job status** (dashboard Sundaya):
 On Schedule, Warning, Critical, Completed
@@ -226,11 +269,12 @@ On Schedule, Warning, Critical, Completed
 
 Auth & Access (landing Penyewa + route internal staf, hierarki tenant),
 Booking (tanpa pilih mesin di sisi Penyewa), Assign Mesin (Admin Sundaya),
-Rental Management, Mold Tracking, Machine Monitoring (Layer 1, Teknisi),
-Maintenance Management, Log Produksi (Layer 2), Log Pengiriman (Manager),
-Dashboard Admin Sundaya, Console Teknisi Sundaya, Dashboard Penyewa,
-Dashboard Manager, Notification, Report. Master Data (Customer/Perusahaan
-Penyewa, Machine, Mold, Material, User) mendasari semua modul di atas.
+Rental Management, Mold Tracking (otomatis), Machine Monitoring (Layer 1,
+Teknisi), Maintenance Management, Log Produksi (Layer 2), Log Pengiriman
+(Manager), Log Penerimaan (Admin Sundaya), Dashboard Admin Sundaya, Console
+Teknisi Sundaya, Dashboard Penyewa, Dashboard Manager, Notification, Report.
+Master Data (Customer/Perusahaan Penyewa, Machine, Mold, Material, User)
+mendasari semua modul di atas.
 
 **Future development (belum di-scope, jangan dibangun dulu kecuali diminta):**
 QR Code Mold, Barcode Material, Mobile App, WhatsApp Notification, SAP
@@ -241,15 +285,18 @@ Packing/Shipment sebagai event log.
 ## 8. Data yang dihitung otomatis oleh sistem (jangan buat input manual untuk ini)
 
 Availability, Performance, Quality, OEE, Utilization, MTBF (Mean Time Between
-Failures), MTTR (Mean Time To Repair), Total Downtime, breakdown six big
-losses, Production Progress, Achievement, Remaining Target, Material Used,
-Reject Rate, ETA, Remaining Rental Time, Delivery Variance (selisih rencana vs
-aktual kirim), On-time Delivery Rate.
+Failures), MTTR (Mean Time To Repair), Total Downtime, Production Progress,
+Achievement, Remaining Target, Material Used, Reject Rate, ETA, Remaining
+Rental Time, dan status tracking mold (lihat bagian 5a).
 
-Metrik pemantauan mesin baru (MTBF, MTTR, Total Downtime, six big losses)
-dihitung dari event status mesin Layer 1 yang sudah diinput Teknisi. Jangan
-tambahkan input manual untuk angka-angka ini; yang diinput manual hanyalah
-event status mentah (status + waktu + reason code).
+Yang diinput manual hanyalah event mentah: status mesin + waktu + cycle time
+(Teknisi), event Log Produksi (Admin Penyewa), Log Pengiriman (Manager), Log
+Penerimaan dan jadwal maintenance (Admin Sundaya). Sisanya turunan.
+
+Event yang mencatat kejadian nyata (status mesin, Log Produksi, Log Penerimaan)
+**tidak boleh bertanggal masa depan**: durasi antar-event dihitung dari
+timestamp-nya, jadi satu tanggal masa depan merusak seluruh hitungan OEE.
+Rencana pengiriman justru memang bertanggal depan, jadi tidak dibatasi.
 
 ---
 
@@ -269,17 +316,27 @@ Machine, notifications, reports, dan komponen UI web.
   cek bagian 8 dulu.
 - Transisi status (mold tracking, job lifecycle, machine status) hanya lewat
   service layer dengan validasi transisi yang sah, bukan query mentah.
-- Admin Sundaya (approval/assign/rental/OEE) dan Teknisi Sundaya (input Layer 1
-  real-time) adalah dua peran terpisah; jangan gabung kembali.
+- **Mold tracking otomatis (bagian 5a).** Jangan tambahkan tombol untuk status
+  Delivery, Received, atau Production: keempat status awal digerakkan event
+  domain. Kalau butuh mold pindah status, cari event pemicunya, bukan bikin
+  endpoint baru. Hanya Send Back dan Completed yang manual (Admin Sundaya).
+- **Dashboard read-only (semua role).** Dashboard hanya membaca informasi.
+  Tombol navigasi ke tab lain boleh; aksi yang mengubah data tidak. Approval,
+  assign mesin, dan lifecycle job ada di tab Booking Admin Sundaya.
+- Admin Sundaya (approval/assign/rental/penerimaan/OEE) dan Teknisi Sundaya
+  (input Layer 1 real-time) adalah dua peran terpisah; jangan gabung kembali.
 - Booking mesin, Cetakan, dan Log Pengiriman hanya milik Manager Penyewa;
-  jangan pindah ke Admin Penyewa kecuali user eksplisit meminta.
-- Log Pengiriman read-only, tanpa input manual. Rencana di-derive dari field
-  "Rencana kirim mold ke Sundaya" + plan material di Booking/Cetakan. Aktual
-  di-derive dari Log Produksi (Layer 2) dan Mold Tracking. Kalau data rencana
-  kosong, arahkan user mengisi di Booking, bukan bikin input baru.
-- Metrik pemantauan mesin (MTBF, MTTR, downtime, six big losses) adalah hasil
-  hitung Layer 1, bukan input manual. Yang diinput hanya event status + reason
-  code oleh Teknisi.
+  jangan pindah ke Admin Penyewa kecuali user eksplisit meminta. Log Penerimaan
+  milik Admin Sundaya.
+- Log Pengiriman dan Log Penerimaan **memisahkan mold dan material** tapi tetap
+  satu tab per fitur. Keduanya terhubung lewat notifikasi dua arah; jangan
+  hapus notifikasi itu saat mengubah salah satu sisi.
+- **Status mesin Teknisi hanya Setup dan Running.** Standby cuma status awal
+  mesin baru; Maintenance disetel modul Maintenance dan dipulihkan ke status
+  sebelumnya saat selesai. Jangan kembalikan Breakdown atau reason code manual.
+- Metrik OEE dihitung lintas layer (bagian 2): Availability dan Performance dari
+  Layer 1, Quality dari Layer 2, MTBF/MTTR dari maintenance korektif. Bukan input
+  manual.
 - Akses: landing publik hanya untuk Penyewa (register hanya Manager Penyewa).
   Staf Sundaya via route internal, tanpa self-register. Admin Penyewa child
   dari Manager Penyewa, dibuat oleh Manager, tidak bisa berdiri sendiri.
