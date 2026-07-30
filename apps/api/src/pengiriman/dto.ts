@@ -16,6 +16,12 @@ export class CreateLogPengirimanDto implements CreateLogPengirimanRequest {
   @MinLength(1)
   jobId: string;
 
+  // Wajib untuk item MOLD (ditegakkan di service): booking bisa memuat beberapa cetakan.
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  moldId?: string;
+
   @IsEnum(ItemPengiriman)
   item: ItemPengiriman;
 

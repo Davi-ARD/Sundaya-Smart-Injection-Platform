@@ -9,6 +9,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 function prismaMock() {
   const client = {
     job: { findUnique: jest.fn() },
+    mold: { findUnique: jest.fn().mockResolvedValue({ kodeMold: 'MLD-001', jobId: 'job-1' }) },
     logPengiriman: { create: jest.fn(), findMany: jest.fn() },
     user: { findMany: jest.fn().mockResolvedValue([{ id: 'adm-1' }]) },
   };
@@ -43,6 +44,7 @@ const jobRow = { id: 'job-1', jobNumber: 'SSIP-1', managerId: 'mgr-1', moldId: '
 const row = (over: Record<string, unknown> = {}) => ({
   id: 'lp-1',
   jobId: 'job-1',
+  moldId: 'mold-1',
   item: ItemPengiriman.MOLD,
   rencanaKirim: new Date('2026-08-05'),
   materialName: null,
@@ -64,6 +66,7 @@ describe('PengirimanService.create', () => {
     await svc(prisma, advance).create(manager, {
       jobId: 'job-1',
       item: ItemPengiriman.MOLD,
+      moldId: 'mold-1',
       rencanaKirim: '2026-08-05T00:00:00.000Z',
     });
 
@@ -109,6 +112,36 @@ describe('PengirimanService.create', () => {
     expect(prisma.logPengiriman.create).not.toHaveBeenCalled();
   });
 
+  it('item MOLD tanpa moldId -> 400: booking bisa memuat beberapa cetakan', async () => {
+    const prisma = prismaMock();
+    prisma.job.findUnique.mockResolvedValue(jobRow);
+
+    await expect(
+      svc(prisma).create(manager, {
+        jobId: 'job-1',
+        item: ItemPengiriman.MOLD,
+        rencanaKirim: '2026-08-05T00:00:00.000Z',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.logPengiriman.create).not.toHaveBeenCalled();
+  });
+
+  it('cetakan di luar booking -> 404', async () => {
+    const prisma = prismaMock();
+    prisma.job.findUnique.mockResolvedValue(jobRow);
+    prisma.mold.findUnique.mockResolvedValue({ kodeMold: 'MLD-9', jobId: 'job-lain' });
+
+    await expect(
+      svc(prisma).create(manager, {
+        jobId: 'job-1',
+        item: ItemPengiriman.MOLD,
+        moldId: 'mold-9',
+        rencanaKirim: '2026-08-05T00:00:00.000Z',
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(prisma.logPengiriman.create).not.toHaveBeenCalled();
+  });
+
   it('memberi notifikasi ke Admin Sundaya setelah log tersimpan', async () => {
     const prisma = prismaMock();
     prisma.job.findUnique.mockResolvedValue(jobRow);
@@ -118,6 +151,7 @@ describe('PengirimanService.create', () => {
     await svc(prisma, jest.fn(), createMany).create(manager, {
       jobId: 'job-1',
       item: ItemPengiriman.MOLD,
+      moldId: 'mold-1',
       rencanaKirim: '2026-08-05T00:00:00.000Z',
     });
 
@@ -138,6 +172,7 @@ describe('PengirimanService.create', () => {
       svc(prisma, jest.fn(), createMany).create(manager, {
         jobId: 'job-1',
         item: ItemPengiriman.MOLD,
+        moldId: 'mold-1',
         rencanaKirim: '2026-08-05T00:00:00.000Z',
       }),
     ).rejects.toBeInstanceOf(NotFoundException);
@@ -149,7 +184,7 @@ describe('PengirimanService.create', () => {
 describe('PengirimanService.list', () => {
   it('Manager disaring ke job miliknya', async () => {
     const prisma = prismaMock();
-    prisma.logPengiriman.findMany.mockResolvedValue([{ ...row(), job: { jobNumber: 'SSIP-1' } }]);
+    prisma.logPengiriman.findMany.mockResolvedValue([{ ...row(), job: { jobNumber: 'SSIP-1' }, mold: { kodeMold: 'MLD-001' } }]);
 
     await svc(prisma).list(manager);
 

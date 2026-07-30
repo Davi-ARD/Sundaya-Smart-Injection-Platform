@@ -15,3 +15,11 @@ export function assertMaterialFields(
     throw new BadRequestException('materialName dan jumlahKg wajib untuk item MATERIAL');
   }
 }
+
+// Item MOLD harus menyebut cetakan mana, karena satu booking bisa memuat beberapa
+// cetakan dan transisi tracking hanya boleh menyentuh cetakan yang dimaksud.
+export function assertMoldRef(item: ItemPengiriman, moldId?: string): void {
+  if (item === ItemPengiriman.MOLD && !moldId) {
+    throw new BadRequestException('moldId wajib untuk item MOLD');
+  }
+}

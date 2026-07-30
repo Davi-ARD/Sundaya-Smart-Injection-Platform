@@ -1,8 +1,10 @@
 import {
+  ArrayMinSize,
+  ArrayUnique,
+  IsArray,
   IsDateString,
   IsIn,
   IsInt,
-  IsNumber,
   IsOptional,
   IsPositive,
   IsString,
@@ -18,41 +20,27 @@ import {
   RejectJobRequest,
 } from '@mold-tracker/shared';
 
-// Booking oleh MANAGER_PENYEWA. Tanpa machineId: mesin di-assign Admin Sundaya.
-// jobNumber dan lifecycle (DIAJUKAN) diset service, bukan diterima dari client.
+// Booking oleh MANAGER_PENYEWA: satu atau lebih cetakan, tanpa machineId (mesin
+// di-assign Admin Sundaya). Plan material dan target output tidak ditanyakan lagi
+// karena sudah tersimpan di masing-masing cetakan. jobNumber dan lifecycle
+// (DIAJUKAN) diset service, bukan diterima dari client.
 export class CreateJobDto implements CreateJobRequest {
-  @IsString()
-  @MinLength(1)
-  moldId: string;
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayUnique()
+  @IsString({ each: true })
+  moldIds: string[];
 
   @IsInt()
   @IsPositive()
   requestedDurationDays: number;
-
-  @IsString()
-  @MinLength(1)
-  destinationLocation: string;
 
   @IsDateString()
   startDate: string;
 
   @IsOptional()
   @IsString()
-  planMaterialUtama?: string;
-
-  @IsOptional()
-  @IsNumber()
-  @IsPositive()
-  estimasiMaterialKg?: number;
-
-  @IsOptional()
-  @IsString()
-  materialTambahan?: string;
-
-  @IsOptional()
-  @IsNumber()
-  @IsPositive()
-  targetOutput?: number;
+  catatan?: string;
 }
 
 export class AssignJobDto implements AssignJobRequest {

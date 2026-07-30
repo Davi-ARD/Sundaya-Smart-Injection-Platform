@@ -7,6 +7,7 @@ export function toLogProduksi(l: PrismaLogProduksi): LogProduksi {
   return {
     id: l.id,
     jobId: l.jobId,
+    moldId: l.moldId,
     eventType: l.eventType as unknown as LogProduksi['eventType'],
     occurredAt: l.occurredAt.toISOString(),
     byId: l.byId,
@@ -16,7 +17,7 @@ export function toLogProduksi(l: PrismaLogProduksi): LogProduksi {
     noSuratJalan: l.noSuratJalan,
     goodProduct: l.goodProduct,
     rejectCount: l.rejectCount,
-    materialRemainingKg: l.materialRemainingKg,
+    materialUsedKg: l.materialUsedKg,
     progressMolding: l.progressMolding as unknown as LogProduksi['progressMolding'],
     keteranganProgress: l.keteranganProgress,
     createdAt: l.createdAt.toISOString(),

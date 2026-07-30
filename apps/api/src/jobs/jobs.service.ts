@@ -39,6 +39,7 @@ const STAF_SUNDAYA: Role[] = [Role.SUPER_ADMIN, Role.ADMIN_SUNDAYA, Role.TEKNISI
 
 const withDetails = {
   include: {
+    molds: { orderBy: { kodeMold: 'asc' as const } },
     machine: { select: { machineNumber: true, status: true } },
     manager: { select: { companyName: true } },
     extensions: { orderBy: { requestedAt: 'desc' as const } },
@@ -51,40 +52,49 @@ type JobWithDetails = Prisma.JobGetPayload<typeof withDetails>;
 export class JobsService {
   constructor(private prisma: PrismaService) {}
 
-  // Booking (MANAGER_PENYEWA): pilih mold miliknya + plan waktu/material, tanpa
-  // memilih mesin. Lifecycle mulai DIAJUKAN (default schema); mesin di-assign
-  // Admin Sundaya belakangan. Satu mold hanya boleh satu job (moldId @unique).
+  // Booking (MANAGER_PENYEWA): pilih satu atau lebih cetakan miliknya plus rencana
+  // waktu, tanpa memilih mesin. Plan material dan target output tidak diminta lagi:
+  // sudah tersimpan di masing-masing cetakan. Lifecycle mulai DIAJUKAN (default
+  // schema); mesin di-assign Admin Sundaya belakangan untuk seluruh booking.
+  //
+  // Satu cetakan hanya boleh ikut satu booking: cetakan yang jobId-nya sudah terisi
+  // ditolak 409. Job dan penautan cetakan ditulis dalam satu transaksi.
   async create(user: PrismaUser, dto: CreateJobDto): Promise<Job> {
-    const mold = await this.prisma.mold.findUnique({ where: { id: dto.moldId } });
-    if (!mold || mold.managerId !== user.id) {
-      throw new NotFoundException('Cetakan tidak ditemukan');
+    const molds = await this.prisma.mold.findMany({
+      where: { id: { in: dto.moldIds }, managerId: user.id },
+      select: { id: true, kodeMold: true, jobId: true },
+    });
+    // Cetakan tenant lain atau tidak ada sama-sama 404: jangan bocorkan keberadaannya.
+    if (molds.length !== dto.moldIds.length) {
+      throw new NotFoundException('Sebagian cetakan tidak ditemukan');
     }
+    const sudahDibooking = molds.filter((m) => m.jobId !== null);
+    if (sudahDibooking.length) {
+      throw new ConflictException(
+        `Cetakan sudah dibooking: ${sudahDibooking.map((m) => m.kodeMold).join(', ')}`,
+      );
+    }
+
     // ponytail: jobNumber base36 timestamp, unik cukup untuk laju booking manusia;
     // naikkan ke sekuens rapi SSIP-0001 bila butuh nomor berurutan.
     const jobNumber = `SSIP-${Date.now().toString(36).toUpperCase()}`;
-    try {
-      const job = await this.prisma.job.create({
+    const job = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.job.create({
         data: {
           jobNumber,
-          moldId: dto.moldId,
           managerId: user.id,
           requestedDurationDays: dto.requestedDurationDays,
-          destinationLocation: dto.destinationLocation,
           startDate: new Date(dto.startDate),
-          planMaterialUtama: dto.planMaterialUtama,
-          estimasiMaterialKg: dto.estimasiMaterialKg,
-          materialTambahan: dto.materialTambahan,
-          targetOutput: dto.targetOutput,
+          catatan: dto.catatan,
         },
-        ...withDetails,
       });
-      return toJob(job, job.machine?.machineNumber, job.extensions);
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        throw new ConflictException('Cetakan ini sudah dibooking');
-      }
-      throw error;
-    }
+      await tx.mold.updateMany({
+        where: { id: { in: dto.moldIds } },
+        data: { jobId: created.id },
+      });
+      return tx.job.findUniqueOrThrow({ where: { id: created.id }, ...withDetails });
+    });
+    return toJob(job, job.molds, job.machine?.machineNumber, job.extensions);
   }
 
   // Scoping tenant di service: staf Sundaya lihat semua; Manager lihat miliknya;
@@ -96,33 +106,41 @@ export class JobsService {
       orderBy: { createdAt: 'desc' },
       ...withDetails,
     });
-    return jobs.map((j) => toJob(j, j.machine?.machineNumber, j.extensions));
+    return jobs.map((j) => toJob(j, j.molds, j.machine?.machineNumber, j.extensions));
   }
 
   async findOne(user: PrismaUser, id: string): Promise<Job> {
     const j = await this.prisma.job.findUnique({ where: { id }, ...withDetails });
     if (!j) throw new NotFoundException('Job tidak ditemukan');
     this.assertParty(user, j);
-    return toJob(j, j.machine?.machineNumber, j.extensions);
+    return toJob(j, j.molds, j.machine?.machineNumber, j.extensions);
   }
 
-  // ADMIN_SUNDAYA menyetujui + assign mesin: DIAJUKAN -> DIKONFIRMASI. Mesin harus
-  // TERSEDIA dan tonasenya cocok mold. Mesin ikut berjalan TERSEDIA -> DIKONFIRMASI.
+  // ADMIN_SUNDAYA menyetujui + assign mesin: DIAJUKAN -> DIKONFIRMASI. Satu mesin
+  // untuk seluruh booking, jadi mesin harus TERSEDIA dan clamping force-nya sanggup
+  // menahan cetakan bertonase terbesar di booking itu. Mesin ikut berjalan
+  // TERSEDIA -> DIKONFIRMASI.
   async assign(user: PrismaUser, id: string, dto: AssignJobDto): Promise<Job> {
     const job = await this.prisma.job.findUnique({
       where: { id },
-      include: { mold: { select: { tonaseTon: true } } },
+      include: { molds: { select: { kodeMold: true, tonaseTon: true } } },
     });
     if (!job) throw new NotFoundException('Job tidak ditemukan');
     this.assertLifecycle(job.lifecycle, JobLifecycle.DIAJUKAN);
+    if (!job.molds.length) throw new ConflictException('Booking belum memuat cetakan');
 
     const machine = await this.prisma.machine.findUnique({ where: { id: dto.machineId } });
     if (!machine) throw new NotFoundException('Mesin tidak ditemukan');
     if (machine.status !== asMachineStatus(MachineStatus.TERSEDIA)) {
       throw new ConflictException('Mesin sedang tidak tersedia');
     }
-    if (machine.tonaseTon !== job.mold.tonaseTon) {
-      throw new BadRequestException('Tonase mesin tidak cocok dengan mold');
+    // Tonase mesin adalah batas atas, bukan angka yang harus sama: mesin 150 ton
+    // sanggup menjalankan mold 100 ton, tapi tidak mold 200 ton.
+    const terbesar = job.molds.reduce((a, b) => (b.tonaseTon > a.tonaseTon ? b : a));
+    if (machine.tonaseTon < terbesar.tonaseTon) {
+      throw new BadRequestException(
+        `Tonase mesin ${machine.tonaseTon} ton kurang dari kebutuhan cetakan ${terbesar.kodeMold} (${terbesar.tonaseTon} ton)`,
+      );
     }
 
     nextJobLifecycle(JobLifecycle.DIAJUKAN, JobLifecycle.DIKONFIRMASI);
@@ -148,7 +166,8 @@ export class JobsService {
         data: { status: asMachineStatus(nextMachine) },
       }),
     ]);
-    return toJob(updated as JobWithDetails, machine.machineNumber, (updated as JobWithDetails).extensions);
+    const detail = updated as JobWithDetails;
+    return toJob(detail, detail.molds, machine.machineNumber, detail.extensions);
   }
 
   // ADMIN_SUNDAYA menolak: DIAJUKAN -> DITOLAK. Belum ada mesin ter-assign di DIAJUKAN.
@@ -158,12 +177,19 @@ export class JobsService {
     this.assertLifecycle(job.lifecycle, JobLifecycle.DIAJUKAN);
     nextJobLifecycle(JobLifecycle.DIAJUKAN, JobLifecycle.DITOLAK);
 
-    const updated = await this.prisma.job.update({
-      where: { id: job.id },
-      data: { lifecycle: asLifecycle(JobLifecycle.DITOLAK), rejectionReason: dto.reason },
-      ...withDetails,
+    // Booking ditolak berarti cetakannya bebas lagi: lepaskan jobId supaya Manager
+    // bisa membookingnya ulang. Daftar cetakan booking ini tetap terbaca dari log
+    // dan dari salinan sebelum update.
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.job.update({
+        where: { id: job.id },
+        data: { lifecycle: asLifecycle(JobLifecycle.DITOLAK), rejectionReason: dto.reason },
+        ...withDetails,
+      });
+      await tx.mold.updateMany({ where: { jobId: job.id }, data: { jobId: null } });
+      return result;
     });
-    return toJob(updated, updated.machine?.machineNumber, updated.extensions);
+    return toJob(updated, updated.molds, updated.machine?.machineNumber, updated.extensions);
   }
 
   // Transisi pasca-assign (ADMIN_SUNDAYA). Mesin sudah ter-assign, berjalan lockstep.
@@ -284,7 +310,7 @@ export class JobsService {
             jobNumber: true,
             endDate: true,
             manager: { select: { companyName: true } },
-            mold: { select: { kodeMold: true } },
+            molds: { select: { kodeMold: true }, orderBy: { kodeMold: 'asc' } },
             machine: { select: { machineNumber: true } },
           },
         },
@@ -296,7 +322,8 @@ export class JobsService {
       jobId: e.jobId,
       jobNumber: e.job.jobNumber,
       companyName: e.job.manager.companyName,
-      moldKode: e.job.mold.kodeMold,
+      // Booking bisa memuat beberapa cetakan; ringkas jadi satu kolom.
+      moldKode: e.job.molds.map((m) => m.kodeMold).join(', ') || null,
       machineNumber: e.job.machine?.machineNumber ?? null,
       additionalDays: e.additionalDays,
       status: e.status as unknown as ExtensionStatus,
@@ -343,7 +370,8 @@ export class JobsService {
         data: { status: asMachineStatus(nextMachine) },
       }),
     ]);
-    return toJob(updated as JobWithDetails, job.machine.machineNumber, (updated as JobWithDetails).extensions);
+    const detail = updated as JobWithDetails;
+    return toJob(detail, detail.molds, job.machine.machineNumber, detail.extensions);
   }
 
   private tenantScope(user: PrismaUser): Prisma.JobWhereInput {

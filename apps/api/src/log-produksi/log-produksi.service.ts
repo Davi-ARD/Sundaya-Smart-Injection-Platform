@@ -34,19 +34,25 @@ export class LogProduksiService {
   // Append-only (Admin Penyewa): hanya field milik eventType yang disimpan.
   // Koreksi dilakukan lewat event baru, bukan update/delete.
   //
-  // Event PRODUKSI_HARIAN menandai mold benar-benar dipakai di mesin, jadi tracking
-  // mold ikut maju ke PRODUCTION (idempoten: event kedua dan seterusnya tidak
-  // mengubah apa pun karena advance() hanya bergerak maju).
+  // Event dicatat per cetakan karena batas output dan material ditetapkan per
+  // cetakan. Event PRODUKSI_HARIAN menandai cetakan itu benar-benar dipakai di
+  // mesin, jadi tracking-nya ikut maju ke PRODUCTION (idempoten: event kedua dan
+  // seterusnya tidak mengubah apa pun karena advance() hanya bergerak maju).
   async append(user: PrismaUser, jobId: string, dto: CreateLogProduksiDto): Promise<LogProduksi> {
     // Event Layer 2 mencatat kejadian yang sudah terjadi, bukan rencana.
     assertNotFuture(dto.occurredAt, 'occurredAt');
-    const job = await this.getJobInTenant(user, jobId);
+    await this.getJobInTenant(user, jobId);
+    const mold = await this.getMoldInJob(jobId, dto.moldId);
     const eventData = this.buildEventData(dto);
+    if (dto.eventType === LogProduksiEventType.PRODUKSI_HARIAN) {
+      await this.assertWithinPlan(mold, dto);
+    }
 
     return this.prisma.$transaction(async (tx) => {
       const log = await tx.logProduksi.create({
         data: {
           jobId,
+          moldId: dto.moldId,
           byId: user.id,
           eventType: dto.eventType as unknown as $Enums.LogProduksiEventType,
           occurredAt: new Date(dto.occurredAt),
@@ -55,10 +61,56 @@ export class LogProduksiService {
         },
       });
       if (dto.eventType === LogProduksiEventType.PRODUKSI_HARIAN) {
-        await this.moldTracking.advance(tx, job.moldId, MoldTrackingStatus.PRODUCTION, user.id);
+        await this.moldTracking.advance(tx, dto.moldId, MoldTrackingStatus.PRODUCTION, user.id);
       }
       return toLogProduksi(log);
     });
+  }
+
+  // Cetakan harus benar-benar bagian dari booking ini, supaya log tidak nyasar ke
+  // cetakan booking lain (yang plan-nya berbeda).
+  private async getMoldInJob(jobId: string, moldId: string) {
+    const mold = await this.prisma.mold.findUnique({
+      where: { id: moldId },
+      select: { id: true, kodeMold: true, jobId: true, targetOutput: true, estimasiKg: true },
+    });
+    if (!mold || mold.jobId !== jobId) {
+      throw new NotFoundException('Cetakan tidak ada di booking ini');
+    }
+    return mold;
+  }
+
+  // Plan cetakan adalah batas keras, bukan sekadar pembanding: akumulasi produk baik
+  // tidak boleh melewati targetOutput, dan akumulasi material terpakai tidak boleh
+  // melewati estimasiKg. Plan yang kosong berarti tidak dibatasi.
+  private async assertWithinPlan(
+    mold: { kodeMold: string; targetOutput: number | null; estimasiKg: number | null },
+    dto: CreateLogProduksiDto,
+  ) {
+    const terpakai = await this.prisma.logProduksi.aggregate({
+      where: { moldId: dto.moldId, eventType: $Enums.LogProduksiEventType.PRODUKSI_HARIAN },
+      _sum: { goodProduct: true, materialUsedKg: true },
+    });
+
+    if (mold.targetOutput != null) {
+      const totalGood = (terpakai._sum.goodProduct ?? 0) + (dto.goodProduct ?? 0);
+      if (totalGood > mold.targetOutput) {
+        const sisa = mold.targetOutput - (terpakai._sum.goodProduct ?? 0);
+        throw new BadRequestException(
+          `Produk baik melewati target cetakan ${mold.kodeMold}: target ${mold.targetOutput}, sisa ${sisa}`,
+        );
+      }
+    }
+
+    if (mold.estimasiKg != null && dto.materialUsedKg != null) {
+      const totalMaterial = (terpakai._sum.materialUsedKg ?? 0) + dto.materialUsedKg;
+      if (totalMaterial > mold.estimasiKg) {
+        const sisa = mold.estimasiKg - (terpakai._sum.materialUsedKg ?? 0);
+        throw new BadRequestException(
+          `Material terpakai melewati plan cetakan ${mold.kodeMold}: plan ${mold.estimasiKg} kg, sisa ${sisa} kg`,
+        );
+      }
+    }
   }
 
   // Field wajib per eventType ditegakkan di sini; hanya field milik tipe yang lolos
@@ -83,7 +135,7 @@ export class LogProduksiService {
         return {
           goodProduct: dto.goodProduct,
           rejectCount: dto.rejectCount,
-          materialRemainingKg: dto.materialRemainingKg,
+          materialUsedKg: dto.materialUsedKg,
         };
       case LogProduksiEventType.PROGRESS_MOLDING:
         if (!dto.progressMolding) {
@@ -103,7 +155,7 @@ export class LogProduksiService {
   private async getJobInTenant(user: PrismaUser, jobId: string) {
     const job = await this.prisma.job.findUnique({
       where: { id: jobId },
-      select: { id: true, managerId: true, moldId: true },
+      select: { id: true, managerId: true },
     });
     if (!job) throw new NotFoundException('Job tidak ditemukan');
     if (STAF_SUNDAYA.includes(user.role as Role)) return job;
