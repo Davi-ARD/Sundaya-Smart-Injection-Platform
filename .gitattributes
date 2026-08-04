@@ -1,6 +1,9 @@
 # Auto detect text files and perform LF normalization
 * text=auto
 
+# Skrip hook dijalankan oleh sh, wajib LF walau di Windows.
+.githooks/* text eol=lf
+
 # File biner: jangan normalisasi akhir baris atau tampilkan diff teksnya.
 *.png binary
 *.jpg binary
