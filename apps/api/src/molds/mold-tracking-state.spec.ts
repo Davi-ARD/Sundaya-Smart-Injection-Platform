@@ -25,9 +25,13 @@ describe('assertMoldTransition', () => {
 });
 
 describe('assertManualTransition', () => {
-  it('Admin Sundaya boleh menutup siklus (SEND_BACK, COMPLETED)', () => {
+  it('Admin Sundaya menyatakan cetakan dikirim balik (SEND_BACK)', () => {
     expect(() => assertManualTransition(Role.ADMIN_SUNDAYA, MT.SEND_BACK)).not.toThrow();
-    expect(() => assertManualTransition(Role.ADMIN_SUNDAYA, MT.COMPLETED)).not.toThrow();
+  });
+
+  // Approval pengembalian datang dari pihak yang menerima barangnya.
+  it('Manager Penyewa mengonfirmasi cetakan sudah diterima kembali (COMPLETED)', () => {
+    expect(() => assertManualTransition(Role.MANAGER_PENYEWA, MT.COMPLETED)).not.toThrow();
   });
 
   it('menolak status yang seharusnya otomatis dari event domain', () => {
@@ -36,14 +40,20 @@ describe('assertManualTransition', () => {
     }
   });
 
-  it('Teknisi tidak boleh menutup siklus mold', () => {
-    expect(() => assertManualTransition(Role.TEKNISI_SUNDAYA, MT.SEND_BACK)).toThrow(
+  it('Admin Sundaya tidak boleh mengaku-aku cetakan sudah diterima penyewa', () => {
+    expect(() => assertManualTransition(Role.ADMIN_SUNDAYA, MT.COMPLETED)).toThrow(
       ForbiddenException,
     );
   });
 
-  it('Manager Penyewa tidak boleh menutup siklus mold', () => {
-    expect(() => assertManualTransition(Role.MANAGER_PENYEWA, MT.COMPLETED)).toThrow(
+  it('Manager Penyewa tidak boleh menyatakan cetakan dikirim balik', () => {
+    expect(() => assertManualTransition(Role.MANAGER_PENYEWA, MT.SEND_BACK)).toThrow(
+      ForbiddenException,
+    );
+  });
+
+  it('Teknisi tidak boleh menutup siklus mold', () => {
+    expect(() => assertManualTransition(Role.TEKNISI_SUNDAYA, MT.SEND_BACK)).toThrow(
       ForbiddenException,
     );
   });

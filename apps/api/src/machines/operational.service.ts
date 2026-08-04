@@ -28,7 +28,7 @@ export class OperationalService {
   ): Promise<OperationalData> {
     // Durasi tiap status dihitung dari jarak antar occurredAt, jadi satu event
     // bertanggal masa depan akan menggelembungkan durasi status sebelumnya.
-    assertNotFuture(dto.occurredAt, 'occurredAt');
+    assertNotFuture(dto.occurredAt, 'Waktu kejadian');
 
     const machine = await this.prisma.machine.findUnique({
       where: { id: machineId },

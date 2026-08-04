@@ -86,7 +86,7 @@ export class JobsController {
     return this.jobs.assign(user, id, dto);
   }
 
-  // Menarik satu mesin dari booking yang belum dikirim.
+  // Menarik satu mesin dari booking yang belum berjalan.
   @Roles(Role.ADMIN_SUNDAYA)
   @Delete(':id/machines/:machineId')
   releaseMachine(
@@ -106,33 +106,8 @@ export class JobsController {
     return this.jobs.reject(user, id, dto);
   }
 
-  @Roles(Role.ADMIN_SUNDAYA)
-  @Patch(':id/ship')
-  ship(@CurrentUser() user: PrismaUser, @Param('id') id: string): Promise<Job> {
-    return this.jobs.ship(user, id);
-  }
-
-  @Roles(Role.ADMIN_SUNDAYA)
-  @Patch(':id/activate')
-  activate(@CurrentUser() user: PrismaUser, @Param('id') id: string): Promise<Job> {
-    return this.jobs.activate(user, id);
-  }
-
-  @Roles(Role.ADMIN_SUNDAYA)
-  @Patch(':id/return')
-  returnJob(@CurrentUser() user: PrismaUser, @Param('id') id: string): Promise<Job> {
-    return this.jobs.return(user, id);
-  }
-
-  @Roles(Role.ADMIN_SUNDAYA)
-  @Patch(':id/collect')
-  collect(@CurrentUser() user: PrismaUser, @Param('id') id: string): Promise<Job> {
-    return this.jobs.collect(user, id);
-  }
-
-  @Roles(Role.ADMIN_SUNDAYA)
-  @Patch(':id/complete')
-  complete(@CurrentUser() user: PrismaUser, @Param('id') id: string): Promise<Job> {
-    return this.jobs.complete(user, id);
-  }
+  // Tidak ada endpoint tombol lifecycle lain. Mesin tidak pernah dikirim ke penyewa,
+  // jadi tidak ada "kirim mesin": booking jadi AKTIF sendiri saat cetakan pertama
+  // diterima Sundaya, dan SELESAI sendiri saat seluruh cetakannya sudah kembali ke
+  // penyewa. Lihat jobs/job-transitions.ts.
 }

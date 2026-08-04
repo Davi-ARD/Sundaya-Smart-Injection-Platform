@@ -366,6 +366,7 @@ function OperationalFormPanel({
           type="datetime-local"
           value={occurredAt}
           onChange={setOccurredAt}
+          max={nowLocalInput()}
         />
 
         <div>

@@ -18,12 +18,11 @@ export class CreateLogProduksiDto implements CreateLogProduksiRequest {
   @MinLength(1)
   moldId: string;
 
-  // Mesin yang menjalankan cetakan itu. Wajib untuk PRODUKSI_HARIAN dan
-  // PROGRESS_MOLDING (ditegakkan service), tidak dipakai MATERIAL_DATANG.
-  @IsOptional()
+  // Mesin yang menjalankan cetakan itu. Kedua jenis event terjadi di atas mesin,
+  // jadi selalu wajib; kecocokan mesin-cetakan ditegakkan service.
   @IsString()
   @MinLength(1)
-  machineId?: string;
+  machineId: string;
 
   @IsEnum(LogProduksiEventType)
   eventType: LogProduksiEventType;
@@ -34,21 +33,6 @@ export class CreateLogProduksiDto implements CreateLogProduksiRequest {
   @IsOptional()
   @IsString()
   catatan?: string;
-
-  // MATERIAL_DATANG
-  @IsOptional()
-  @IsString()
-  @MinLength(1)
-  materialName?: string;
-
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  jumlahKg?: number;
-
-  @IsOptional()
-  @IsString()
-  noSuratJalan?: string;
 
   // PRODUKSI_HARIAN
   @IsOptional()

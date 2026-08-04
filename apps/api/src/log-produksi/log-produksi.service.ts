@@ -15,13 +15,6 @@ import { toLogProduksi } from './log-produksi.mapper';
 
 const STAF_SUNDAYA: Role[] = [Role.SUPER_ADMIN, Role.ADMIN_SUNDAYA, Role.TEKNISI_SUNDAYA];
 
-// Event yang benar-benar terjadi di atas mesin, jadi wajib menyebut mesin mana.
-// MATERIAL_DATANG tidak menyentuh mesin.
-const EVENT_DI_MESIN: LogProduksiEventType[] = [
-  LogProduksiEventType.PRODUKSI_HARIAN,
-  LogProduksiEventType.PROGRESS_MOLDING,
-];
-
 @Injectable()
 export class LogProduksiService {
   constructor(
@@ -42,11 +35,15 @@ export class LogProduksiService {
         machine: { select: { machineNumber: true } },
       },
     });
-    return logs.map((l) => toLogProduksi(l, l.mold.kodeMold, l.machine?.machineNumber ?? null));
+    return logs.map((l) => toLogProduksi(l, l.mold.kodeMold, l.machine.machineNumber));
   }
 
   // Append-only (Admin Penyewa): hanya field milik eventType yang disimpan.
   // Koreksi dilakukan lewat event baru, bukan update/delete.
+  //
+  // Dua jenis event saja: produksi harian dan progress molding. Kedatangan material
+  // tidak dicatat di sini, sudah ada di Log Pengiriman Manager dan Log Penerimaan
+  // Admin Sundaya; yang tersisa di Layer 2 adalah pemakaian materialnya per hari.
   //
   // Event dicatat per pasangan cetakan-mesin. Batas output dan material ditetapkan per
   // cetakan, dan booking meminjamkan beberapa mesin tanpa memasangkannya ke cetakan,
@@ -56,10 +53,12 @@ export class LogProduksiService {
   // mengubah apa pun karena advance() hanya bergerak maju).
   async append(user: PrismaUser, jobId: string, dto: CreateLogProduksiDto): Promise<LogProduksi> {
     // Event Layer 2 mencatat kejadian yang sudah terjadi, bukan rencana.
-    assertNotFuture(dto.occurredAt, 'occurredAt');
+    assertNotFuture(dto.occurredAt, 'Waktu kejadian');
     await this.getJobInTenant(user, jobId);
     const mold = await moldInJob(this.prisma, jobId, dto.moldId);
-    const machine = await this.resolveMachine(jobId, dto, mold);
+    // Kedua jenis event berjalan di atas mesin: mesin harus salah satu mesin
+    // pinjaman booking dan tonasenya harus sanggup menahan cetakan itu.
+    const machine = await machineForMold(this.prisma, jobId, dto.machineId, mold);
     const eventData = this.buildEventData(dto);
     if (dto.eventType === LogProduksiEventType.PRODUKSI_HARIAN) {
       await this.assertWithinPlan(mold, dto);
@@ -70,7 +69,7 @@ export class LogProduksiService {
         data: {
           jobId,
           moldId: dto.moldId,
-          machineId: machine?.id ?? null,
+          machineId: machine.id,
           byId: user.id,
           eventType: dto.eventType as unknown as $Enums.LogProduksiEventType,
           occurredAt: new Date(dto.occurredAt),
@@ -81,22 +80,8 @@ export class LogProduksiService {
       if (dto.eventType === LogProduksiEventType.PRODUKSI_HARIAN) {
         await this.moldTracking.advance(tx, dto.moldId, MoldTrackingStatus.PRODUCTION, user.id);
       }
-      return toLogProduksi(log, mold.kodeMold, machine?.machineNumber ?? null);
+      return toLogProduksi(log, mold.kodeMold, machine.machineNumber);
     });
-  }
-
-  // Event yang berjalan di atas mesin wajib menyebut mesinnya; mesin harus salah satu
-  // mesin booking dan tonasenya harus sanggup menahan cetakan itu.
-  private async resolveMachine(
-    jobId: string,
-    dto: CreateLogProduksiDto,
-    mold: { kodeMold: string; tonaseTon: number },
-  ) {
-    if (!EVENT_DI_MESIN.includes(dto.eventType)) return null;
-    if (!dto.machineId) {
-      throw new BadRequestException(`${dto.eventType} wajib menyebut machineId`);
-    }
-    return machineForMold(this.prisma, jobId, dto.machineId, mold);
   }
 
   // Plan cetakan adalah batas keras, bukan sekadar pembanding: akumulasi produk baik
@@ -138,15 +123,6 @@ export class LogProduksiService {
     dto: CreateLogProduksiDto,
   ): Partial<Prisma.LogProduksiUncheckedCreateInput> {
     switch (dto.eventType) {
-      case LogProduksiEventType.MATERIAL_DATANG:
-        if (!dto.materialName || dto.jumlahKg == null) {
-          throw new BadRequestException('MATERIAL_DATANG wajib materialName dan jumlahKg');
-        }
-        return {
-          materialName: dto.materialName,
-          jumlahKg: dto.jumlahKg,
-          noSuratJalan: dto.noSuratJalan,
-        };
       case LogProduksiEventType.PRODUKSI_HARIAN:
         if (dto.goodProduct == null || dto.rejectCount == null) {
           throw new BadRequestException('PRODUKSI_HARIAN wajib goodProduct dan rejectCount');

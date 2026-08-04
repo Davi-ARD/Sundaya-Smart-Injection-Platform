@@ -25,12 +25,12 @@ import { formatDate, formatDateTime, nowLocalInput } from '../../lib/format'
 
 
 // Log Penerimaan (Admin Sundaya): konfirmasi cetakan dan material tiba di lokasi
-// Sundaya, dipisah jadi dua daftar dalam satu tab. Mencatat penerimaan cetakan
-// otomatis memindahkan tracking mold ke Received, dan Manager pemilik job
-// langsung menerima notifikasinya.
+// Sundaya, dipisah jadi dua daftar dalam satu tab. Ini satu-satunya tempat
+// kedatangan barang dicatat; Log Produksi tidak lagi punya event material datang.
 //
-// Berbeda dari Log Produksi event Material datang (Layer 2, Admin Penyewa) yang
-// mencatat material masuk stok lantai produksi: yang ini kedatangan di gerbang.
+// Mencatat penerimaan cetakan memindahkan tracking mold ke Received sekaligus
+// menjalankan booking-nya (masa sewa mulai dihitung), dan Manager pemilik job
+// langsung menerima notifikasinya.
 export function PenerimaanPage() {
   const { accessToken, user } = useAuth()
   const toast = useToast()
@@ -103,17 +103,30 @@ export function PenerimaanPage() {
     kondisiColumn,
   ]
 
+  // Kolom rencana dibuat sepadan dengan tabel Log Pengiriman milik Manager: tiap
+  // field yang Manager isi ikut terbaca di sini. Sebelumnya Catatan dan nomor surat
+  // jalan hilang, padahal justru itu yang dipakai mencocokkan barang saat tiba.
+  // Daftarnya sengaja tetap digabung (cetakan + material) karena fungsinya sekali
+  // lihat: apa saja yang sedang menuju ke sini.
   const rencanaColumns: Column<LogPengiriman>[] = [
     { header: 'Job', cell: (l) => <span className="font-semibold text-slate-900">{l.jobNumber ?? '-'}</span> },
     {
-      header: 'Item',
+      header: 'Cetakan / Material',
       cell: (l) =>
         l.item === ItemPengiriman.MOLD
           ? `Cetakan ${l.kodeMold ?? ''}`.trim()
           : `Material ${l.materialName ?? ''}`.trim(),
     },
     { header: 'Jumlah', cell: (l) => (l.jumlahKg != null ? `${l.jumlahKg} kg` : '-') },
+    {
+      header: 'No. surat jalan',
+      cell: (l) => l.noSuratJalan ?? <span className="text-slate-400">-</span>,
+    },
     { header: 'Rencana kirim', cell: (l) => formatDate(l.rencanaKirim) },
+    {
+      header: 'Catatan',
+      cell: (l) => l.catatan ?? <span className="text-slate-400">-</span>,
+    },
   ]
 
   return (
@@ -128,10 +141,10 @@ export function PenerimaanPage() {
 
       <Card
         title="Rencana pengiriman dari Penyewa"
-        subtitle="Dicatat Manager Penyewa, dipakai untuk mengantisipasi kedatangan."
+        subtitle="Salinan Log Pengiriman milik Manager Penyewa, isinya sama persis. Dipakai mencocokkan barang saat tiba, belum berarti barangnya sudah sampai."
       >
         {isLoading ? (
-          <TableSkeleton rows={2} columns={4} />
+          <TableSkeleton rows={2} columns={6} />
         ) : rencana.length === 0 ? (
           <p className="py-8 text-center text-sm text-slate-500">
             Belum ada rencana pengiriman dari Penyewa.
@@ -300,6 +313,7 @@ function PenerimaanFormPanel({
           type="datetime-local"
           value={diterimaAt}
           onChange={setDiterimaAt}
+          max={nowLocalInput()}
         />
 
         {!isMold ? (

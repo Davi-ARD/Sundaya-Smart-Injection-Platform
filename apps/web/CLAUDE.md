@@ -17,4 +17,6 @@ pnpm --filter @mold-tracker/web lint     # eslint
 - Struktur per fitur: src/features/<domain> untuk halaman dan komponen domain, src/components untuk komponen umum, src/lib untuk util dan API client.
 - Panggilan API lewat satu API client di src/lib yang menyetel header Authorization Bearer dari token login.
 - Tampilan menyesuaikan role user (SUPER_ADMIN, ADMIN_SUNDAYA, TEKNISI_SUNDAYA, MANAGER_PENYEWA, ADMIN_PENYEWA) sesuai kontrak di docs/api-contract.md. Landing publik hanya untuk Penyewa; staf Sundaya masuk lewat route internal.
+- Satu data yang sama harus tampil dengan kolom sepadan di semua role yang melihatnya. Contoh: kartu "Rencana pengiriman dari Penyewa" di tab Log Penerimaan (Admin Sundaya) adalah salinan Log Pengiriman milik Manager, jadi kolomnya mengikuti yang dilihat Manager. Boleh beda susunan (digabung vs dipisah per jenis) kalau fungsinya memang beda, tapi jangan menghilangkan field yang sudah diisi peran lain.
+- Field waktu yang mencatat kejadian nyata (Waktu diterima, Waktu kejadian) memakai `max={nowLocalInput()}` supaya pemilih tanggal terkunci di waktu sekarang, sejalan dengan `assertNotFuture` di server. Rencana (mis. Rencana kirim) justru boleh bertanggal depan.
 - Ponytail full aktif: komponen dan state seperlunya, fitur native (form, fetch, CSS) sebelum library, tanpa abstraksi spekulatif. Jalankan /ponytail-review sebelum PR.
