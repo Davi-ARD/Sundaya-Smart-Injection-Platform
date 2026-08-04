@@ -6,9 +6,30 @@ Dokumentasi tanpa em dash.
 ## Status
 
 - **Selesai**: Fase 0 (schema, shared, seed, baseline) PR #13. Auth (RBAC 5
-  role + hierarki tenant) PR #14.
-- **Sisa**: modul domain backend + sisi web, dibagi Dev A (Sundaya) dan Dev B
-  (Penyewa).
+  role + hierarki tenant) PR #14. Seluruh modul backend Dev A dan Dev B.
+  Seluruh halaman web Dev A (Sundaya) dan Dev B (Penyewa).
+- **Selesai (revisi alur otomatis)**: mold tracking dipersempit ke 6 state dan
+  digerakkan event domain, Log Pengiriman jadi log informasi, Log Penerimaan
+  modul baru, notifikasi dua arah, status mesin Teknisi tinggal Setup/Running
+  dengan pemulihan status pasca-maintenance, OEE tiga dimensi lintas layer,
+  dashboard tiap role jadi read-only.
+- **Selesai (revisi Manager Penyewa dan booking)**: dashboard Manager jadi
+  visualisasi murni dengan satu tabel gabungan plus cycle production per booking,
+  booking memuat beberapa cetakan, plan cetakan jadi batas keras
+  di Log Produksi (output dan material), material diperlakukan sebagai kuota,
+  nomor mesin otomatis, standardRatio dihapus, dan tonase mesin diperlakukan
+  sebagai batas atas.
+- **Selesai (peminjaman beberapa mesin dan revisi Admin Penyewa)**: satu booking
+  dipinjami beberapa mesin tanpa pemasangan mesin ke cetakan, penyewa meminta
+  jumlah mesin dan Admin Sundaya memenuhinya bertahap (bisa ditarik lagi sebelum
+  dikirim), Log Produksi wajib menyebut pasangan cetakan-mesin dengan pengecekan
+  tonase per pasangan, nomor job dibentuk dari kode cetakan plus sekuens, dan
+  dashboard Admin Penyewa jadi visualisasi per booking dengan sisa masa sewa
+  mesin, kuota material per cetakan, serta timeline berkepala tanggal.
+- **Sisa**: belum ada permintaan revisi terbuka.
+
+Aturan domain yang mengikat pekerjaan selanjutnya ada di `PROJECT_CONTEXT.md`
+bagian 5a (mold tracking otomatis) dan `docs/ssip-spec.md` bagian 6 dan 6a.
 
 ## Konvensi kerja
 
@@ -70,6 +91,9 @@ Depends: A1, molds (B1). Modul `jobs` (evolve dari `legacy/rentals`).
   test peta transisi lifecycle + kalkulasi jobStatus.
 
 ### A3. Mold tracking transisi (koordinasi dengan B1)
+> **Digantikan revisi alur otomatis.** Tracking kini 6 state dan empat status
+> pertama digerakkan event domain, bukan endpoint transisi. Lihat
+> `PROJECT_CONTEXT.md` bagian 5a. Deskripsi di bawah adalah rencana awal.
 Depends: molds (B1). Endpoint di modul `molds`.
 - `PATCH /molds/:id/tracking` (ADMIN_SUNDAYA, sebagian TEKNISI untuk setup):
   transisi 10-state linear, tulis `MoldTrackingEvent` (byId, at).
@@ -96,7 +120,9 @@ Depends: A1. Modul `maintenance`.
 Depends: A4, A2. Modul `reports`/`dashboard` (reuse `legacy/production/
 efficiency.ts` sebagai basis).
 - Hitung Availability, Performance, Quality, OEE, Utilization, MTBF, MTTR, total
-  downtime, six big losses dari OperationalData.
+  downtime dari OperationalData.
+> **Direvisi.** Sumber OEE sekarang lintas layer dan reason code six big losses
+> dihapus. Lihat `docs/ssip-spec.md` bagian 6a.
 - `GET /dashboard/sundaya`, `GET /machines/:id/metrics`.
 - Acceptance: angka dihitung dari event Layer 1 (bukan input manual); test
   fungsi hitung dengan data contoh.
@@ -129,6 +155,9 @@ Depends: B2. Modul `log-produksi` (pengganti `legacy/production`).
   append + tolak update/delete.
 
 ### B4. Log Pengiriman (turunan, read-only, Manager)
+> **Digantikan revisi alur otomatis.** Log Pengiriman sekarang tabel log
+> informasi dengan endpoint tulis, bukan view turunan, dan berpasangan dengan
+> Log Penerimaan milik Admin Sundaya. Lihat `docs/ssip-spec.md` bagian 6.
 Depends: B2, B3, A3. Modul `pengiriman` (query saja, tanpa tabel).
 - `GET /pengiriman` atau `GET /jobs/:id/pengiriman`: gabung rencana
   (`Job.rencanaKirimMold` + plan material) vs aktual (LogProduksi
@@ -157,12 +186,12 @@ Sisi web masih refer domain lama, ditulis ulang paralel dengan backend.
   (`/internal`), role-based routing. Update `roleLabels`, `AuthContext`,
   `ProtectedRoute` ke 5 role.
 
-**Dev A (sisi Sundaya):** halaman Dashboard Admin Sundaya, Booking (approval +
-assign), Mold tracking (kanban), Machine monitoring (input Layer 1 + reason
-code), Maintenance.
+**Dev A (sisi Sundaya):** halaman Dashboard Admin Sundaya (baca saja), Booking
+(approval + assign + lifecycle), Log Penerimaan, Mold tracking (papan otomatis),
+Machine monitoring (input Layer 1: Setup/Running + cycle time), Maintenance.
 
 **Dev B (sisi Penyewa):** landing + register/invite, Dashboard Manager, Cetakan,
-Booking mesin (form tanpa mesin), Log Pengiriman (read-only), Dashboard job +
+Booking mesin (form tanpa mesin), Log Pengiriman (log informasi), Dashboard job +
 Log Produksi (Admin Penyewa).
 
 Referensi tata letak: histori `ssip-wireframe.html` (dihapus dari repo, ada di

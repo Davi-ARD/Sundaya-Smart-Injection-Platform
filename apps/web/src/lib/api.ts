@@ -9,6 +9,8 @@ import type {
   JobLogEntry,
   MoldPlanRow,
   RentalExtension,
+  CreateLogPenerimaanRequest,
+  CreateLogPengirimanRequest,
   CreateLogProduksiRequest,
   CreateMachineRequest,
   CreateMaintenanceRequest,
@@ -16,10 +18,12 @@ import type {
   CreateOperationalDataRequest,
   CreatePenyewaAdminRequest,
   CreateStaffRequest,
-  DeliveryRow,
   Job,
+  JobCycleProduction,
   JobDashboard,
   JobLifecycle,
+  LogPenerimaan,
+  LogPengiriman,
   LogProduksi,
   Machine,
   MachineMetrics,
@@ -220,31 +224,27 @@ export const api = {
     return request<Job>('PATCH', `/jobs/${id}/assign`, token, body)
   },
 
+  async releaseJobMachine(token: string | null, id: string, machineId: string): Promise<Job> {
+    return request<Job>('DELETE', `/jobs/${id}/machines/${machineId}`, token)
+  },
+
   async rejectJob(token: string | null, id: string, body: RejectJobRequest): Promise<Job> {
     return request<Job>('PATCH', `/jobs/${id}/reject`, token, body)
   },
 
-  async shipJob(token: string | null, id: string): Promise<Job> {
-    return request<Job>('PATCH', `/jobs/${id}/ship`, token)
-  },
-
-  async activateJob(token: string | null, id: string): Promise<Job> {
-    return request<Job>('PATCH', `/jobs/${id}/activate`, token)
-  },
-
-  async returnJob(token: string | null, id: string): Promise<Job> {
-    return request<Job>('PATCH', `/jobs/${id}/return`, token)
-  },
-
-  async collectJob(token: string | null, id: string): Promise<Job> {
-    return request<Job>('PATCH', `/jobs/${id}/collect`, token)
-  },
-
-  async completeJob(token: string | null, id: string): Promise<Job> {
-    return request<Job>('PATCH', `/jobs/${id}/complete`, token)
-  },
+  // Tidak ada endpoint kirim/aktifkan/selesaikan job: mesin tidak pernah keluar
+  // dari Sundaya, jadi booking jadi AKTIF sendiri saat Log Penerimaan cetakan
+  // dicatat dan SELESAI sendiri saat seluruh cetakannya dikonfirmasi kembali.
 
   // ===================== Perpanjangan sewa =====================
+  async createExtension(
+    token: string | null,
+    jobId: string,
+    body: CreateExtensionRequest,
+  ): Promise<RentalExtension> {
+    return request<RentalExtension>('POST', `/jobs/${jobId}/extensions`, token, body)
+  },
+
   async listExtensions(token: string | null): Promise<ExtensionRequestRow[]> {
     return request<ExtensionRequestRow[]>('GET', '/jobs/extensions', token)
   },
@@ -283,10 +283,30 @@ export const api = {
     return request<LogProduksi>('POST', `/jobs/${jobId}/logs`, token, body)
   },
 
-  // ===================== Log Pengiriman (read-only) =====================
-  async listPengiriman(token: string | null, managerId?: string): Promise<DeliveryRow[]> {
-    const query = buildQuery({ managerId })
-    return request<DeliveryRow[]>('GET', `/pengiriman${query}`, token)
+  // ===================== Log Pengiriman (Manager Penyewa) =====================
+  async listPengiriman(token: string | null, jobId?: string): Promise<LogPengiriman[]> {
+    const query = buildQuery({ jobId })
+    return request<LogPengiriman[]>('GET', `/pengiriman${query}`, token)
+  },
+
+  async createPengiriman(
+    token: string | null,
+    body: CreateLogPengirimanRequest,
+  ): Promise<LogPengiriman> {
+    return request<LogPengiriman>('POST', '/pengiriman', token, body)
+  },
+
+  // ===================== Log Penerimaan (Admin Sundaya) =====================
+  async listPenerimaan(token: string | null, jobId?: string): Promise<LogPenerimaan[]> {
+    const query = buildQuery({ jobId })
+    return request<LogPenerimaan[]>('GET', `/penerimaan${query}`, token)
+  },
+
+  async createPenerimaan(
+    token: string | null,
+    body: CreateLogPenerimaanRequest,
+  ): Promise<LogPenerimaan> {
+    return request<LogPenerimaan>('POST', '/penerimaan', token, body)
   },
 
   // ===================== Dashboard =====================
@@ -296,6 +316,10 @@ export const api = {
 
   async getManagerDashboard(token: string | null): Promise<ManagerDashboard> {
     return request<ManagerDashboard>('GET', '/dashboard/manager', token)
+  },
+
+  async getCycleProduction(token: string | null): Promise<JobCycleProduction[]> {
+    return request<JobCycleProduction[]>('GET', '/dashboard/manager/cycle-production', token)
   },
 
   async getJobDashboard(token: string | null): Promise<JobDashboard[]> {

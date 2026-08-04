@@ -13,6 +13,17 @@ import { CreateLogProduksiRequest, LogProduksiEventType, ProgressMolding } from 
 // Layer 2 append-only. Field bersifat per-eventType: tipe divalidasi di sini,
 // kewajiban field per eventType ditegakkan di service (assertEventFields).
 export class CreateLogProduksiDto implements CreateLogProduksiRequest {
+  // Cetakan yang dicatat: batas output dan material ditetapkan per cetakan.
+  @IsString()
+  @MinLength(1)
+  moldId: string;
+
+  // Mesin yang menjalankan cetakan itu. Kedua jenis event terjadi di atas mesin,
+  // jadi selalu wajib; kecocokan mesin-cetakan ditegakkan service.
+  @IsString()
+  @MinLength(1)
+  machineId: string;
+
   @IsEnum(LogProduksiEventType)
   eventType: LogProduksiEventType;
 
@@ -22,21 +33,6 @@ export class CreateLogProduksiDto implements CreateLogProduksiRequest {
   @IsOptional()
   @IsString()
   catatan?: string;
-
-  // MATERIAL_DATANG
-  @IsOptional()
-  @IsString()
-  @MinLength(1)
-  materialName?: string;
-
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  jumlahKg?: number;
-
-  @IsOptional()
-  @IsString()
-  noSuratJalan?: string;
 
   // PRODUKSI_HARIAN
   @IsOptional()
@@ -52,7 +48,7 @@ export class CreateLogProduksiDto implements CreateLogProduksiRequest {
   @IsOptional()
   @IsNumber()
   @Min(0)
-  materialRemainingKg?: number;
+  materialUsedKg?: number;
 
   // PROGRESS_MOLDING
   @IsOptional()

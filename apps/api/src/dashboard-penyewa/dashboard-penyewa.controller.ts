@@ -1,6 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
 import { User as PrismaUser } from '@prisma/client';
 import {
+  JobCycleProduction,
   JobDashboard,
   JobLogEntry,
   ManagerDashboard,
@@ -22,8 +23,15 @@ export class DashboardPenyewaController {
     return this.dashboard.manager(user);
   }
 
-  // Perkembangan plan mold: dipakai tabel dashboard Manager, panel detail cepat,
-  // dan detail cetakan di halaman Cetakan.
+  // Cycle production per booking: capaian produksi dan kuota material tiap cetakan.
+  @Roles(Role.MANAGER_PENYEWA)
+  @Get('manager/cycle-production')
+  cycleProduction(@CurrentUser() user: PrismaUser): Promise<JobCycleProduction[]> {
+    return this.dashboard.cycleProduction(user);
+  }
+
+  // Perkembangan plan mold: satu-satunya tabel di dashboard Manager, dipakai juga
+  // untuk detail cetakan di halaman Cetakan.
   @Roles(Role.MANAGER_PENYEWA)
   @Get('manager/mold-plan')
   moldPlan(@CurrentUser() user: PrismaUser): Promise<MoldPlanRow[]> {

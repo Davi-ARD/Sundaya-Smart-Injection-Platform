@@ -25,3 +25,14 @@ export const formatDateTime = (iso: string | null) =>
         minute: '2-digit',
       })
     : '-'
+
+// Nilai awal <input type="datetime-local">: sekarang menurut zona waktu pengguna.
+// Offset dikurangkan karena toISOString selalu UTC.
+export const nowLocalInput = () => {
+  const now = new Date()
+  now.setMinutes(now.getMinutes() - now.getTimezoneOffset())
+  return now.toISOString().slice(0, 16)
+}
+
+// Nilai awal <input type="date">: hari ini.
+export const todayInput = () => nowLocalInput().slice(0, 10)

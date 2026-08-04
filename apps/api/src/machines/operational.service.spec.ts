@@ -1,9 +1,5 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
-import {
-  DowntimeReason,
-  MachineOperationalStatus,
-  Role,
-} from '@mold-tracker/shared';
+import { ConflictException, NotFoundException } from '@nestjs/common';
+import { MachineOperationalStatus, Role } from '@mold-tracker/shared';
 import { User as PrismaUser } from '@prisma/client';
 import { OperationalService } from './operational.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -24,8 +20,7 @@ function eventRow(overrides: Record<string, unknown> = {}) {
     id: 'op-1',
     machineId: 'm-1',
     status: 'RUNNING',
-    downtimeReason: null,
-    cycleTimeSec: 12.5,
+    cycleTimeSec: 32,
     occurredAt: new Date('2026-07-22T08:00:00.000Z'),
     byId: 'teknisi-1',
     catatan: null,
@@ -36,14 +31,14 @@ function eventRow(overrides: Record<string, unknown> = {}) {
 
 const runningDto: CreateOperationalDataDto = {
   status: MachineOperationalStatus.RUNNING,
-  cycleTimeSec: 12.5,
+  cycleTimeSec: 32,
   occurredAt: '2026-07-22T08:00:00.000Z',
 };
 
 describe('OperationalService.append', () => {
   it('menulis event dan memperbarui Machine.operationalStatus ke status yang diposting', async () => {
     const prisma = prismaMock();
-    prisma.machine.findUnique.mockResolvedValue({ id: 'm-1' });
+    prisma.machine.findUnique.mockResolvedValue({ operationalStatus: 'STANDBY' });
     prisma.operationalData.create.mockReturnValue(eventRow());
     prisma.machine.update.mockReturnValue({ id: 'm-1', operationalStatus: 'RUNNING' });
 
@@ -59,49 +54,30 @@ describe('OperationalService.append', () => {
     expect(result.byId).toBe('teknisi-1');
   });
 
-  it('menolak (400) bila status non-RUNNING tanpa downtimeReason', async () => {
+  it('menerima SETUP tanpa perlu reason code (reason code sudah dihapus)', async () => {
     const prisma = prismaMock();
-    prisma.machine.findUnique.mockResolvedValue({ id: 'm-1' });
-
-    const service = new OperationalService(prisma as unknown as PrismaService);
-    await expect(
-      service.append(teknisi, 'm-1', {
-        status: MachineOperationalStatus.BREAKDOWN,
-        occurredAt: '2026-07-22T08:00:00.000Z',
-      }),
-    ).rejects.toBeInstanceOf(BadRequestException);
-    expect(prisma.operationalData.create).not.toHaveBeenCalled();
-  });
-
-  it('menerima status non-RUNNING dengan downtimeReason', async () => {
-    const prisma = prismaMock();
-    prisma.machine.findUnique.mockResolvedValue({ id: 'm-1' });
+    prisma.machine.findUnique.mockResolvedValue({ operationalStatus: 'RUNNING' });
     prisma.operationalData.create.mockReturnValue(
-      eventRow({ status: 'BREAKDOWN', downtimeReason: 'BREAKDOWN', cycleTimeSec: null }),
+      eventRow({ status: 'SETUP', cycleTimeSec: null }),
     );
-    prisma.machine.update.mockReturnValue({ id: 'm-1', operationalStatus: 'BREAKDOWN' });
+    prisma.machine.update.mockReturnValue({ id: 'm-1', operationalStatus: 'SETUP' });
 
     const service = new OperationalService(prisma as unknown as PrismaService);
     const result = await service.append(teknisi, 'm-1', {
-      status: MachineOperationalStatus.BREAKDOWN,
-      downtimeReason: DowntimeReason.BREAKDOWN,
+      status: MachineOperationalStatus.SETUP,
       occurredAt: '2026-07-22T08:00:00.000Z',
     });
-    expect(result.downtimeReason).toBe(DowntimeReason.BREAKDOWN);
+    expect(result.status).toBe(MachineOperationalStatus.SETUP);
   });
 
-  it('menolak (400) bila status RUNNING tapi downtimeReason diisi', async () => {
+  it('menolak (409) bila mesin sedang MAINTENANCE: status dipulihkan modul Maintenance', async () => {
     const prisma = prismaMock();
-    prisma.machine.findUnique.mockResolvedValue({ id: 'm-1' });
+    prisma.machine.findUnique.mockResolvedValue({ operationalStatus: 'MAINTENANCE' });
 
     const service = new OperationalService(prisma as unknown as PrismaService);
-    await expect(
-      service.append(teknisi, 'm-1', {
-        status: MachineOperationalStatus.RUNNING,
-        downtimeReason: DowntimeReason.MINOR_STOP,
-        occurredAt: '2026-07-22T08:00:00.000Z',
-      }),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.append(teknisi, 'm-1', runningDto)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
     expect(prisma.operationalData.create).not.toHaveBeenCalled();
   });
 
@@ -117,7 +93,7 @@ describe('OperationalService.append', () => {
 });
 
 describe('OperationalService.summary', () => {
-  it('menghitung per status dan zero-fill kelima status', async () => {
+  it('menghitung per status dan zero-fill keempat status', async () => {
     const prisma = prismaMock();
     prisma.machine.groupBy.mockResolvedValue([
       { operationalStatus: 'RUNNING', _count: { _all: 3 } },
@@ -133,6 +109,5 @@ describe('OperationalService.summary', () => {
     expect(byStatus[MachineOperationalStatus.STANDBY]).toBe(1);
     expect(byStatus[MachineOperationalStatus.MAINTENANCE]).toBe(0);
     expect(byStatus[MachineOperationalStatus.SETUP]).toBe(0);
-    expect(byStatus[MachineOperationalStatus.BREAKDOWN]).toBe(0);
   });
 });

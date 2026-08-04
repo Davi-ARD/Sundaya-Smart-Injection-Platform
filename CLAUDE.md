@@ -26,6 +26,17 @@ RTK aktif lewat hook. Untuk perintah dengan output besar (test, build, migrate, 
 
 Ponytail full aktif tiap sesi. Solusi paling ringkas yang jalan, stdlib dan fitur native sebelum dependensi baru, tanpa abstraksi spekulatif. Jalankan /ponytail-review sebelum tiap PR. RBAC dan validasi tidak pernah disederhanakan.
 
+## Aturan commit
+
+- Subjek memakai format Conventional Commits berbahasa Indonesia: `tipe(scope): ringkasan`. Tipe yang dipakai: feat, fix, docs, chore, refactor, test, perf, build, ci. Scope biasanya api, web, shared, atau ssip. Contoh: `feat(web): jumlah mesin di booking, pengelolaan mesin pinjaman, dan revisi dashboard Admin Penyewa`.
+- Baris pertama pesan adalah subjek itu sendiri, bukan penanda shell atau baris kosong. Badan pesan menyusul setelah satu baris kosong.
+- Pesan multi baris ditulis dulu ke file lalu `git commit -F <file>`. Jangan pakai here-string PowerShell `@'...'@` lewat tool Bash: penanda `@` ikut masuk jadi baris pertama dan terakhir pesan.
+- Hook `commit-msg` di `.githooks/` menolak subjek yang tidak sesuai. Aktifkan sekali per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
 ## Struktur
 
 ```
@@ -38,8 +49,9 @@ docs/             Dokumentasi, termasuk kontrak API
 ## Aturan tim
 
 - Tipe request/response diambil dari packages/shared, tidak diduplikasi di api atau web.
-- Satu domain bisnis sama dengan satu NestJS module (auth, users, machines, molds, jobs, log-produksi, operational, maintenance, reports, dan seterusnya).
+- Satu domain bisnis sama dengan satu NestJS module (auth, users, machines, molds, jobs, log-produksi, pengiriman, penerimaan, maintenance, notifications, dashboard, dan seterusnya).
 - Transisi status (mold tracking, job lifecycle, machine status) hanya lewat service layer, tidak pernah langsung dari controller atau query mentah.
+- Mold tracking dan lifecycle booking bergerak otomatis dari event domain (Log Pengiriman, Log Penerimaan, Log Produksi). Yang manual hanya approve/reject booking dan Send Back (Admin Sundaya), plus konfirmasi cetakan diterima kembali (Manager Penyewa, per cetakan). Mesin tidak pernah keluar dari Sundaya: tidak ada langkah kirim atau kembalikan mesin. Dashboard tiap role read-only, aksi ada di tab masing-masing. Detail di PROJECT_CONTEXT.md bagian 5a dan docs/ssip-spec.md bagian 6.
 - RBAC lima role: SUPER_ADMIN, ADMIN_SUNDAYA, TEKNISI_SUNDAYA, MANAGER_PENYEWA, ADMIN_PENYEWA. Admin Penyewa adalah child dari Manager Penyewa. Semua endpoint diproteksi Guard kecuali yang ditandai publik di kontrak API.
 - Dokumentasi berbahasa Indonesia dan tidak memakai tanda em dash.
 - Jangan commit file .env. Gunakan .env.example sebagai templat.

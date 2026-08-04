@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { User as PrismaUser } from '@prisma/client';
 import {
   ExtensionRequestRow,
@@ -74,6 +74,8 @@ export class JobsController {
     return this.jobs.requestExtension(user, id, dto);
   }
 
+  // Meminjamkan satu mesin ke booking. Dipanggil berulang: mesin pertama sekaligus
+  // menyetujui booking, mesin berikutnya menambah jumlah pinjaman.
   @Roles(Role.ADMIN_SUNDAYA)
   @Patch(':id/assign')
   assign(
@@ -82,6 +84,16 @@ export class JobsController {
     @Body() dto: AssignJobDto,
   ): Promise<Job> {
     return this.jobs.assign(user, id, dto);
+  }
+
+  // Menarik satu mesin dari booking yang belum berjalan.
+  @Roles(Role.ADMIN_SUNDAYA)
+  @Delete(':id/machines/:machineId')
+  releaseMachine(
+    @Param('id') id: string,
+    @Param('machineId') machineId: string,
+  ): Promise<Job> {
+    return this.jobs.releaseMachine(id, machineId);
   }
 
   @Roles(Role.ADMIN_SUNDAYA)
@@ -94,33 +106,8 @@ export class JobsController {
     return this.jobs.reject(user, id, dto);
   }
 
-  @Roles(Role.ADMIN_SUNDAYA)
-  @Patch(':id/ship')
-  ship(@CurrentUser() user: PrismaUser, @Param('id') id: string): Promise<Job> {
-    return this.jobs.ship(user, id);
-  }
-
-  @Roles(Role.ADMIN_SUNDAYA)
-  @Patch(':id/activate')
-  activate(@CurrentUser() user: PrismaUser, @Param('id') id: string): Promise<Job> {
-    return this.jobs.activate(user, id);
-  }
-
-  @Roles(Role.ADMIN_SUNDAYA)
-  @Patch(':id/return')
-  returnJob(@CurrentUser() user: PrismaUser, @Param('id') id: string): Promise<Job> {
-    return this.jobs.return(user, id);
-  }
-
-  @Roles(Role.ADMIN_SUNDAYA)
-  @Patch(':id/collect')
-  collect(@CurrentUser() user: PrismaUser, @Param('id') id: string): Promise<Job> {
-    return this.jobs.collect(user, id);
-  }
-
-  @Roles(Role.ADMIN_SUNDAYA)
-  @Patch(':id/complete')
-  complete(@CurrentUser() user: PrismaUser, @Param('id') id: string): Promise<Job> {
-    return this.jobs.complete(user, id);
-  }
+  // Tidak ada endpoint tombol lifecycle lain. Mesin tidak pernah dikirim ke penyewa,
+  // jadi tidak ada "kirim mesin": booking jadi AKTIF sendiri saat cetakan pertama
+  // diterima Sundaya, dan SELESAI sendiri saat seluruh cetakannya sudah kembali ke
+  // penyewa. Lihat jobs/job-transitions.ts.
 }

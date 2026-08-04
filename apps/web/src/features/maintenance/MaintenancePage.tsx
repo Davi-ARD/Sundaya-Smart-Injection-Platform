@@ -10,17 +10,18 @@ import {
 } from '@mold-tracker/shared'
 import { useAuth } from '../auth/authContextValue'
 import { api } from '../../lib/api'
-import { PageHeader } from '../../components/PageHeader'
 import { Button } from '../../components/ui/Button'
+import { PageHeader } from '../../components/PageHeader'
 import { Card } from '../../components/ui/Card'
 import { DataTable, type Column } from '../../components/ui/DataTable'
+import { EmptyState } from '../../components/ui/EmptyState'
 import { MaintenanceStatusBadge } from '../../components/ui/Badge'
 import { SidePanel } from '../../components/ui/SidePanel'
 import { TableSkeleton } from '../../components/ui/Skeleton'
 import { SelectField, TextAreaField, TextField } from '../../components/ui/FormField'
 import { useToast } from '../../components/ui/Toast'
 import { errorMessage } from '../../lib/errorMessage'
-import { formatDateTime } from '../../lib/format'
+import { formatDateTime, nowLocalInput } from '../../lib/format'
 
 const maintenanceTypeLabel: Record<MaintenanceType, string> = {
   [MaintenanceType.PREVENTIVE]: 'Preventive',
@@ -35,11 +36,6 @@ const NEXT_STATUS: Record<MaintenanceStatus, MaintenanceStatus | null> = {
   [MaintenanceStatus.SELESAI]: null,
 }
 
-const nowLocal = () => {
-  const now = new Date()
-  now.setMinutes(now.getMinutes() - now.getTimezoneOffset())
-  return now.toISOString().slice(0, 16)
-}
 
 // Maintenance mesin (staf Sundaya). Teknisi menjadwalkan + eksekusi transisi;
 // Admin Sundaya hanya membaca.
@@ -113,7 +109,7 @@ export function MaintenancePage() {
   ]
 
   return (
-    <div className="mx-auto max-w-screen-2xl">
+    <div className="mx-auto max-w-6xl">
       <PageHeader
         breadcrumb={[{ label: 'Beranda', to: '/staff' }, { label: 'Maintenance' }]}
         title="Maintenance"
@@ -131,12 +127,7 @@ export function MaintenancePage() {
         {isLoading ? (
           <TableSkeleton rows={4} columns={5} />
         ) : records.length === 0 ? (
-          <div className="grid place-items-center py-14 text-center">
-            <span className="grid h-12 w-12 place-items-center text-brand-700">
-              <Wrench className="h-7 w-7" />
-            </span>
-            <p className="mt-3 text-sm font-semibold text-slate-800">Belum ada maintenance</p>
-          </div>
+          <EmptyState icon={Wrench} title="Belum ada maintenance" />
         ) : (
           <DataTable columns={columns} rows={records} rowKey={(r) => r.id} />
         )}
@@ -169,7 +160,7 @@ function MaintenanceFormPanel({
   const toast = useToast()
   const [machineId, setMachineId] = useState(machines[0]?.id ?? '')
   const [type, setType] = useState<MaintenanceType>(MaintenanceType.PREVENTIVE)
-  const [scheduledAt, setScheduledAt] = useState(nowLocal())
+  const [scheduledAt, setScheduledAt] = useState(nowLocalInput())
   const [notes, setNotes] = useState('')
   const [isSaving, setIsSaving] = useState(false)
 

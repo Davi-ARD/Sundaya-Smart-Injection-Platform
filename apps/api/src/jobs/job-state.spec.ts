@@ -17,13 +17,7 @@ describe('nextJobLifecycle', () => {
 
   it('mengizinkan rantai penuh DIKONFIRMASI..SELESAI', () => {
     let s = JobLifecycle.DIKONFIRMASI;
-    for (const next of [
-      JobLifecycle.DIKIRIM,
-      JobLifecycle.AKTIF,
-      JobLifecycle.SELESAI_SEWA,
-      JobLifecycle.DIKEMBALIKAN,
-      JobLifecycle.SELESAI,
-    ]) {
+    for (const next of [JobLifecycle.AKTIF, JobLifecycle.SELESAI]) {
       s = nextJobLifecycle(s, next);
     }
     expect(s).toBe(JobLifecycle.SELESAI);
@@ -35,8 +29,14 @@ describe('nextJobLifecycle', () => {
     );
   });
 
+  it('menolak lompat DIKONFIRMASI -> SELESAI tanpa lewat AKTIF', () => {
+    expect(() => nextJobLifecycle(JobLifecycle.DIKONFIRMASI, JobLifecycle.SELESAI)).toThrow(
+      ConflictException,
+    );
+  });
+
   it('menolak transisi dari status final SELESAI', () => {
-    expect(() => nextJobLifecycle(JobLifecycle.SELESAI, JobLifecycle.DIKEMBALIKAN)).toThrow(
+    expect(() => nextJobLifecycle(JobLifecycle.SELESAI, JobLifecycle.AKTIF)).toThrow(
       ConflictException,
     );
   });

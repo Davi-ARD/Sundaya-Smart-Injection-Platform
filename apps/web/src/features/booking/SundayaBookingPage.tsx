@@ -1,21 +1,21 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { CalendarClock, CheckCircle2, TimerReset, XCircle } from 'lucide-react'
+import { CalendarClock, CheckCircle2, Factory, TimerReset, Trash2, XCircle } from 'lucide-react'
 import {
   ExtensionStatus,
   JobLifecycle,
   MachineStatus,
+  MoldTrackingStatus,
   Role,
   type AssignJobRequest,
   type ExtensionRequestRow,
   type Job,
   type Machine,
-  type Mold,
   type RejectJobRequest,
 } from '@mold-tracker/shared'
 import { useAuth } from '../auth/authContextValue'
 import { api } from '../../lib/api'
-import { PageHeader } from '../../components/PageHeader'
 import { Button } from '../../components/ui/Button'
+import { PageHeader } from '../../components/PageHeader'
 import { Card } from '../../components/ui/Card'
 import { DataTable, type Column } from '../../components/ui/DataTable'
 import { ExtensionStatusBadge, JobLifecycleBadge } from '../../components/ui/Badge'
@@ -26,43 +26,39 @@ import { useToast } from '../../components/ui/Toast'
 import { errorMessage } from '../../lib/errorMessage'
 import { formatDate, formatSisaHari } from '../../lib/format'
 
-const ONGOING_LIFECYCLES = [
-  JobLifecycle.DIKONFIRMASI,
-  JobLifecycle.DIKIRIM,
-  JobLifecycle.AKTIF,
-  JobLifecycle.SELESAI_SEWA,
-  JobLifecycle.DIKEMBALIKAN,
-]
+const ONGOING_LIFECYCLES = [JobLifecycle.DIKONFIRMASI, JobLifecycle.AKTIF]
 
-// Booking (staf Sundaya): approval booking baru, keputusan perpanjangan sewa,
-// dan lifecycle job pasca-assign. Dipisah dari Dashboard supaya dashboard murni
-// pemantauan. Teknisi melihat halaman yang sama persis, hanya tanpa tombol aksi
-// karena semua keputusan booking adalah wewenang ADMIN_SUNDAYA.
+// Booking (staf Sundaya): approval booking baru, peminjaman mesin, dan keputusan
+// perpanjangan sewa. Dipisah dari Dashboard supaya dashboard murni pemantauan.
+// Teknisi melihat halaman yang sama persis, hanya tanpa tombol aksi karena semua
+// keputusan booking adalah wewenang ADMIN_SUNDAYA.
+//
+// Tidak ada tombol "kirim mesin" di sini: mesin tidak pernah keluar dari Sundaya.
+// Setelah booking dikonfirmasi, statusnya berjalan sendiri mengikuti barang yang
+// benar-benar bergerak, jadi kolom terakhir menjelaskan apa yang sedang ditunggu,
+// bukan menyodorkan tombol yang menggeser status secara manual.
 export function SundayaBookingPage() {
   const { accessToken, user } = useAuth()
   const toast = useToast()
   const canManage = user?.role === Role.ADMIN_SUNDAYA
 
   const [jobs, setJobs] = useState<Job[]>([])
-  const [molds, setMolds] = useState<Mold[]>([])
   const [machines, setMachines] = useState<Machine[]>([])
   const [extensions, setExtensions] = useState<ExtensionRequestRow[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [assignTarget, setAssignTarget] = useState<Job | null>(null)
+  const [mesinTarget, setMesinTarget] = useState<Job | null>(null)
   const [rejectTarget, setRejectTarget] = useState<Job | null>(null)
   const [pendingId, setPendingId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setIsLoading(true)
     try {
-      const [jobList, moldList, machineList, extensionList] = await Promise.all([
+      const [jobList, machineList, extensionList] = await Promise.all([
         api.listJobs(accessToken),
-        api.listMolds(accessToken),
         api.listMachines(accessToken, { status: MachineStatus.TERSEDIA }),
         api.listExtensions(accessToken),
       ])
       setJobs(jobList)
-      setMolds(moldList)
       setMachines(machineList)
       setExtensions(extensionList)
     } catch (caught) {
@@ -76,7 +72,6 @@ export function SundayaBookingPage() {
     void load()
   }, [load])
 
-  const moldById = useMemo(() => new Map(molds.map((m) => [m.id, m])), [molds])
   const pendingApproval = useMemo(() => jobs.filter((j) => j.lifecycle === JobLifecycle.DIAJUKAN), [jobs])
   const ongoingJobs = useMemo(() => jobs.filter((j) => ONGOING_LIFECYCLES.includes(j.lifecycle)), [jobs])
   const pendingExtensions = useMemo(
@@ -87,36 +82,6 @@ export function SundayaBookingPage() {
     () => extensions.filter((e) => e.status !== ExtensionStatus.DIAJUKAN),
     [extensions],
   )
-
-  const runLifecycleAction = async (job: Job, action: (id: string) => Promise<Job>, successLabel: string) => {
-    setPendingId(job.id)
-    try {
-      await action(job.id)
-      toast.success(successLabel)
-      void load()
-    } catch (caught) {
-      toast.error(errorMessage(caught, 'Aksi gagal'))
-    } finally {
-      setPendingId(null)
-    }
-  }
-
-  const lifecycleAction = (job: Job): { label: string; run: () => void } | null => {
-    switch (job.lifecycle) {
-      case JobLifecycle.DIKONFIRMASI:
-        return { label: 'Kirim mesin', run: () => void runLifecycleAction(job, (id) => api.shipJob(accessToken, id), 'Mesin dikirim') }
-      case JobLifecycle.DIKIRIM:
-        return { label: 'Aktifkan', run: () => void runLifecycleAction(job, (id) => api.activateJob(accessToken, id), 'Job aktif') }
-      case JobLifecycle.AKTIF:
-        return { label: 'Tandai selesai sewa', run: () => void runLifecycleAction(job, (id) => api.returnJob(accessToken, id), 'Selesai sewa') }
-      case JobLifecycle.SELESAI_SEWA:
-        return { label: 'Ambil mesin', run: () => void runLifecycleAction(job, (id) => api.collectJob(accessToken, id), 'Mesin dikembalikan') }
-      case JobLifecycle.DIKEMBALIKAN:
-        return { label: 'Selesaikan job', run: () => void runLifecycleAction(job, (id) => api.completeJob(accessToken, id), 'Job selesai') }
-      default:
-        return null
-    }
-  }
 
   const decideExtension = async (row: ExtensionRequestRow, decision: ExtensionStatus.DITERIMA | ExtensionStatus.DITOLAK) => {
     setPendingId(row.extensionId)
@@ -137,9 +102,24 @@ export function SundayaBookingPage() {
 
   const approvalColumns: Column<Job>[] = [
     { header: 'No. Job', cell: (j) => <span className="font-semibold text-slate-900">{j.jobNumber}</span> },
-    { header: 'Cetakan', cell: (j) => moldById.get(j.moldId)?.kodeMold ?? <span className="text-slate-400">-</span> },
-    { header: 'Tonase', cell: (j) => (moldById.get(j.moldId) ? `${moldById.get(j.moldId)!.tonaseTon} ton` : '-') },
-    { header: 'Tujuan', cell: (j) => j.destinationLocation },
+    {
+      header: 'Cetakan',
+      cell: (j) =>
+        j.molds.length ? (
+          <span className="flex flex-col gap-0.5 text-sm">
+            {j.molds.map((m) => (
+              <span key={m.moldId}>{m.kodeMold}</span>
+            ))}
+          </span>
+        ) : (
+          <span className="text-slate-400">-</span>
+        ),
+    },
+    {
+      header: 'Tonase cetakan',
+      cell: (j) => (j.molds.length ? rentangTonase(j) : '-'),
+    },
+    { header: 'Mesin diminta', cell: (j) => `${j.requestedMachineCount} mesin` },
     { header: 'Mulai', cell: (j) => formatDate(j.startDate) },
     { header: 'Durasi', cell: (j) => `${j.requestedDurationDays} hari` },
     {
@@ -148,11 +128,11 @@ export function SundayaBookingPage() {
       cell: (j) =>
         canManage ? (
           <div className="flex justify-end gap-2">
-            <Button size="sm" onClick={() => setAssignTarget(j)}>
-              <CheckCircle2 className="h-4 w-4" /> Setujui + assign
+            <Button size="sm" onClick={() => setMesinTarget(j)}>
+              <CheckCircle2 className="h-3.5 w-3.5" /> Setujui + pinjamkan mesin
             </Button>
             <Button size="sm" variant="danger" onClick={() => setRejectTarget(j)}>
-              <XCircle className="h-4 w-4" /> Tolak
+              <XCircle className="h-3.5 w-3.5" /> Tolak
             </Button>
           </div>
         ) : (
@@ -187,7 +167,7 @@ export function SundayaBookingPage() {
               disabled={pendingId === e.extensionId}
               onClick={() => void decideExtension(e, ExtensionStatus.DITERIMA)}
             >
-              <CheckCircle2 className="h-4 w-4" /> Setujui
+              <CheckCircle2 className="h-3.5 w-3.5" /> Setujui
             </Button>
             <Button
               size="sm"
@@ -195,7 +175,7 @@ export function SundayaBookingPage() {
               disabled={pendingId === e.extensionId}
               onClick={() => void decideExtension(e, ExtensionStatus.DITOLAK)}
             >
-              <XCircle className="h-4 w-4" /> Tolak
+              <XCircle className="h-3.5 w-3.5" /> Tolak
             </Button>
           </div>
         ) : (
@@ -214,44 +194,76 @@ export function SundayaBookingPage() {
 
   const ongoingColumns: Column<Job>[] = [
     { header: 'No. Job', cell: (j) => <span className="font-semibold text-slate-900">{j.jobNumber}</span> },
-    { header: 'Cetakan', cell: (j) => moldById.get(j.moldId)?.kodeMold ?? <span className="text-slate-400">-</span> },
-    { header: 'Mesin', cell: (j) => j.machineNumber ?? <span className="text-slate-400">Belum assign</span> },
+    {
+      header: 'Cetakan',
+      cell: (j) =>
+        j.molds.length ? (
+          <span className="flex flex-col gap-0.5 text-sm">
+            {j.molds.map((m) => (
+              <span key={m.moldId}>{m.kodeMold}</span>
+            ))}
+          </span>
+        ) : (
+          <span className="text-slate-400">-</span>
+        ),
+    },
+    {
+      header: 'Mesin',
+      cell: (j) => (
+        <span className="flex flex-col gap-0.5 text-sm">
+          {j.machines.map((m) => (
+            <span key={m.machineId}>{m.machineNumber}</span>
+          ))}
+          <span
+            className={[
+              'text-xs',
+              j.machines.length < j.requestedMachineCount ? 'font-semibold text-amber-700' : 'text-slate-500',
+            ].join(' ')}
+          >
+            {j.machines.length} dari {j.requestedMachineCount} diminta
+          </span>
+        </span>
+      ),
+    },
     { header: 'Status', cell: (j) => <JobLifecycleBadge status={j.lifecycle} /> },
     { header: 'Selesai sewa', cell: (j) => formatDate(j.endDate) },
     {
+      header: 'Sedang ditunggu',
+      cell: (j) => <span className="text-sm text-slate-600">{langkahBerikutnya(j)}</span>,
+    },
+    {
       header: '',
       className: 'text-right',
-      cell: (j) => {
-        if (!canManage) return null
-        const action = lifecycleAction(j)
-        if (!action) return null
-        return (
-          <Button size="sm" variant="secondary" disabled={pendingId === j.id} onClick={action.run}>
-            {action.label}
-          </Button>
-        )
-      },
+      cell: (j) =>
+        // Susunan mesin masih bisa diubah selama booking belum berjalan.
+        canManage && j.lifecycle === JobLifecycle.DIKONFIRMASI ? (
+          <div className="flex justify-end">
+            <Button size="sm" variant="secondary" onClick={() => setMesinTarget(j)}>
+              <Factory className="h-3.5 w-3.5" /> Atur mesin
+            </Button>
+          </div>
+        ) : null,
     },
   ]
 
   return (
-    <div className="mx-auto max-w-screen-2xl">
+    <div className="mx-auto max-w-6xl">
       <PageHeader
         breadcrumb={[{ label: 'Beranda', to: '/staff' }, { label: 'Booking' }]}
         title="Booking"
-        description="Approval booking, assign mesin, dan keputusan perpanjangan sewa. Manager Penyewa mengajukan tanpa memilih mesin."
+        description="Approval booking, peminjaman mesin, dan keputusan perpanjangan sewa. Penyewa meminta jumlah mesin; mesin mana yang dipinjamkan ditentukan di sini."
       />
 
       <Card
         title="Menunggu approval"
-        subtitle="Booking baru dari Manager Penyewa, belum di-assign mesin."
+        subtitle="Booking baru dari Manager Penyewa, belum dipinjami mesin."
       >
         {isLoading ? (
           <TableSkeleton rows={2} columns={6} />
         ) : pendingApproval.length === 0 ? (
           <div className="grid place-items-center py-10 text-center">
-            <span className="grid h-12 w-12 place-items-center text-brand-700">
-              <CalendarClock className="h-7 w-7" />
+            <span className="grid h-12 w-12 place-items-center rounded-xl bg-brand-50 text-brand-700">
+              <CalendarClock className="h-6 w-6" />
             </span>
             <p className="mt-3 text-sm font-semibold text-slate-800">Tidak ada booking menunggu</p>
           </div>
@@ -269,8 +281,8 @@ export function SundayaBookingPage() {
           <TableSkeleton rows={2} columns={7} />
         ) : pendingExtensions.length === 0 ? (
           <div className="grid place-items-center py-10 text-center">
-            <span className="grid h-12 w-12 place-items-center text-brand-700">
-              <TimerReset className="h-7 w-7" />
+            <span className="grid h-12 w-12 place-items-center rounded-xl bg-brand-50 text-brand-700">
+              <TimerReset className="h-6 w-6" />
             </span>
             <p className="mt-3 text-sm font-semibold text-slate-800">Tidak ada permintaan perpanjangan</p>
             <p className="mt-1 text-sm text-slate-500">
@@ -288,9 +300,13 @@ export function SundayaBookingPage() {
         </Card>
       ) : null}
 
-      <Card className="mt-5" title="Job berjalan" subtitle="Rental management: lifecycle pasca-assign.">
+      <Card
+        className="mt-5"
+        title="Job berjalan"
+        subtitle="Status booking mengikuti barang yang benar-benar bergerak, jadi tidak ada tombol untuk menggesernya. Booking mulai berjalan saat cetakan pertama dicatat di Log Penerimaan, dan tutup sendiri setelah semua cetakan dikonfirmasi kembali ke penyewa."
+      >
         {isLoading ? (
-          <TableSkeleton rows={3} columns={5} />
+          <TableSkeleton rows={3} columns={6} />
         ) : ongoingJobs.length === 0 ? (
           <p className="py-8 text-center text-sm text-slate-500">Belum ada job berjalan.</p>
         ) : (
@@ -298,14 +314,12 @@ export function SundayaBookingPage() {
         )}
       </Card>
 
-      {assignTarget ? (
-        <AssignModal
-          job={assignTarget}
-          mold={moldById.get(assignTarget.moldId)}
+      {mesinTarget ? (
+        <MesinModal
+          job={mesinTarget}
           machines={machines}
-          onClose={() => setAssignTarget(null)}
-          onSaved={() => {
-            setAssignTarget(null)
+          onClose={() => {
+            setMesinTarget(null)
             void load()
           }}
         />
@@ -325,73 +339,174 @@ export function SundayaBookingPage() {
   )
 }
 
-function AssignModal({
+// Booking berjalan tanpa tombol lifecycle, jadi Admin butuh kalimat yang menyebut
+// siapa yang harus bergerak berikutnya. Semuanya dibaca dari status cetakan yang
+// sudah ada, bukan kolom baru.
+function langkahBerikutnya(job: Job): string {
+  if (job.lifecycle === JobLifecycle.DIKONFIRMASI) {
+    return job.machines.length < job.requestedMachineCount
+      ? `Pinjamkan ${job.requestedMachineCount - job.machines.length} mesin lagi, lalu tunggu cetakan tiba`
+      : 'Cetakan dari penyewa. Booking berjalan begitu Log Penerimaan cetakan dicatat'
+  }
+
+  const belumSelesai = job.molds.filter((m) => m.trackingStatus !== MoldTrackingStatus.COMPLETED)
+  if (!belumSelesai.length) return 'Semua cetakan sudah kembali'
+
+  // Yang sudah selesai produksi butuh tindakan Admin; sisanya cuma perlu ditunggu.
+  const siapKirimBalik = belumSelesai.filter(
+    (m) => m.trackingStatus === MoldTrackingStatus.PRODUCTION,
+  )
+  const kode = (list: typeof belumSelesai) => list.map((m) => m.kodeMold).join(', ')
+  return siapKirimBalik.length
+    ? `Tekan Selesai produksi di tab Mold Tracking untuk ${kode(siapKirimBalik)}`
+    : `Menunggu ${kode(belumSelesai)} kembali ke penyewa`
+}
+
+// Rentang tonase cetakan di booking: mesin apa pun yang dipinjamkan harus setidaknya
+// sanggup cetakan terkecil, dan butuh mesin sebesar yang terbesar supaya semua kebagian.
+function rentangTonase(job: Job): string {
+  const ton = job.molds.map((m) => m.tonaseTon)
+  const min = Math.min(...ton)
+  const max = Math.max(...ton)
+  return min === max ? `${min} ton` : `${min} - ${max} ton`
+}
+
+// Peminjaman mesin: mesin masuk ke booking satu per satu sampai jumlah permintaan
+// penyewa terpenuhi, dan bisa ditarik lagi selama booking belum berjalan. Mesin tidak
+// dipasangkan ke cetakan; penyewa bebas menjalankan cetakan mana pun di mesin mana pun,
+// dan pasangan sebenarnya tercatat di Log Produksi mereka.
+function MesinModal({
   job,
-  mold,
   machines,
   onClose,
-  onSaved,
 }: {
   job: Job
-  mold: Mold | undefined
   machines: Machine[]
   onClose: () => void
-  onSaved: () => void
 }) {
   const { accessToken } = useAuth()
   const toast = useToast()
-  const matching = mold ? machines.filter((m) => m.tonaseTon === mold.tonaseTon) : machines
-  const [machineId, setMachineId] = useState(matching[0]?.id ?? '')
+  const [current, setCurrent] = useState(job)
   const [isSaving, setIsSaving] = useState(false)
 
-  const handleSubmit = async (event: FormEvent) => {
-    event.preventDefault()
+  const tonaseTerkecil = current.molds.length
+    ? Math.min(...current.molds.map((m) => m.tonaseTon))
+    : 0
+  const dipinjam = new Set(current.machines.map((m) => m.machineId))
+  // Mesin yang tidak sanggup cetakan terkecil pun tidak berguna untuk booking ini.
+  const tersedia = machines.filter((m) => !dipinjam.has(m.id) && m.tonaseTon >= tonaseTerkecil)
+  const [machineId, setMachineId] = useState('')
+  // Daftar mesin tersedia berubah tiap kali satu dipinjamkan atau ditarik, jadi pilihan
+  // dijatuhkan ke opsi pertama bila yang tersimpan sudah tidak ada di daftar. Tanpa ini
+  // state bisa menunjuk mesin yang tidak lagi tampil di select.
+  const mesinDipilih = tersedia.some((m) => m.id === machineId) ? machineId : (tersedia[0]?.id ?? '')
+  const kurang = current.requestedMachineCount - current.machines.length
+
+  const run = async (aksi: () => Promise<Job>, pesan: string) => {
     setIsSaving(true)
     try {
-      const body: AssignJobRequest = { machineId }
-      await api.assignJob(accessToken, job.id, body)
-      toast.success('Booking disetujui dan mesin di-assign')
-      onSaved()
+      const updated = await aksi()
+      setCurrent(updated)
+      toast.success(pesan)
     } catch (caught) {
-      toast.error(errorMessage(caught, 'Gagal assign mesin'))
+      toast.error(errorMessage(caught, 'Gagal memperbarui mesin booking'))
     } finally {
       setIsSaving(false)
     }
   }
 
+  const tambah = (event: FormEvent) => {
+    event.preventDefault()
+    const body: AssignJobRequest = { machineId: mesinDipilih }
+    void run(() => api.assignJob(accessToken, current.id, body), 'Mesin dipinjamkan')
+  }
+
   return (
-    <Modal title={`Setujui ${job.jobNumber}`} onClose={onClose}>
-      <form onSubmit={handleSubmit} className="space-y-4">
+    <Modal title={`Mesin untuk ${current.jobNumber}`} onClose={onClose}>
+      <div className="space-y-4">
         <dl className="divide-y divide-slate-100 rounded-lg border border-slate-200/70">
-          <DetailRow label="Cetakan" value={mold ? `${mold.kodeMold} - ${mold.namaProduk}` : '-'} />
-          <DetailRow label="Tonase diminta" value={mold ? `${mold.tonaseTon} ton` : '-'} />
+          <DetailRow
+            label="Cetakan"
+            value={
+              current.molds.length
+                ? current.molds.map((m) => `${m.kodeMold} (${m.tonaseTon} ton)`).join(', ')
+                : '-'
+            }
+          />
+          <DetailRow
+            label="Mesin diminta"
+            value={`${current.requestedMachineCount} mesin, terpenuhi ${current.machines.length}`}
+          />
           <DetailRow
             label="Periode"
-            value={`${formatDate(job.startDate)} - ${job.requestedDurationDays} hari`}
+            value={`${formatDate(current.startDate)} - ${current.requestedDurationDays} hari`}
           />
         </dl>
 
-        {matching.length === 0 ? (
+        {current.machines.length ? (
+          <ul className="space-y-1.5">
+            {current.machines.map((m) => (
+              <li
+                key={m.machineId}
+                className="flex items-center justify-between gap-3 rounded-lg border border-slate-200/70 px-3 py-2"
+              >
+                <span className="text-sm">
+                  <span className="font-semibold text-slate-900">{m.machineNumber}</span>
+                  <span className="ml-2 text-slate-500">{m.tonaseTon} ton</span>
+                </span>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  disabled={isSaving || current.machines.length === 1}
+                  onClick={() =>
+                    void run(
+                      () => api.releaseJobMachine(accessToken, current.id, m.machineId),
+                      `Mesin ${m.machineNumber} ditarik`,
+                    )
+                  }
+                >
+                  <Trash2 className="h-3.5 w-3.5" /> Tarik
+                </Button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-slate-500">Belum ada mesin dipinjamkan ke booking ini.</p>
+        )}
+
+        {kurang > 0 ? (
+          <p className="text-xs text-amber-700">Masih kurang {kurang} mesin dari permintaan penyewa.</p>
+        ) : null}
+
+        {tersedia.length === 0 ? (
           <p className="text-sm text-rose-600">
-            Tidak ada mesin tersedia{mold ? ` dengan tonase ${mold.tonaseTon} ton` : ''}.
+            Tidak ada mesin tersedia lain dengan tonase minimal {tonaseTerkecil} ton.
           </p>
         ) : (
-          <SelectField
-            label="Assign mesin"
-            value={machineId}
-            onChange={setMachineId}
-            options={matching.map((m) => ({ value: m.id, label: `${m.machineNumber} (${m.tonaseTon} ton)` }))}
-          />
+          <form onSubmit={tambah} className="space-y-3">
+            <SelectField
+              label="Pinjamkan mesin"
+              value={mesinDipilih}
+              onChange={setMachineId}
+              options={tersedia.map((m) => ({
+                value: m.id,
+                label: `${m.machineNumber} (${m.tonaseTon} ton)`,
+              }))}
+            />
+            <div className="flex justify-end">
+              <Button type="submit" disabled={isSaving || !mesinDipilih}>
+                {isSaving ? 'Memproses...' : 'Pinjamkan mesin'}
+              </Button>
+            </div>
+          </form>
         )}
-        <div className="flex justify-end gap-2 pt-2">
+
+        <div className="flex justify-end border-t border-slate-100 pt-3">
           <Button type="button" variant="secondary" onClick={onClose}>
-            Batal
-          </Button>
-          <Button type="submit" disabled={isSaving || !machineId}>
-            {isSaving ? 'Memproses...' : 'Setujui + assign'}
+            Selesai
           </Button>
         </div>
-      </form>
+      </div>
     </Modal>
   )
 }

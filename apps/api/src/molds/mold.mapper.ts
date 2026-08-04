@@ -13,6 +13,7 @@ export function toMold(m: PrismaMold): Mold {
     tonaseTon: m.tonaseTon,
     deskripsi: m.deskripsi,
     managerId: m.managerId,
+    jobId: m.jobId,
     trackingStatus: m.trackingStatus as unknown as Mold['trackingStatus'],
     planMaterialUtama: m.planMaterialUtama,
     estimasiKg: m.estimasiKg,

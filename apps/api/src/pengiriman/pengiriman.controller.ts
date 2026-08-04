@@ -1,18 +1,29 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { User as PrismaUser } from '@prisma/client';
-import { DeliveryRow, Role } from '@mold-tracker/shared';
+import { LogPengiriman, Role } from '@mold-tracker/shared';
 import { CurrentUser, Roles } from '../auth/decorators';
 import { PengirimanService } from './pengiriman.service';
+import { CreateLogPengirimanDto } from './dto';
 
-// Log Pengiriman: turunan read-only (rencana vs aktual kirim). Milik Manager;
-// staf Sundaya boleh baca. Tanpa endpoint tulis (aturan domain).
+// Log Pengiriman: log informasi milik Manager Penyewa soal kapan mold atau
+// material akan dikirim ke Sundaya. Staf Sundaya membaca untuk mengantisipasi
+// kedatangan (dan menerima notifikasi tiap log baru).
 @Controller('pengiriman')
 export class PengirimanController {
   constructor(private pengiriman: PengirimanService) {}
 
   @Roles(Role.MANAGER_PENYEWA, Role.ADMIN_SUNDAYA, Role.SUPER_ADMIN)
   @Get()
-  list(@CurrentUser() user: PrismaUser, @Query('managerId') managerId?: string): Promise<DeliveryRow[]> {
-    return this.pengiriman.list(user, managerId);
+  list(@CurrentUser() user: PrismaUser, @Query('jobId') jobId?: string): Promise<LogPengiriman[]> {
+    return this.pengiriman.list(user, jobId);
+  }
+
+  @Roles(Role.MANAGER_PENYEWA)
+  @Post()
+  create(
+    @CurrentUser() user: PrismaUser,
+    @Body() dto: CreateLogPengirimanDto,
+  ): Promise<LogPengiriman> {
+    return this.pengiriman.create(user, dto);
   }
 }

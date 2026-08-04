@@ -1,65 +1,71 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { Archive, ArchiveRestore, Factory, Pencil, Plus } from 'lucide-react'
+import { Archive, ArchiveRestore, Factory, Gauge, Pencil, Plus } from 'lucide-react'
 import {
+  MachineOperationalStatus,
+  Role,
+  TEKNISI_INPUT_STATUS,
+  hmsToSeconds,
   type CreateMachineRequest,
+  type CreateOperationalDataRequest,
   type Machine,
   type UpdateMachineRequest,
 } from '@mold-tracker/shared'
 import { useAuth } from '../auth/authContextValue'
 import { api } from '../../lib/api'
-import { PageHeader } from '../../components/PageHeader'
 import { Button } from '../../components/ui/Button'
+import { PageHeader } from '../../components/PageHeader'
 import { Card } from '../../components/ui/Card'
 import { DataTable, type Column } from '../../components/ui/DataTable'
-import { MachineStatusBadge, WarrantyStatusBadge } from '../../components/ui/Badge'
+import { EmptyState } from '../../components/ui/EmptyState'
+import {
+  MachineOperationalBadge,
+  MachineStatusBadge,
+  WarrantyStatusBadge,
+  machineOperationalLabel,
+} from '../../components/ui/Badge'
 import { SidePanel } from '../../components/ui/SidePanel'
-import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { TableSkeleton } from '../../components/ui/Skeleton'
-import { TextField, FieldGroup } from '../../components/ui/FormField'
+import { FieldGroup, SelectField, TextAreaField, TextField } from '../../components/ui/FormField'
 import { useToast } from '../../components/ui/Toast'
 import { errorMessage } from '../../lib/errorMessage'
+import { formatDate, nowLocalInput } from '../../lib/format'
 
-type MachineFormState = {
-  machineNumber: string
+
+// Nomor mesin tidak ada di form: digenerate server berpola IM-001.
+type MachineForm = {
   spesifikasi: string
   tonaseTon: string
-  standardRatio: string
   warrantyStart: string
   warrantyDurationMonths: string
 }
 
-const emptyMachineForm: MachineFormState = {
-  machineNumber: '',
+const emptyMachineForm: MachineForm = {
   spesifikasi: '',
   tonaseTon: '',
-  standardRatio: '',
   warrantyStart: '',
   warrantyDurationMonths: '',
 }
 
-const formFromMachine = (m: Machine): MachineFormState => ({
-  machineNumber: m.machineNumber,
-  spesifikasi: m.spesifikasi,
-  tonaseTon: String(m.tonaseTon),
-  standardRatio: String(m.standardRatio),
-  warrantyStart: m.warrantyStart.slice(0, 10),
-  warrantyDurationMonths: String(m.warrantyDurationMonths),
+const formFromMachine = (machine: Machine): MachineForm => ({
+  spesifikasi: machine.spesifikasi,
+  tonaseTon: String(machine.tonaseTon),
+  warrantyStart: machine.warrantyStart.slice(0, 10),
+  warrantyDurationMonths: String(machine.warrantyDurationMonths),
 })
 
-type PanelState = { mode: 'create' } | { mode: 'edit'; machine: Machine }
-
-// Kelola Mesin (master data, ADMIN_SUNDAYA). CRUD + arsip mesin. Sumbu status
-// (ketersediaan & operationalStatus) tidak diubah lewat form ini, hanya lewat
-// lifecycle job dan input Layer 1 (lihat halaman Machine Monitoring).
+// Mesin (staf Sundaya). Dua sumbu status independen: status (ketersediaan,
+// dikendalikan lifecycle job) dan operationalStatus (realtime Layer 1, Teknisi).
 export function MachinesPage() {
-  const { accessToken } = useAuth()
+  const { accessToken, user } = useAuth()
   const toast = useToast()
+  const canManage = user?.role === Role.ADMIN_SUNDAYA
+  const canInputOperational = user?.role === Role.TEKNISI_SUNDAYA
 
   const [machines, setMachines] = useState<Machine[]>([])
-  const [isLoading, setIsLoading] = useState(true)
   const [showArchived, setShowArchived] = useState(false)
-  const [panel, setPanel] = useState<PanelState | null>(null)
-  const [archiveTarget, setArchiveTarget] = useState<Machine | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [panel, setPanel] = useState<{ mode: 'create' } | { mode: 'edit'; machine: Machine } | null>(null)
+  const [operationalTarget, setOperationalTarget] = useState<Machine | null>(null)
 
   const load = useCallback(async () => {
     setIsLoading(true)
@@ -76,44 +82,68 @@ export function MachinesPage() {
     void load()
   }, [load])
 
+  const toggleArchive = async (machine: Machine) => {
+    try {
+      if (machine.isArchived) {
+        await api.unarchiveMachine(accessToken, machine.id)
+        toast.success('Mesin dikembalikan dari arsip')
+      } else {
+        await api.archiveMachine(accessToken, machine.id)
+        toast.success('Mesin diarsipkan')
+      }
+      void load()
+    } catch (caught) {
+      toast.error(errorMessage(caught, 'Aksi gagal'))
+    }
+  }
+
   const columns: Column<Machine>[] = [
-    { header: 'No. Mesin', cell: (m) => <span className="font-semibold text-slate-800">{m.machineNumber}</span> },
+    { header: 'No. Mesin', cell: (m) => <span className="font-semibold text-slate-900">{m.machineNumber}</span> },
     { header: 'Spesifikasi', cell: (m) => m.spesifikasi },
     { header: 'Tonase', cell: (m) => `${m.tonaseTon} ton` },
     { header: 'Ketersediaan', cell: (m) => <MachineStatusBadge status={m.status} /> },
-    { header: 'Garansi', cell: (m) => <WarrantyStatusBadge status={m.warrantyStatus} /> },
+    { header: 'Operasional', cell: (m) => <MachineOperationalBadge status={m.operationalStatus} /> },
+    {
+      header: 'Garansi',
+      cell: (m) => (
+        <div className="flex items-center gap-2">
+          <WarrantyStatusBadge status={m.warrantyStatus} />
+          <span className="text-xs text-slate-400">s.d. {formatDate(m.warrantyEnd)}</span>
+        </div>
+      ),
+    },
     {
       header: '',
       className: 'text-right',
-      cell: (m) => {
-        return (
-          <div className="flex justify-end gap-2">
-            <Button size="sm" variant="secondary" onClick={() => setPanel({ mode: 'edit', machine: m })}>
-              <Pencil className="h-4 w-4" /> Edit
+      cell: (m) => (
+        <div className="flex justify-end gap-2">
+          {canInputOperational ? (
+            <Button size="sm" variant="secondary" onClick={() => setOperationalTarget(m)}>
+              <Gauge className="h-3.5 w-3.5" /> Input status
             </Button>
-            <Button size="sm" variant="secondary" onClick={() => setArchiveTarget(m)}>
-              {m.isArchived ? (
-                <>
-                  <ArchiveRestore className="h-4 w-4" /> Aktifkan
-                </>
-              ) : (
-                <>
-                  <Archive className="h-4 w-4" /> Arsip
-                </>
-              )}
-            </Button>
-          </div>
-        )
-      },
+          ) : null}
+          {canManage ? (
+            <>
+              <Button size="sm" variant="secondary" onClick={() => setPanel({ mode: 'edit', machine: m })}>
+                <Pencil className="h-3.5 w-3.5" /> Edit
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => void toggleArchive(m)}>
+                {m.isArchived ? <ArchiveRestore className="h-3.5 w-3.5" /> : <Archive className="h-3.5 w-3.5" />}
+                {m.isArchived ? 'Aktifkan' : 'Arsipkan'}
+              </Button>
+            </>
+          ) : null}
+        </div>
+      ),
     },
   ]
 
   return (
-    <div className="mx-auto max-w-screen-2xl">
+    <div className="mx-auto max-w-6xl">
       <PageHeader
         breadcrumb={[{ label: 'Beranda', to: '/staff' }, { label: 'Kelola Mesin' }]}
         title="Kelola Mesin"
-        description="Master mesin Sundaya dan status ketersediaan."
+        description="Katalog mesin Sundaya beserta ketersediaan, status realtime, dan garansi."
         actions={
           <>
             <label className="flex items-center gap-2 text-sm text-slate-600">
@@ -121,13 +151,15 @@ export function MachinesPage() {
                 type="checkbox"
                 checked={showArchived}
                 onChange={(event) => setShowArchived(event.target.checked)}
-                className="h-4 w-4 rounded border-slate-300"
+                className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
               />
               Tampilkan arsip
             </label>
-            <Button onClick={() => setPanel({ mode: 'create' })}>
-              <Plus className="h-5 w-5" /> Tambah mesin
-            </Button>
+            {canManage ? (
+              <Button onClick={() => setPanel({ mode: 'create' })}>
+                <Plus className="h-5 w-5" /> Tambah mesin
+              </Button>
+            ) : null}
           </>
         }
       />
@@ -136,15 +168,7 @@ export function MachinesPage() {
         {isLoading ? (
           <TableSkeleton rows={5} columns={6} />
         ) : machines.length === 0 ? (
-          <div className="grid place-items-center py-14 text-center">
-            <span className="grid h-12 w-12 place-items-center text-brand-700">
-              <Factory className="h-7 w-7" />
-            </span>
-            <p className="mt-3 text-sm font-semibold text-slate-800">Belum ada mesin</p>
-            <p className="mt-1 text-sm text-slate-500">
-              {showArchived ? 'Tidak ada mesin yang diarsipkan.' : 'Tambahkan mesin pertama untuk mulai.'}
-            </p>
-          </div>
+          <EmptyState icon={Factory} title="Belum ada mesin" />
         ) : (
           <DataTable columns={columns} rows={machines} rowKey={(m) => m.id} />
         )}
@@ -165,18 +189,15 @@ export function MachinesPage() {
               const body: UpdateMachineRequest = {
                 spesifikasi: form.spesifikasi,
                 tonaseTon: Number(form.tonaseTon),
-                standardRatio: Number(form.standardRatio),
-                warrantyStart: form.warrantyStart,
+                warrantyStart: new Date(form.warrantyStart).toISOString(),
                 warrantyDurationMonths: Number(form.warrantyDurationMonths),
               }
               await api.updateMachine(accessToken, panel.machine.id, body)
             } else {
               const body: CreateMachineRequest = {
-                machineNumber: form.machineNumber.trim(),
                 spesifikasi: form.spesifikasi,
                 tonaseTon: Number(form.tonaseTon),
-                standardRatio: Number(form.standardRatio),
-                warrantyStart: form.warrantyStart,
+                warrantyStart: new Date(form.warrantyStart).toISOString(),
                 warrantyDurationMonths: Number(form.warrantyDurationMonths),
               }
               await api.createMachine(accessToken, body)
@@ -185,31 +206,13 @@ export function MachinesPage() {
         />
       ) : null}
 
-      {archiveTarget ? (
-        <ConfirmDialog
-          title={archiveTarget.isArchived ? 'Aktifkan mesin' : 'Arsipkan mesin'}
-          message={
-            archiveTarget.isArchived
-              ? `Mesin ${archiveTarget.machineNumber} akan muncul kembali di daftar aktif.`
-              : `Mesin ${archiveTarget.machineNumber} akan disembunyikan dari daftar aktif. Data dan relasi tetap tersimpan.`
-          }
-          confirmLabel={archiveTarget.isArchived ? 'Aktifkan' : 'Arsipkan'}
-          tone={archiveTarget.isArchived ? 'primary' : 'warning'}
-          onCancel={() => setArchiveTarget(null)}
-          onConfirm={async () => {
-            try {
-              if (archiveTarget.isArchived) {
-                await api.unarchiveMachine(accessToken, archiveTarget.id)
-                toast.success('Mesin diaktifkan kembali')
-              } else {
-                await api.archiveMachine(accessToken, archiveTarget.id)
-                toast.success('Mesin diarsipkan')
-              }
-              setArchiveTarget(null)
-              void load()
-            } catch (caught) {
-              toast.error(errorMessage(caught, 'Gagal memproses mesin'))
-            }
+      {operationalTarget ? (
+        <OperationalFormPanel
+          machine={operationalTarget}
+          onClose={() => setOperationalTarget(null)}
+          onSaved={() => {
+            setOperationalTarget(null)
+            void load()
           }}
         />
       ) : null}
@@ -224,17 +227,17 @@ function MachineFormPanel({
   onSaved,
   save,
 }: {
-  initial: MachineFormState
+  initial: MachineForm
   isEdit: boolean
   onClose: () => void
   onSaved: () => void
-  save: (form: MachineFormState) => Promise<void>
+  save: (form: MachineForm) => Promise<void>
 }) {
   const toast = useToast()
-  const [form, setForm] = useState<MachineFormState>(initial)
+  const [form, setForm] = useState<MachineForm>(initial)
   const [isSaving, setIsSaving] = useState(false)
 
-  const set = (key: keyof MachineFormState) => (value: string) => setForm((f) => ({ ...f, [key]: value }))
+  const set = (key: keyof MachineForm) => (value: string) => setForm((f) => ({ ...f, [key]: value }))
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
@@ -253,25 +256,26 @@ function MachineFormPanel({
   return (
     <SidePanel
       title={isEdit ? 'Edit mesin' : 'Tambah mesin'}
-      subtitle={isEdit ? 'Nomor mesin tidak dapat diubah.' : 'Mesin baru berstatus Tersedia.'}
+      subtitle={
+        isEdit
+          ? 'Nomor mesin tidak dapat diubah.'
+          : 'Nomor mesin dibuat otomatis. Mesin baru berstatus Tersedia dan Standby.'
+      }
       onClose={onClose}
     >
       <form onSubmit={handleSubmit} className="space-y-4">
-        {!isEdit ? (
-          <TextField label="No. Mesin" value={form.machineNumber} onChange={set('machineNumber')} />
-        ) : null}
         <TextField label="Spesifikasi" value={form.spesifikasi} onChange={set('spesifikasi')} />
-        <FieldGroup>
-          <TextField label="Tonase (ton)" type="number" min={1} value={form.tonaseTon} onChange={set('tonaseTon')} />
-          <TextField
-            label="Standard ratio"
-            type="number"
-            min={0}
-            step="0.01"
-            value={form.standardRatio}
-            onChange={set('standardRatio')}
-          />
-        </FieldGroup>
+        <TextField
+          label="Tonase mesin (ton)"
+          type="number"
+          min={1}
+          value={form.tonaseTon}
+          onChange={set('tonaseTon')}
+        />
+        <p className="-mt-2 text-xs leading-5 text-slate-500">
+          Clamping force mesin. Mesin ini hanya bisa menjalankan cetakan dengan tonase sama atau
+          lebih kecil.
+        </p>
         <FieldGroup>
           <TextField label="Mulai garansi" type="date" value={form.warrantyStart} onChange={set('warrantyStart')} />
           <TextField
@@ -289,6 +293,103 @@ function MachineFormPanel({
           </Button>
           <Button type="submit" disabled={isSaving}>
             {isSaving ? 'Menyimpan...' : 'Simpan'}
+          </Button>
+        </div>
+      </form>
+    </SidePanel>
+  )
+}
+
+// Input status realtime (Layer 1, Teknisi). Pilihan status hanya Setup dan
+// Running: Standby cuma status awal mesin baru, Maintenance disetel otomatis
+// oleh modul Maintenance. Cycle time diinput jam + menit + detik, dikirim ke
+// server sebagai total detik.
+function OperationalFormPanel({
+  machine,
+  onClose,
+  onSaved,
+}: {
+  machine: Machine
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const { accessToken } = useAuth()
+  const toast = useToast()
+  const [status, setStatus] = useState<MachineOperationalStatus>(MachineOperationalStatus.RUNNING)
+  const [jam, setJam] = useState('')
+  const [menit, setMenit] = useState('')
+  const [detik, setDetik] = useState('')
+  const [occurredAt, setOccurredAt] = useState(nowLocalInput())
+  const [catatan, setCatatan] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
+
+  const totalDetik = hmsToSeconds(Number(jam || 0), Number(menit || 0), Number(detik || 0))
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault()
+    setIsSaving(true)
+    try {
+      const body: CreateOperationalDataRequest = {
+        status,
+        cycleTimeSec: totalDetik > 0 ? totalDetik : undefined,
+        occurredAt: new Date(occurredAt).toISOString(),
+        catatan: catatan.trim() === '' ? undefined : catatan.trim(),
+      }
+      await api.addOperationalData(accessToken, machine.id, body)
+      toast.success('Status mesin dicatat')
+      onSaved()
+    } catch (caught) {
+      toast.error(errorMessage(caught, 'Gagal mencatat status'))
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <SidePanel
+      title={`Input status - ${machine.machineNumber}`}
+      subtitle="Event realtime Layer 1, append-only. Koreksi lewat event baru."
+      onClose={onClose}
+    >
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <SelectField
+          label="Status"
+          value={status}
+          onChange={setStatus}
+          options={TEKNISI_INPUT_STATUS.map((value) => ({
+            value,
+            label: machineOperationalLabel[value],
+          }))}
+        />
+        <TextField
+          label="Waktu kejadian"
+          type="datetime-local"
+          value={occurredAt}
+          onChange={setOccurredAt}
+          max={nowLocalInput()}
+        />
+
+        <div>
+          <p className="text-sm font-medium text-slate-700">Cycle time</p>
+          <p className="mt-0.5 text-xs text-slate-500">
+            Durasi satu siklus molding penuh: tutup mold, injeksi, pendinginan, sampai eject.
+            Dibandingkan dengan cycle time ideal untuk menghitung Performance pada OEE.
+          </p>
+          <div className="mt-2 grid grid-cols-3 gap-3">
+            <TextField label="Jam" type="number" min={0} required={false} value={jam} onChange={setJam} />
+            <TextField label="Menit" type="number" min={0} max={59} required={false} value={menit} onChange={setMenit} />
+            <TextField label="Detik" type="number" min={0} step="0.1" required={false} value={detik} onChange={setDetik} />
+          </div>
+        </div>
+
+        <TextAreaField label="Catatan" value={catatan} onChange={setCatatan} />
+
+        <div className="flex justify-end gap-2 pt-2">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Batal
+          </Button>
+          <Button type="submit" disabled={isSaving}>
+            {isSaving ? 'Menyimpan...' : 'Catat status'}
           </Button>
         </div>
       </form>

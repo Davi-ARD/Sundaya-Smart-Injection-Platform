@@ -19,6 +19,7 @@ import { ManagerDashboardPage } from './features/dashboard/ManagerDashboardPage'
 import { JobDashboardPage } from './features/dashboard/JobDashboardPage'
 import { BookingPage } from './features/booking/BookingPage'
 import { PengirimanPage } from './features/pengiriman/PengirimanPage'
+import { PenerimaanPage } from './features/penerimaan/PenerimaanPage'
 import { PenyewaAdminsPage } from './features/penyewa-admins/PenyewaAdminsPage'
 import { LogProduksiPage } from './features/log-produksi/LogProduksiPage'
 
@@ -61,6 +62,7 @@ export default function App() {
           <Route element={<ProtectedRoute allowedRoles={STAF} />}>
             <Route path="/staff" element={<SundayaDashboardPage />} />
             <Route path="/staff/booking" element={<SundayaBookingPage />} />
+            <Route path="/penerimaan" element={<PenerimaanPage />} />
             <Route path="/tracking" element={<MoldTrackingPage />} />
             <Route path="/monitoring" element={<MachineMonitoringPage />} />
             <Route path="/machines" element={<MachinesPage />} />

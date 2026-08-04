@@ -6,17 +6,13 @@ import {
   ProgressMoldingBadge,
   moldTrackingLabel,
 } from '../../components/ui/Badge'
-import { formatDate, formatNumber, formatSisaHari } from '../../lib/format'
+import { formatNumber, formatSisaHari } from '../../lib/format'
 
-// Jalur utama tracking fisik mold. REPAIR adalah cabang dari PRODUCTION, jadi
-// hanya ikut ditampilkan ketika cetakan sedang berada di sana.
+// Jalur tracking fisik mold, linear tanpa cabang.
 const MAIN_FLOW = [
   MoldTrackingStatus.PLANNING,
-  MoldTrackingStatus.READY_DELIVERY,
   MoldTrackingStatus.DELIVERY,
   MoldTrackingStatus.RECEIVED,
-  MoldTrackingStatus.WAITING_PRODUCTION,
-  MoldTrackingStatus.ON_MACHINE,
   MoldTrackingStatus.PRODUCTION,
   MoldTrackingStatus.SEND_BACK,
   MoldTrackingStatus.COMPLETED,
@@ -24,10 +20,7 @@ const MAIN_FLOW = [
 
 // Rangkaian status tracking dengan posisi saat ini ditebalkan.
 export function MoldTrackingSteps({ current }: { current: MoldTrackingStatus }) {
-  const steps =
-    current === MoldTrackingStatus.REPAIR
-      ? [...MAIN_FLOW.slice(0, 7), MoldTrackingStatus.REPAIR, ...MAIN_FLOW.slice(7)]
-      : MAIN_FLOW
+  const steps = MAIN_FLOW
   const currentIndex = steps.indexOf(current)
 
   return (
@@ -72,10 +65,6 @@ function Row({ label, value, tone }: { label: string; value: ReactNode; tone?: '
 // realisasi material dibanding rencana awal. Dipakai panel detail cepat di
 // dashboard Manager dan panel detail di halaman Cetakan.
 export function MoldPlanDetail({ row }: { row: MoldPlanRow }) {
-  const sisaMaterial =
-    row.materialRemainingKg ??
-    (row.estimasiKg != null && row.materialDatangKg === 0 ? row.estimasiKg : null)
-
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       <section className="rounded-xl border border-slate-200/70 bg-white p-4">
@@ -90,13 +79,15 @@ export function MoldPlanDetail({ row }: { row: MoldPlanRow }) {
             label="Status booking"
             value={row.lifecycle ? <JobLifecycleBadge status={row.lifecycle} /> : '-'}
           />
-          <Row label="Mesin assigned" value={row.machineNumber ?? 'Belum assign'} />
+          <Row
+            label="Mesin dipinjamkan"
+            value={row.machineNumbers.join(', ') || 'Belum dipinjami'}
+          />
           <Row
             label="Sisa masa sewa"
             value={formatSisaHari(row.sisaHariSewa)}
             tone={row.sisaHariSewa != null && row.sisaHariSewa <= 3 ? 'amber' : undefined}
           />
-          <Row label="Rencana kirim mold" value={formatDate(row.rencanaKirimMold)} />
         </dl>
       </section>
 
@@ -130,17 +121,18 @@ export function MoldPlanDetail({ row }: { row: MoldPlanRow }) {
       <section className="rounded-xl border border-slate-200/70 bg-white p-4 lg:col-span-2">
         <h3 className="text-sm font-semibold text-slate-950">Material</h3>
         <p className="mt-1 text-xs text-slate-500">
-          Rencana berasal dari estimasi awal saat booking; realisasi dihitung dari Log Produksi.
+          Plan material dari cetakan adalah batas maksimal pemakaian. Terpakai dihitung dari
+          akumulasi Log Produksi; Admin Penyewa tidak bisa mencatat melebihi plan.
         </p>
         <div className="mt-3 overflow-x-auto">
           <table className="min-w-full divide-y divide-slate-200/70 text-sm">
             <thead>
               <tr className="text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
                 <th className="py-2 pr-4">Material</th>
-                <th className="py-2 pr-4">Rencana</th>
-                <th className="py-2 pr-4">Dikirim</th>
+                <th className="py-2 pr-4">Plan (batas)</th>
                 <th className="py-2 pr-4">Terpakai</th>
-                <th className="py-2 pr-4">Sisa</th>
+                <th className="py-2 pr-4">Sisa kuota</th>
+                <th className="py-2 pr-4">Pemakaian</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -151,22 +143,16 @@ export function MoldPlanDetail({ row }: { row: MoldPlanRow }) {
                 <td className="py-2.5 pr-4">
                   {row.estimasiKg != null ? `${formatNumber(row.estimasiKg)} kg` : '-'}
                 </td>
-                <td className="py-2.5 pr-4">{formatNumber(row.materialDatangKg)} kg</td>
-                <td className="py-2.5 pr-4">
-                  {row.materialTerpakaiKg != null ? `${formatNumber(row.materialTerpakaiKg)} kg` : '-'}
-                </td>
+                <td className="py-2.5 pr-4">{formatNumber(row.materialUsedKg)} kg</td>
                 <td className="py-2.5 pr-4 font-semibold text-slate-900">
-                  {sisaMaterial != null ? `${formatNumber(sisaMaterial)} kg` : '-'}
+                  {row.materialRemainingKg != null
+                    ? `${formatNumber(row.materialRemainingKg)} kg`
+                    : 'Tanpa batas'}
+                </td>
+                <td className="py-2.5 pr-4">
+                  {row.materialUsagePercent != null ? `${row.materialUsagePercent}%` : '-'}
                 </td>
               </tr>
-              {row.materialTambahan ? (
-                <tr>
-                  <td className="py-2.5 pr-4 font-medium text-slate-900">{row.materialTambahan}</td>
-                  <td className="py-2.5 pr-4 text-slate-400" colSpan={4}>
-                    Material tambahan, jumlah dicatat di Log Produksi
-                  </td>
-                </tr>
-              ) : null}
             </tbody>
           </table>
         </div>

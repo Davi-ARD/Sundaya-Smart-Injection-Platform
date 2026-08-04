@@ -22,24 +22,25 @@ enum Role {
 }
 
 // Sumbu ketersediaan/rental mesin (siklus booking).
+// Mesin tidak pernah keluar dari Sundaya (penyewa yang mengirim cetakan ke sini),
+// jadi tidak ada status pengiriman atau pengembalian mesin. Tidak ada status
+// "diajukan" terpisah untuk mesin: keputusan Admin sekaligus mengunci mesin dalam
+// satu aksi assign, jadi TERSEDIA langsung ke DIKONFIRMASI.
 enum MachineStatus {
   TERSEDIA
-  DIAJUKAN
   DIKONFIRMASI
-  DIKIRIM
   AKTIF
-  SELESAI_SEWA
-  DIKEMBALIKAN
   PENGECEKAN
   MAINTENANCE
 }
 
-// Sumbu operasional realtime mesin (Layer 1, diinput Teknisi Sundaya).
+// Sumbu operasional realtime mesin (Layer 1). Teknisi hanya menginput SETUP dan
+// RUNNING. STANDBY hanya status awal saat mesin pertama didaftarkan Admin Sundaya.
+// MAINTENANCE disetel otomatis oleh modul Maintenance, bukan diinput Teknisi.
 enum MachineOperationalStatus {
-  RUNNING
-  SETUP
   STANDBY
-  BREAKDOWN
+  SETUP
+  RUNNING
   MAINTENANCE
 }
 
@@ -49,14 +50,14 @@ enum WarrantyStatus {
 }
 
 // Lifecycle booking/job (dulu RentalStatus).
+// DIKONFIRMASI disetel saat Admin Sundaya meminjamkan mesin pertama. AKTIF dan
+// SELESAI otomatis dari event domain: AKTIF saat cetakan pertama diterima Sundaya
+// (Log Penerimaan), SELESAI saat seluruh cetakan booking sudah COMPLETED.
 enum JobLifecycle {
   DIAJUKAN
   DITOLAK
   DIKONFIRMASI
-  DIKIRIM
   AKTIF
-  SELESAI_SEWA
-  DIKEMBALIKAN
   SELESAI
 }
 
@@ -74,18 +75,24 @@ enum ExtensionStatus {
   DITOLAK
 }
 
-// Tracking fisik mold (10-state linear, hanya lewat service layer).
+// Tracking fisik mold (6-state linear). Transisi otomatis dari event domain:
+// PLANNING (mold didaftarkan Manager) -> DELIVERY (Manager buat Log Pengiriman
+// mold) -> RECEIVED (Admin Sundaya buat Log Penerimaan mold) -> PRODUCTION
+// (Admin Penyewa catat produksi harian pertama) -> SEND_BACK (manual) ->
+// COMPLETED (manual). Hanya dua transisi terakhir yang ditekan tombol.
 enum MoldTrackingStatus {
   PLANNING
-  READY_DELIVERY
   DELIVERY
   RECEIVED
-  WAITING_PRODUCTION
-  ON_MACHINE
   PRODUCTION
-  REPAIR
   SEND_BACK
   COMPLETED
+}
+
+// Jenis barang pada Log Pengiriman (Manager) dan Log Penerimaan (Admin Sundaya).
+enum ItemPengiriman {
+  MOLD
+  MATERIAL
 }
 
 // Progress molding (Layer 2, Log Produksi).
@@ -96,20 +103,11 @@ enum ProgressMolding {
 }
 
 // Jenis event Log Produksi (Layer 2 timeline).
+// Kedatangan material tidak ada di sini: sudah dicatat Manager di Log Pengiriman
+// dan dikonfirmasi Admin Sundaya di Log Penerimaan.
 enum LogProduksiEventType {
-  MATERIAL_DATANG
   PRODUKSI_HARIAN
   PROGRESS_MOLDING
-}
-
-// Reason code downtime (six big losses, dilampirkan saat status non-Running).
-enum DowntimeReason {
-  BREAKDOWN
-  SETUP_ADJUSTMENT
-  MINOR_STOP
-  REDUCED_SPEED
-  STARTUP_REJECT
-  PRODUCTION_REJECT
 }
 
 enum MaintenanceType {
@@ -147,6 +145,8 @@ model User {
   molds              Mold[]
   moldTrackingEvents MoldTrackingEvent[]
   logProduksi        LogProduksi[]
+  logPengiriman      LogPengiriman[]     @relation("LogPengirimanBy")
+  logPenerimaan      LogPenerimaan[]     @relation("LogPenerimaanBy")
   operationalData    OperationalData[]
   maintenances       Maintenance[]
   notifications      Notification[]
@@ -168,12 +168,16 @@ model Notification {
 
 model Machine {
   id                     String                   @id @default(cuid())
+  // Digenerate service dengan pola IM-001 berurutan, bukan diinput manual.
   machineNumber          String                   @unique
   spesifikasi            String
+  // Clamping force mesin. Mesin hanya boleh menjalankan mold dengan tonase <= ini.
   tonaseTon              Int
-  standardRatio          Float
   status                 MachineStatus            @default(TERSEDIA) // sumbu ketersediaan/rental
   operationalStatus      MachineOperationalStatus @default(STANDBY)  // sumbu realtime Layer 1
+  // Status operasional sebelum maintenance dimulai, dipakai untuk memulihkan
+  // mesin ke posisi semula saat maintenance selesai. Null di luar maintenance.
+  statusBeforeMaintenance MachineOperationalStatus?
   // Owner selalu user sistem Sundaya (single-provider). FK dipertahankan agar
   // relasi tetap eksplisit; penegakan single-provider ada di service.
   ownerId                String
@@ -187,12 +191,21 @@ model Machine {
   createdAt              DateTime                 @default(now())
 
   owner           User              @relation(fields: [ownerId], references: [id])
+  // Relasi banyak-ke-banyak: satu booking dipinjami beberapa mesin, dan satu mesin
+  // dipakai beberapa booking sepanjang waktu (riwayat tetap terbaca setelah sewa
+  // selesai). Ketersediaan tetap dijaga kolom status, bukan oleh relasi ini.
   jobs            Job[]
+  logProduksi     LogProduksi[]
   operationalData OperationalData[]
   maintenances    Maintenance[]
 }
 
-// Cetakan milik Manager Penyewa. Satu mold menghasilkan satu Job.
+// Cetakan milik Manager Penyewa. Satu booking (Job) bisa memuat beberapa cetakan,
+// tapi satu cetakan hanya ikut satu booking: jobId null berarti belum dibooking.
+// Plan material dan target output tinggal di sini (diisi saat merancang cetakan),
+// jadi form booking tidak menanyakannya lagi. Keduanya menjadi batas keras di
+// Log Produksi: output tidak boleh melewati targetOutput, material terpakai tidak
+// boleh melewati estimasiKg.
 model Mold {
   id                String             @id @default(cuid())
   kodeMold          String             @unique
@@ -201,6 +214,7 @@ model Mold {
   tonaseTon         Int
   deskripsi         String?
   managerId         String
+  jobId             String?
   trackingStatus    MoldTrackingStatus @default(PLANNING)
   planMaterialUtama String?
   estimasiKg        Float?
@@ -208,8 +222,13 @@ model Mold {
   createdAt         DateTime           @default(now())
 
   manager        User                @relation(fields: [managerId], references: [id])
-  job            Job?
+  job            Job?                @relation(fields: [jobId], references: [id])
   trackingEvents MoldTrackingEvent[]
+  logProduksi    LogProduksi[]
+  logPengiriman  LogPengiriman[]
+  logPenerimaan  LogPenerimaan[]
+
+  @@index([jobId])
 }
 
 // Histori pergerakan mold (append-only). Timestamp RECEIVED dipakai sebagai
@@ -227,40 +246,96 @@ model MoldTrackingEvent {
   @@index([moldId])
 }
 
-// Production Job (evolve dari Rental). Mesin di-assign Admin Sundaya, null saat booking.
+// Production Job (evolve dari Rental). Satu booking memuat satu atau lebih cetakan
+// (relasi Mold.jobId) dan satu mesin untuk seluruh booking: cetakan di dalamnya
+// dikerjakan bergantian di mesin itu. Mesin di-assign Admin Sundaya, null saat booking.
+//
+// Plan material, target output, dan tonase tidak diduplikasi di sini melainkan
+// dibaca dari tiap Mold. Lokasi tujuan dibuang: single-provider, tujuannya selalu
+// lokasi Sundaya.
 model Job {
   id                    String       @id @default(cuid())
   jobNumber             String       @unique
-  moldId                String       @unique // 1 job = 1 mold
   managerId             String
-  machineId             String? // di-assign Admin Sundaya
   assignedById          String?
   lifecycle             JobLifecycle @default(DIAJUKAN)
   jobStatus             JobStatus    @default(ON_SCHEDULE)
+  // Jumlah mesin yang diminta penyewa. Sundaya meminjamkan mesin sebanyak ini secara
+  // bertahap; tidak ada pemasangan mesin ke cetakan tertentu.
+  requestedMachineCount Int          @default(1)
   requestedDurationDays Int
-  destinationLocation   String
   startDate             DateTime?
   endDate               DateTime?
-  // Plan diisi Manager saat booking.
-  planMaterialUtama     String?
-  estimasiMaterialKg    Float?
-  materialTambahan      String?
-  targetOutput          Float?
-  // Sumber rencana untuk view Log Pengiriman.
-  rencanaKirimMold      DateTime?
+  catatan               String?
   confirmedAt           DateTime?
-  shippedAt             DateTime?
+  // Cetakan pertama tiba di Sundaya: booking jadi AKTIF dan masa sewa mulai
+  // dihitung dari sini, bukan dari startDate rencana penyewa. Waktu penutupan
+  // tidak disalin ke sini: sudah terekam di MoldTrackingEvent cetakan terakhir.
   receivedAt            DateTime?
-  returnedAt            DateTime?
   rejectionReason       String?
   createdAt             DateTime     @default(now())
 
-  mold        Mold              @relation(fields: [moldId], references: [id])
-  manager     User              @relation("JobManager", fields: [managerId], references: [id])
-  assignedBy  User?             @relation("JobAssignedBy", fields: [assignedById], references: [id])
-  machine     Machine?          @relation(fields: [machineId], references: [id])
-  extensions  RentalExtension[]
-  logProduksi LogProduksi[]
+  molds         Mold[]
+  machines      Machine[]
+  manager       User              @relation("JobManager", fields: [managerId], references: [id])
+  assignedBy    User?             @relation("JobAssignedBy", fields: [assignedById], references: [id])
+  extensions    RentalExtension[]
+  logProduksi   LogProduksi[]
+  logPengiriman LogPengiriman[]
+  logPenerimaan LogPenerimaan[]
+}
+
+// Log Pengiriman (milik Manager Penyewa). Log informasi kapan mold atau material
+// akan dikirim ke Sundaya, bukan pembanding rencana vs aktual. Membuat log item
+// MOLD memindahkan tracking mold ke DELIVERY. Admin Sundaya menerima notifikasi.
+model LogPengiriman {
+  id           String         @id @default(cuid())
+  jobId        String
+  // Wajib untuk item MOLD: booking bisa memuat beberapa cetakan, jadi log harus
+  // menyebut cetakan mana yang dikirim. Null untuk item MATERIAL.
+  moldId       String?
+  item         ItemPengiriman
+  rencanaKirim DateTime
+  // Khusus item MATERIAL.
+  materialName String?
+  jumlahKg     Float?
+  noSuratJalan String?
+  catatan      String?
+  byId         String
+  createdAt    DateTime       @default(now())
+
+  job  Job  @relation(fields: [jobId], references: [id])
+  mold Mold? @relation(fields: [moldId], references: [id])
+  by   User @relation("LogPengirimanBy", fields: [byId], references: [id])
+
+  @@index([jobId, rencanaKirim])
+}
+
+// Log Penerimaan (milik Admin Sundaya). Konfirmasi mold atau material tiba di
+// lokasi Sundaya. Membuat log item MOLD memindahkan tracking mold ke RECEIVED
+// sekaligus menjalankan booking-nya (DIKONFIRMASI -> AKTIF, masa sewa mulai).
+// Manager Penyewa menerima notifikasi.
+model LogPenerimaan {
+  id           String         @id @default(cuid())
+  jobId        String
+  // Wajib untuk item MOLD (lihat LogPengiriman). Null untuk item MATERIAL.
+  moldId       String?
+  item         ItemPengiriman
+  diterimaAt   DateTime
+  // Khusus item MATERIAL.
+  materialName String?
+  jumlahKg     Float?
+  noSuratJalan String?
+  kondisi      String?
+  catatan      String?
+  byId         String
+  createdAt    DateTime       @default(now())
+
+  job  Job  @relation(fields: [jobId], references: [id])
+  mold Mold? @relation(fields: [moldId], references: [id])
+  by   User @relation("LogPenerimaanBy", fields: [byId], references: [id])
+
+  @@index([jobId, diterimaAt])
 }
 
 model RentalExtension {
@@ -279,41 +354,52 @@ model RentalExtension {
 model LogProduksi {
   id         String               @id @default(cuid())
   jobId      String
+  // Cetakan yang dicatat. Batas output dan material ditetapkan per cetakan, jadi
+  // tiap event harus menyebut cetakan mana supaya batasnya bisa ditegakkan.
+  moldId     String
+  // Mesin yang menjalankan cetakan itu pada event ini. Booking meminjamkan beberapa
+  // mesin tanpa memasangkannya ke cetakan, jadi pasangan sebenarnya baru diketahui
+  // dari log ini. Kedua jenis event terjadi di atas mesin, jadi selalu terisi.
+  machineId  String
   eventType  LogProduksiEventType
   occurredAt DateTime
   byId       String
   catatan    String?
-  // MATERIAL_DATANG. occurredAt dipakai sebagai aktual-tiba material di Log Pengiriman.
-  materialName        String?
-  jumlahKg            Float?
-  noSuratJalan        String?
-  // PRODUKSI_HARIAN
-  goodProduct         Int?
-  rejectCount         Int?
-  materialRemainingKg Float?
+  // PRODUKSI_HARIAN. materialUsedKg = material yang dipakai hari itu; sisa dihitung
+  // sistem sebagai Mold.estimasiKg minus akumulasi terpakai.
+  goodProduct    Int?
+  rejectCount    Int?
+  materialUsedKg Float?
   // PROGRESS_MOLDING
   progressMolding    ProgressMolding?
   keteranganProgress String?
   createdAt          DateTime         @default(now())
 
-  job Job  @relation(fields: [jobId], references: [id])
-  by  User @relation(fields: [byId], references: [id])
+  job     Job     @relation(fields: [jobId], references: [id])
+  mold    Mold    @relation(fields: [moldId], references: [id])
+  machine Machine @relation(fields: [machineId], references: [id])
+  by      User    @relation(fields: [byId], references: [id])
 
   @@index([jobId, occurredAt])
+  @@index([moldId, eventType])
+  @@index([machineId])
 }
 
-// Operational Data (Layer 1, append-only, diinput Teknisi Sundaya). Sumber hitung
-// Availability, Performance, Quality, OEE, Utilization, MTBF, MTTR, six big losses.
+// Operational Data (Layer 1, append-only, diinput Teknisi Sundaya). Sumbu waktu
+// untuk Availability dan Utilization; cycleTimeSec jadi masukan Performance.
+// Reason code six big losses tidak lagi diinput manual: setup dan maintenance
+// terbaca dari status, performance dari cycle time, quality dari Layer 2.
 model OperationalData {
-  id             String                   @id @default(cuid())
-  machineId      String
-  status         MachineOperationalStatus
-  downtimeReason DowntimeReason?
-  cycleTimeSec   Float?
-  occurredAt     DateTime
-  byId           String
-  catatan        String?
-  createdAt      DateTime                 @default(now())
+  id           String                   @id @default(cuid())
+  machineId    String
+  status       MachineOperationalStatus
+  // Durasi satu siklus molding penuh (tutup, injeksi, pendinginan, eject).
+  // Kanonik dalam detik; UI menerima dan menampilkan jam + menit + detik.
+  cycleTimeSec Float?
+  occurredAt   DateTime
+  byId         String
+  catatan      String?
+  createdAt    DateTime                 @default(now())
 
   machine Machine @relation(fields: [machineId], references: [id])
   by      User    @relation(fields: [byId], references: [id])
@@ -327,6 +413,10 @@ model Maintenance {
   type        MaintenanceType
   status      MaintenanceStatus @default(TERJADWAL)
   scheduledAt DateTime
+  // Diisi saat transisi status. Durasi startedAt sampai completedAt pada
+  // maintenance CORRECTIVE menjadi sumber MTBF dan MTTR di dashboard.
+  startedAt   DateTime?
+  completedAt DateTime?
   notes       String?
   byId        String
   createdAt   DateTime          @default(now())

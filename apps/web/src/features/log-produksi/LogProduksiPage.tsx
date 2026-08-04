@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { ClipboardList, Info, PackagePlus, Plus, Factory, Layers } from 'lucide-react'
+import { ClipboardList, Info, Plus, Factory, Layers } from 'lucide-react'
 import {
   LogProduksiEventType,
   ProgressMolding,
+  type JobMachine,
+  type JobMold,
   type CreateLogProduksiRequest,
   type Job,
   type LogProduksi,
 } from '@mold-tracker/shared'
 import { useAuth } from '../auth/authContextValue'
 import { api } from '../../lib/api'
-import { PageHeader } from '../../components/PageHeader'
 import { Button } from '../../components/ui/Button'
+import { PageHeader } from '../../components/PageHeader'
 import { Card } from '../../components/ui/Card'
 import { JobLifecycleBadge, progressMoldingLabel } from '../../components/ui/Badge'
 import { SidePanel } from '../../components/ui/SidePanel'
@@ -19,16 +21,14 @@ import { FieldGroup, SelectField, TextAreaField, TextField } from '../../compone
 import { useToast } from '../../components/ui/Toast'
 import { errorMessage } from '../../lib/errorMessage'
 import { optionalNumber, optionalText } from '../../lib/form'
-import { formatDateTime } from '../../lib/format'
+import { formatDateTime, nowLocalInput } from '../../lib/format'
 
 const eventLabel: Record<LogProduksiEventType, string> = {
-  [LogProduksiEventType.MATERIAL_DATANG]: 'Material datang',
   [LogProduksiEventType.PRODUKSI_HARIAN]: 'Produksi harian',
   [LogProduksiEventType.PROGRESS_MOLDING]: 'Progress molding',
 }
 
 const eventIcon = {
-  [LogProduksiEventType.MATERIAL_DATANG]: PackagePlus,
   [LogProduksiEventType.PRODUKSI_HARIAN]: Factory,
   [LogProduksiEventType.PROGRESS_MOLDING]: Layers,
 }
@@ -36,15 +36,12 @@ const eventIcon = {
 // Nilai <input type="datetime-local"> ('YYYY-MM-DDTHH:mm') menjadi ISO string.
 const toIso = (local: string) => new Date(local).toISOString()
 
-// Nilai awal input datetime-local: waktu sekarang menurut zona waktu pengguna.
-const nowLocal = () => {
-  const now = new Date()
-  now.setMinutes(now.getMinutes() - now.getTimezoneOffset())
-  return now.toISOString().slice(0, 16)
-}
-
-// Log Produksi (Layer 2, Admin Penyewa di lokasi Sundaya). Append-only:
-// event tidak bisa diubah atau dihapus, koreksi ditulis sebagai event baru.
+// Log Produksi (Layer 2, Admin Penyewa di lokasi Sundaya). Dua jenis event saja:
+// produksi harian dan progress molding. Kedatangan material tidak dicatat di sini
+// karena sudah ada di Log Pengiriman Manager dan Log Penerimaan Admin Sundaya.
+// Append-only: event tidak bisa diubah atau dihapus, koreksi ditulis sebagai
+// event baru. Booking meminjamkan mesin tanpa memasangkannya ke cetakan, jadi
+// tiap event wajib menyebut cetakan mana berjalan di mesin mana.
 export function LogProduksiPage() {
   const { accessToken } = useAuth()
   const toast = useToast()
@@ -93,7 +90,7 @@ export function LogProduksiPage() {
 
   if (isLoadingJobs) {
     return (
-      <div className="mx-auto max-w-screen-2xl">
+      <div className="mx-auto max-w-4xl">
         <Card>
           <CardSkeleton lines={4} />
         </Card>
@@ -103,11 +100,11 @@ export function LogProduksiPage() {
 
   if (jobs.length === 0) {
     return (
-      <div className="mx-auto max-w-screen-2xl">
+      <div className="mx-auto max-w-4xl">
         <Card>
           <div className="grid place-items-center py-14 text-center">
-            <span className="grid h-12 w-12 place-items-center text-brand-700">
-              <ClipboardList className="h-7 w-7" />
+            <span className="grid h-12 w-12 place-items-center rounded-xl bg-brand-50 text-brand-700">
+              <ClipboardList className="h-6 w-6" />
             </span>
             <p className="mt-3 text-sm font-semibold text-slate-800">Belum ada job</p>
             <p className="mt-1 max-w-sm text-sm text-slate-500">
@@ -121,13 +118,16 @@ export function LogProduksiPage() {
   }
 
   return (
-    <div className="mx-auto max-w-screen-2xl">
+    <div className="mx-auto max-w-4xl">
       <PageHeader
         breadcrumb={[{ label: 'Beranda', to: '/job' }, { label: 'Log Produksi' }]}
         title="Log Produksi"
-        description="Catat material datang, produksi harian, dan progress molding di lokasi Sundaya."
+        description="Catat produksi harian dan progress molding di lokasi Sundaya. Kedatangan material tidak dicatat di sini, sudah tercatat di Log Pengiriman dan Log Penerimaan."
         actions={
-          <Button onClick={() => setIsPanelOpen(true)} disabled={!jobId}>
+          <Button
+            onClick={() => setIsPanelOpen(true)}
+            disabled={!jobId || !activeJob?.molds.length || !activeJob?.machines.length}
+          >
             <Plus className="h-5 w-5" /> Catat event
           </Button>
         }
@@ -147,7 +147,10 @@ export function LogProduksiPage() {
             <div className="flex items-center gap-3 pb-1">
               <JobLifecycleBadge status={activeJob.lifecycle} />
               <span className="text-sm text-slate-500">
-                Mesin: {activeJob.machineNumber ?? 'belum di-assign'}
+                Mesin:{' '}
+                {activeJob.machines.length
+                  ? activeJob.machines.map((m) => m.machineNumber).join(', ')
+                  : 'belum dipinjamkan'}
               </span>
             </div>
           ) : null}
@@ -159,8 +162,8 @@ export function LogProduksiPage() {
           <CardSkeleton lines={4} />
         ) : timeline.length === 0 ? (
           <div className="grid place-items-center py-12 text-center">
-            <span className="grid h-12 w-12 place-items-center text-brand-700">
-              <ClipboardList className="h-7 w-7" />
+            <span className="grid h-12 w-12 place-items-center rounded-xl bg-brand-50 text-brand-700">
+              <ClipboardList className="h-6 w-6" />
             </span>
             <p className="mt-3 text-sm font-semibold text-slate-800">Belum ada event</p>
             <p className="mt-1 text-sm text-slate-500">Catat event pertama untuk job ini.</p>
@@ -175,7 +178,7 @@ export function LogProduksiPage() {
       </Card>
 
       <p className="mt-4 flex items-start gap-2 text-xs leading-5 text-slate-500">
-        <Info className="mt-0.5 h-4 w-4 shrink-0" />
+        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
         Event bersifat permanen dan tidak dapat diubah atau dihapus. Bila ada kekeliruan, catat
         event baru sebagai koreksi.
       </p>
@@ -183,6 +186,8 @@ export function LogProduksiPage() {
       {isPanelOpen && jobId ? (
         <LogFormPanel
           jobId={jobId}
+          molds={activeJob?.molds ?? []}
+          machines={activeJob?.machines ?? []}
           onClose={() => setIsPanelOpen(false)}
           onSaved={() => {
             setIsPanelOpen(false)
@@ -198,24 +203,27 @@ function TimelineItem({ log }: { log: LogProduksi }) {
   const Icon = eventIcon[log.eventType]
   return (
     <li className="flex gap-3 rounded-xl border border-slate-200/70 bg-white p-4 shadow-soft">
-      <span className="grid h-9 w-9 shrink-0 place-items-center text-brand-700">
-        <Icon className="h-5 w-5" />
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand-50 text-brand-700">
+        <Icon className="h-4 w-4" />
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <p className="text-sm font-semibold text-slate-900">{eventLabel[log.eventType]}</p>
+          <p className="text-sm font-semibold text-slate-900">
+            {eventLabel[log.eventType]}
+            {log.kodeMold ? (
+              <span className="ml-2 font-normal text-slate-500">
+                {log.kodeMold}
+                {log.machineNumber ? ` di mesin ${log.machineNumber}` : ''}
+              </span>
+            ) : null}
+          </p>
           <p className="text-xs text-slate-400">{formatDateTime(log.occurredAt)}</p>
         </div>
         <p className="mt-1 text-sm text-slate-600">
-          {log.eventType === LogProduksiEventType.MATERIAL_DATANG ? (
-            <>
-              {log.materialName} - {log.jumlahKg} kg
-              {log.noSuratJalan ? ` (surat jalan ${log.noSuratJalan})` : ''}
-            </>
-          ) : log.eventType === LogProduksiEventType.PRODUKSI_HARIAN ? (
+          {log.eventType === LogProduksiEventType.PRODUKSI_HARIAN ? (
             <>
               {log.goodProduct?.toLocaleString('id-ID')} baik, {log.rejectCount?.toLocaleString('id-ID')} reject
-              {log.materialRemainingKg != null ? `, sisa material ${log.materialRemainingKg} kg` : ''}
+              {log.materialUsedKg != null ? `, material terpakai ${log.materialUsedKg} kg` : ''}
             </>
           ) : (
             <>
@@ -232,10 +240,14 @@ function TimelineItem({ log }: { log: LogProduksi }) {
 
 function LogFormPanel({
   jobId,
+  molds,
+  machines,
   onClose,
   onSaved,
 }: {
   jobId: string
+  molds: JobMold[]
+  machines: JobMachine[]
   onClose: () => void
   onSaved: () => void
 }) {
@@ -244,42 +256,48 @@ function LogFormPanel({
   const [eventType, setEventType] = useState<LogProduksiEventType>(
     LogProduksiEventType.PRODUKSI_HARIAN,
   )
-  const [occurredAt, setOccurredAt] = useState(nowLocal())
+  const [moldId, setMoldId] = useState(molds[0]?.moldId ?? '')
+  const [machineId, setMachineId] = useState(machines[0]?.machineId ?? '')
+  const [occurredAt, setOccurredAt] = useState(nowLocalInput())
   const [catatan, setCatatan] = useState('')
-  // Material datang
-  const [materialName, setMaterialName] = useState('')
-  const [jumlahKg, setJumlahKg] = useState('')
-  const [noSuratJalan, setNoSuratJalan] = useState('')
   // Produksi harian
   const [goodProduct, setGoodProduct] = useState('')
   const [rejectCount, setRejectCount] = useState('')
-  const [materialRemainingKg, setMaterialRemainingKg] = useState('')
+  const [materialUsedKg, setMaterialUsedKg] = useState('')
   // Progress molding
   const [progressMolding, setProgressMolding] = useState<ProgressMolding>(ProgressMolding.ONGOING)
   const [keteranganProgress, setKeteranganProgress] = useState('')
   const [isSaving, setIsSaving] = useState(false)
 
+  const selectedMold = molds.find((m) => m.moldId === moldId)
+  // Tonase mesin adalah batas atas: cetakan ini hanya boleh jalan di mesin yang sanggup.
+  const mesinCocok = machines.filter((m) => m.tonaseTon >= (selectedMold?.tonaseTon ?? 0))
+  // Ganti cetakan bisa membuat mesin terpilih tidak sanggup lagi; jatuh ke mesin cocok
+  // pertama supaya yang dikirim selalu sama dengan yang tampil di form.
+  const mesinDipakai = mesinCocok.some((m) => m.machineId === machineId)
+    ? machineId
+    : (mesinCocok[0]?.machineId ?? '')
+
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
     setIsSaving(true)
     // Hanya field milik jenis event yang dikirim; server menolak bila wajib kosong.
-    const base = { eventType, occurredAt: toIso(occurredAt), catatan: optionalText(catatan) }
+    const base = {
+      moldId,
+      machineId: mesinDipakai,
+      eventType,
+      occurredAt: toIso(occurredAt),
+      catatan: optionalText(catatan),
+    }
     const body: CreateLogProduksiRequest =
-      eventType === LogProduksiEventType.MATERIAL_DATANG
+      eventType === LogProduksiEventType.PRODUKSI_HARIAN
         ? {
             ...base,
-            materialName: materialName.trim(),
-            jumlahKg: Number(jumlahKg),
-            noSuratJalan: optionalText(noSuratJalan),
+            goodProduct: Number(goodProduct),
+            rejectCount: Number(rejectCount),
+            materialUsedKg: optionalNumber(materialUsedKg),
           }
-        : eventType === LogProduksiEventType.PRODUKSI_HARIAN
-          ? {
-              ...base,
-              goodProduct: Number(goodProduct),
-              rejectCount: Number(rejectCount),
-              materialRemainingKg: optionalNumber(materialRemainingKg),
-            }
-          : { ...base, progressMolding, keteranganProgress: optionalText(keteranganProgress) }
+        : { ...base, progressMolding, keteranganProgress: optionalText(keteranganProgress) }
 
     try {
       await api.createLog(accessToken, jobId, body)
@@ -300,6 +318,31 @@ function LogFormPanel({
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         <SelectField
+          label="Cetakan"
+          value={moldId}
+          onChange={setMoldId}
+          options={molds.map((m) => ({
+            value: m.moldId,
+            label: `${m.kodeMold} - ${m.namaProduk}`,
+          }))}
+        />
+        {selectedMold ? (
+          <div className="flex items-start gap-2 rounded-lg bg-brand-50/70 px-3 py-2.5 text-xs leading-5 text-brand-900 ring-1 ring-inset ring-brand-600/10">
+            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>
+              Plan cetakan ini adalah batas maksimal:{' '}
+              {selectedMold.targetOutput != null
+                ? `target ${selectedMold.targetOutput} pcs`
+                : 'target belum ditentukan'}
+              {selectedMold.estimasiKg != null
+                ? `, material ${selectedMold.estimasiKg} kg`
+                : ', material tanpa batas'}
+              . Server menolak catatan yang melewati batas dan menyebutkan sisa kuotanya.
+            </span>
+          </div>
+        ) : null}
+
+        <SelectField
           label="Jenis event"
           value={eventType}
           onChange={setEventType}
@@ -308,30 +351,46 @@ function LogFormPanel({
             label: eventLabel[type],
           }))}
         />
-        <TextField label="Waktu kejadian" type="datetime-local" value={occurredAt} onChange={setOccurredAt} />
 
-        {eventType === LogProduksiEventType.MATERIAL_DATANG ? (
-          <>
-            <TextField label="Nama material" value={materialName} onChange={setMaterialName} />
-            <FieldGroup>
-              <TextField label="Jumlah (kg)" type="number" min={0} step="0.1" value={jumlahKg} onChange={setJumlahKg} />
-              <TextField label="No. surat jalan" required={false} value={noSuratJalan} onChange={setNoSuratJalan} />
-            </FieldGroup>
-          </>
-        ) : eventType === LogProduksiEventType.PRODUKSI_HARIAN ? (
+        {mesinCocok.length ? (
+          <SelectField
+            label="Mesin yang dipakai"
+            value={mesinDipakai}
+            onChange={setMachineId}
+            options={mesinCocok.map((m) => ({
+              value: m.machineId,
+              label: `${m.machineNumber} (${m.tonaseTon} ton)`,
+            }))}
+          />
+        ) : (
+          <p className="rounded-lg bg-rose-50 px-3 py-2.5 text-xs leading-5 text-rose-700 ring-1 ring-inset ring-rose-600/15">
+            Tidak ada mesin pinjaman yang sanggup cetakan ini
+            {selectedMold ? ` (butuh ${selectedMold.tonaseTon} ton)` : ''}. Hubungi Sundaya.
+          </p>
+        )}
+
+        <TextField
+          label="Waktu kejadian"
+          type="datetime-local"
+          value={occurredAt}
+          onChange={setOccurredAt}
+          max={nowLocalInput()}
+        />
+
+        {eventType === LogProduksiEventType.PRODUKSI_HARIAN ? (
           <>
             <FieldGroup>
               <TextField label="Produk baik" type="number" min={0} value={goodProduct} onChange={setGoodProduct} />
               <TextField label="Reject" type="number" min={0} value={rejectCount} onChange={setRejectCount} />
             </FieldGroup>
             <TextField
-              label="Sisa material (kg)"
+              label="Material terpakai hari ini (kg)"
               type="number"
               min={0}
               step="0.1"
               required={false}
-              value={materialRemainingKg}
-              onChange={setMaterialRemainingKg}
+              value={materialUsedKg}
+              onChange={setMaterialUsedKg}
             />
           </>
         ) : (
@@ -360,7 +419,7 @@ function LogFormPanel({
           <Button type="button" variant="secondary" onClick={onClose}>
             Batal
           </Button>
-          <Button type="submit" disabled={isSaving}>
+          <Button type="submit" disabled={isSaving || !mesinDipakai}>
             {isSaving ? 'Menyimpan...' : 'Catat event'}
           </Button>
         </div>

@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react'
 import {
-  DeliveryStatus,
   ExtensionStatus,
   JobLifecycle,
   MachineOperationalStatus,
@@ -48,24 +47,18 @@ export function Badge({ tone = 'slate', children }: { tone?: BadgeTone; children
 // --- Mesin (ketersediaan/rental) ---
 const machineStatusTone: Record<MachineStatus, BadgeTone> = {
   [MachineStatus.TERSEDIA]: 'emerald',
-  [MachineStatus.DIAJUKAN]: 'amber',
   [MachineStatus.DIKONFIRMASI]: 'sky',
-  [MachineStatus.DIKIRIM]: 'sky',
   [MachineStatus.AKTIF]: 'brand',
-  [MachineStatus.SELESAI_SEWA]: 'amber',
-  [MachineStatus.DIKEMBALIKAN]: 'amber',
   [MachineStatus.PENGECEKAN]: 'amber',
   [MachineStatus.MAINTENANCE]: 'rose',
 }
 
+// Label menyebut kondisi mesin di lantai Sundaya, bukan posisi pengiriman:
+// mesin tidak pernah keluar dari sini.
 export const machineStatusLabel: Record<MachineStatus, string> = {
   [MachineStatus.TERSEDIA]: 'Tersedia',
-  [MachineStatus.DIAJUKAN]: 'Diajukan',
-  [MachineStatus.DIKONFIRMASI]: 'Dikonfirmasi',
-  [MachineStatus.DIKIRIM]: 'Dikirim',
-  [MachineStatus.AKTIF]: 'Aktif',
-  [MachineStatus.SELESAI_SEWA]: 'Selesai Sewa',
-  [MachineStatus.DIKEMBALIKAN]: 'Dikembalikan',
+  [MachineStatus.DIKONFIRMASI]: 'Disiapkan untuk booking',
+  [MachineStatus.AKTIF]: 'Dipakai booking',
   [MachineStatus.PENGECEKAN]: 'Pengecekan',
   [MachineStatus.MAINTENANCE]: 'Maintenance',
 }
@@ -79,7 +72,6 @@ const machineOperationalTone: Record<MachineOperationalStatus, BadgeTone> = {
   [MachineOperationalStatus.RUNNING]: 'emerald',
   [MachineOperationalStatus.SETUP]: 'sky',
   [MachineOperationalStatus.STANDBY]: 'slate',
-  [MachineOperationalStatus.BREAKDOWN]: 'rose',
   [MachineOperationalStatus.MAINTENANCE]: 'amber',
 }
 
@@ -87,7 +79,6 @@ export const machineOperationalStatusLabel: Record<MachineOperationalStatus, str
   [MachineOperationalStatus.RUNNING]: 'Running',
   [MachineOperationalStatus.SETUP]: 'Setup',
   [MachineOperationalStatus.STANDBY]: 'Standby',
-  [MachineOperationalStatus.BREAKDOWN]: 'Breakdown',
   [MachineOperationalStatus.MAINTENANCE]: 'Maintenance',
 }
 
@@ -117,21 +108,17 @@ const jobLifecycleTone: Record<JobLifecycle, BadgeTone> = {
   [JobLifecycle.DIAJUKAN]: 'amber',
   [JobLifecycle.DITOLAK]: 'rose',
   [JobLifecycle.DIKONFIRMASI]: 'sky',
-  [JobLifecycle.DIKIRIM]: 'sky',
   [JobLifecycle.AKTIF]: 'brand',
-  [JobLifecycle.SELESAI_SEWA]: 'amber',
-  [JobLifecycle.DIKEMBALIKAN]: 'amber',
   [JobLifecycle.SELESAI]: 'emerald',
 }
 
+// Label menjelaskan posisi booking dalam alur, supaya pembaca tahu apa artinya
+// tanpa harus hafal urutan status.
 export const jobLifecycleLabel: Record<JobLifecycle, string> = {
-  [JobLifecycle.DIAJUKAN]: 'Diajukan',
+  [JobLifecycle.DIAJUKAN]: 'Menunggu approval',
   [JobLifecycle.DITOLAK]: 'Ditolak',
-  [JobLifecycle.DIKONFIRMASI]: 'Dikonfirmasi',
-  [JobLifecycle.DIKIRIM]: 'Dikirim',
-  [JobLifecycle.AKTIF]: 'Aktif',
-  [JobLifecycle.SELESAI_SEWA]: 'Selesai Sewa',
-  [JobLifecycle.DIKEMBALIKAN]: 'Dikembalikan',
+  [JobLifecycle.DIKONFIRMASI]: 'Disetujui, menunggu cetakan',
+  [JobLifecycle.AKTIF]: 'Berjalan',
   [JobLifecycle.SELESAI]: 'Selesai',
 }
 
@@ -159,53 +146,24 @@ export function ExtensionStatusBadge({ status }: { status: ExtensionStatus }) {
 // --- Mold tracking (fisik cetakan) ---
 const moldTrackingTone: Record<MoldTrackingStatus, BadgeTone> = {
   [MoldTrackingStatus.PLANNING]: 'slate',
-  [MoldTrackingStatus.READY_DELIVERY]: 'amber',
   [MoldTrackingStatus.DELIVERY]: 'sky',
   [MoldTrackingStatus.RECEIVED]: 'sky',
-  [MoldTrackingStatus.WAITING_PRODUCTION]: 'amber',
-  [MoldTrackingStatus.ON_MACHINE]: 'brand',
   [MoldTrackingStatus.PRODUCTION]: 'brand',
-  [MoldTrackingStatus.REPAIR]: 'rose',
   [MoldTrackingStatus.SEND_BACK]: 'amber',
   [MoldTrackingStatus.COMPLETED]: 'emerald',
 }
 
 export const moldTrackingLabel: Record<MoldTrackingStatus, string> = {
   [MoldTrackingStatus.PLANNING]: 'Planning',
-  [MoldTrackingStatus.READY_DELIVERY]: 'Ready Delivery',
   [MoldTrackingStatus.DELIVERY]: 'Delivery',
   [MoldTrackingStatus.RECEIVED]: 'Received',
-  [MoldTrackingStatus.WAITING_PRODUCTION]: 'Waiting Production',
-  [MoldTrackingStatus.ON_MACHINE]: 'On Machine',
-  [MoldTrackingStatus.PRODUCTION]: 'Production',
-  [MoldTrackingStatus.REPAIR]: 'Repair',
+  [MoldTrackingStatus.PRODUCTION]: 'On Machine (Production)',
   [MoldTrackingStatus.SEND_BACK]: 'Send Back',
   [MoldTrackingStatus.COMPLETED]: 'Completed',
 }
 
 export function MoldTrackingBadge({ status }: { status: MoldTrackingStatus }) {
   return <Badge tone={moldTrackingTone[status]}>{moldTrackingLabel[status]}</Badge>
-}
-
-// --- Delivery status (Log Pengiriman, dihitung) ---
-const deliveryTone: Record<DeliveryStatus, BadgeTone> = {
-  [DeliveryStatus.DIRENCANAKAN]: 'slate',
-  [DeliveryStatus.DIKIRIM]: 'sky',
-  [DeliveryStatus.TIBA_ONTIME]: 'emerald',
-  [DeliveryStatus.TIBA_TERLAMBAT]: 'amber',
-  [DeliveryStatus.BELUM_TIBA]: 'rose',
-}
-
-export const deliveryLabel: Record<DeliveryStatus, string> = {
-  [DeliveryStatus.DIRENCANAKAN]: 'Direncanakan',
-  [DeliveryStatus.DIKIRIM]: 'Dikirim',
-  [DeliveryStatus.TIBA_ONTIME]: 'Tiba On-time',
-  [DeliveryStatus.TIBA_TERLAMBAT]: 'Tiba Terlambat',
-  [DeliveryStatus.BELUM_TIBA]: 'Belum Tiba',
-}
-
-export function DeliveryStatusBadge({ status }: { status: DeliveryStatus }) {
-  return <Badge tone={deliveryTone[status]}>{deliveryLabel[status]}</Badge>
 }
 
 // --- Progress molding (Layer 2) ---
