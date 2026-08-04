@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { Boxes, Eye, Pencil, Plus } from 'lucide-react'
-import type { CreateMoldRequest, Mold, MoldPlanRow, UpdateMoldRequest } from '@mold-tracker/shared'
+import { Boxes, Eye, PackageCheck, Pencil, Plus } from 'lucide-react'
+import {
+  MoldTrackingStatus,
+  type CreateMoldRequest,
+  type Mold,
+  type MoldPlanRow,
+  type UpdateMoldRequest,
+} from '@mold-tracker/shared'
 import { useAuth } from '../auth/authContextValue'
 import { api } from '../../lib/api'
 import { Button } from '../../components/ui/Button'
@@ -50,8 +56,10 @@ const formFromMold = (mold: Mold): FormState => ({
   targetOutput: mold.targetOutput != null ? String(mold.targetOutput) : '',
 })
 
-// Cetakan (Mold) - CRUD milik Manager Penyewa. Cetakan baru berstatus PLANNING;
-// transisi tracking dilakukan sisi Sundaya, bukan di sini.
+// Cetakan (Mold) - CRUD milik Manager Penyewa. Cetakan baru berstatus PLANNING dan
+// bergerak sendiri mengikuti event domain. Satu-satunya tombol status di sini adalah
+// konfirmasi cetakan sudah diterima kembali: itu approval milik penyewa, ditekan per
+// cetakan, dan cetakan terakhir yang dikonfirmasi sekaligus menutup booking-nya.
 export function MoldsPage() {
   const { accessToken } = useAuth()
   const toast = useToast()
@@ -61,6 +69,7 @@ export function MoldsPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [panel, setPanel] = useState<{ mode: 'create' } | { mode: 'edit'; mold: Mold } | null>(null)
   const [detailMoldId, setDetailMoldId] = useState<string | null>(null)
+  const [pendingId, setPendingId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setIsLoading(true)
@@ -85,6 +94,26 @@ export function MoldsPage() {
 
   const planByMoldId = useMemo(() => new Map(plan.map((row) => [row.moldId, row])), [plan])
   const detailRow = detailMoldId ? planByMoldId.get(detailMoldId) : undefined
+  const menungguKonfirmasi = molds.filter(
+    (m) => m.trackingStatus === MoldTrackingStatus.SEND_BACK,
+  )
+
+  // Approval pengembalian: penyewa menyatakan cetakan ini benar-benar sudah sampai
+  // kembali. Server yang menutup booking-nya kalau ini cetakan terakhir.
+  const konfirmasiDiterima = async (mold: Mold) => {
+    setPendingId(mold.id)
+    try {
+      await api.updateMoldTracking(accessToken, mold.id, {
+        status: MoldTrackingStatus.COMPLETED,
+      })
+      toast.success(`Cetakan ${mold.kodeMold} dikonfirmasi sudah diterima kembali`)
+      void load()
+    } catch (caught) {
+      toast.error(errorMessage(caught, 'Gagal mengonfirmasi penerimaan cetakan'))
+    } finally {
+      setPendingId(null)
+    }
+  }
 
   const columns: Column<Mold>[] = [
     { header: 'Kode', cell: (m) => <span className="font-semibold text-slate-900">{m.kodeMold}</span> },
@@ -115,6 +144,15 @@ export function MoldsPage() {
       className: 'text-right',
       cell: (m) => (
         <div className="flex justify-end gap-2">
+          {m.trackingStatus === MoldTrackingStatus.SEND_BACK ? (
+            <Button
+              size="sm"
+              disabled={pendingId === m.id}
+              onClick={() => void konfirmasiDiterima(m)}
+            >
+              <PackageCheck className="h-3.5 w-3.5" /> Sudah saya terima
+            </Button>
+          ) : null}
           <Button size="sm" variant="secondary" onClick={() => setDetailMoldId(m.id)}>
             <Eye className="h-3.5 w-3.5" /> Detail
           </Button>
@@ -139,6 +177,17 @@ export function MoldsPage() {
           <Plus className="h-4 w-4" /> Tambah cetakan
         </Button>
       </div>
+
+      {menungguKonfirmasi.length > 0 ? (
+        <div className="mb-5 flex items-start gap-2 rounded-xl bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900 ring-1 ring-inset ring-amber-600/15">
+          <PackageCheck className="mt-1 h-4 w-4 shrink-0" />
+          <span>
+            {menungguKonfirmasi.map((m) => m.kodeMold).join(', ')} sudah selesai produksi dan
+            dikirim balik oleh Sundaya. Tekan <strong>Sudah saya terima</strong> pada baris cetakan
+            begitu barangnya sampai. Booking baru tertutup setelah semua cetakannya dikonfirmasi.
+          </span>
+        </div>
+      ) : null}
 
       <Card>
         {isLoading ? (

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowRight, Boxes, ClipboardList, Factory, Gauge, Layers, PackagePlus } from 'lucide-react'
+import { ArrowRight, Boxes, ClipboardList, Factory, Gauge, Layers } from 'lucide-react'
 import { LogProduksiEventType, type JobDashboard, type JobLogEntry } from '@mold-tracker/shared'
 import { useAuth } from '../auth/authContextValue'
 import { api } from '../../lib/api'
@@ -13,13 +13,11 @@ import { errorMessage } from '../../lib/errorMessage'
 import { formatDate, formatDateTime, formatNumber, formatSisaHari } from '../../lib/format'
 
 const eventLabel: Record<LogProduksiEventType, string> = {
-  [LogProduksiEventType.MATERIAL_DATANG]: 'Material datang',
   [LogProduksiEventType.PRODUKSI_HARIAN]: 'Produksi harian',
   [LogProduksiEventType.PROGRESS_MOLDING]: 'Progress molding',
 }
 
 const eventIcon = {
-  [LogProduksiEventType.MATERIAL_DATANG]: PackagePlus,
   [LogProduksiEventType.PRODUKSI_HARIAN]: Factory,
   [LogProduksiEventType.PROGRESS_MOLDING]: Layers,
 }
@@ -38,8 +36,6 @@ const logSubjek = (log: JobLogEntry) =>
 // Ringkasan satu baris per event, sama seperti timeline di halaman Log Produksi.
 const logSummary = (log: JobLogEntry) => {
   switch (log.eventType) {
-    case LogProduksiEventType.MATERIAL_DATANG:
-      return `${log.materialName ?? '-'} - ${log.jumlahKg ?? 0} kg${log.noSuratJalan ? ` (surat jalan ${log.noSuratJalan})` : ''}`
     case LogProduksiEventType.PRODUKSI_HARIAN:
       return `${formatNumber(log.goodProduct ?? 0)} baik, ${formatNumber(log.rejectCount ?? 0)} reject${
         log.materialUsedKg != null ? `, material terpakai ${log.materialUsedKg} kg` : ''

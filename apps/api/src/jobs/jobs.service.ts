@@ -54,8 +54,8 @@ const withDetails = {
 
 type JobWithDetails = Prisma.JobGetPayload<typeof withDetails>;
 
-// Lifecycle yang masih boleh menerima atau melepas mesin: sebelum mesin dikirim ke
-// lokasi penyewa. Sesudah itu susunan mesin booking dianggap final.
+// Lifecycle yang masih boleh menerima atau melepas mesin: selama booking belum
+// berjalan. Begitu cetakan tiba dan job AKTIF, susunan mesinnya dianggap final.
 const BOLEH_UBAH_MESIN: JobLifecycle[] = [JobLifecycle.DIAJUKAN, JobLifecycle.DIKONFIRMASI];
 
 const detailJob = (j: JobWithDetails) => toJob(j, j.molds, j.machines, j.extensions);
@@ -148,7 +148,7 @@ export class JobsService {
     if (!job) throw new NotFoundException('Job tidak ditemukan');
     if (!BOLEH_UBAH_MESIN.includes(job.lifecycle as unknown as JobLifecycle)) {
       throw new ConflictException(
-        `Mesin hanya bisa ditambah sebelum dikirim (lifecycle sekarang ${job.lifecycle})`,
+        `Mesin hanya bisa ditambah selama booking belum berjalan (status sekarang ${job.lifecycle})`,
       );
     }
     if (!job.molds.length) throw new ConflictException('Booking belum memuat cetakan');
@@ -173,11 +173,7 @@ export class JobsService {
 
     const konfirmasiPertama = job.lifecycle === asLifecycle(JobLifecycle.DIAJUKAN);
     if (konfirmasiPertama) nextJobLifecycle(JobLifecycle.DIAJUKAN, JobLifecycle.DIKONFIRMASI);
-    const nextMachine = machineWalk(
-      MachineStatus.TERSEDIA,
-      MachineStatus.DIAJUKAN,
-      MachineStatus.DIKONFIRMASI,
-    );
+    const nextMachine = machineWalk(MachineStatus.TERSEDIA, MachineStatus.DIKONFIRMASI);
 
     // Status mesin disetel lebih dulu supaya job.update yang memuat relasi mesin
     // membaca status yang sudah baru (operasi array $transaction berjalan berurutan).
@@ -204,7 +200,7 @@ export class JobsService {
     return detailJob(updated as JobWithDetails);
   }
 
-  // ADMIN_SUNDAYA menarik satu mesin dari booking yang belum dikirim, mis. salah pilih
+  // ADMIN_SUNDAYA menarik satu mesin dari booking yang belum berjalan, mis. salah pilih
   // atau menukar dengan mesin lain. Mesin kembali TERSEDIA. Mesin terakhir tidak boleh
   // dilepas: booking tanpa mesin sama dengan booking yang tidak disetujui, dan jalur
   // untuk itu adalah reject. Menukar mesin tunggal dilakukan dengan menambah dulu, baru
@@ -217,7 +213,7 @@ export class JobsService {
     if (!job) throw new NotFoundException('Job tidak ditemukan');
     if (!BOLEH_UBAH_MESIN.includes(job.lifecycle as unknown as JobLifecycle)) {
       throw new ConflictException(
-        `Mesin hanya bisa dilepas sebelum dikirim (lifecycle sekarang ${job.lifecycle})`,
+        `Mesin hanya bisa dilepas selama booking belum berjalan (status sekarang ${job.lifecycle})`,
       );
     }
     const machine = job.machines.find((m) => m.id === machineId);
@@ -268,54 +264,10 @@ export class JobsService {
     return detailJob(updated);
   }
 
-  // Transisi pasca-assign (ADMIN_SUNDAYA). Mesin sudah ter-assign, berjalan lockstep.
-  ship(_user: PrismaUser, id: string): Promise<Job> {
-    return this.advance(id, {
-      from: JobLifecycle.DIKONFIRMASI,
-      to: JobLifecycle.DIKIRIM,
-      machinePath: [MachineStatus.DIKIRIM],
-      data: { shippedAt: new Date() },
-    });
-  }
-
-  activate(_user: PrismaUser, id: string): Promise<Job> {
-    return this.advance(id, {
-      from: JobLifecycle.DIKIRIM,
-      to: JobLifecycle.AKTIF,
-      machinePath: [MachineStatus.AKTIF],
-      // Durasi sewa penuh dimulai saat mesin benar-benar aktif, bukan dari startDate rencana.
-      data: (job) => {
-        const now = new Date();
-        return { receivedAt: now, startDate: now, endDate: addDays(now, job.requestedDurationDays) };
-      },
-    });
-  }
-
-  return(_user: PrismaUser, id: string): Promise<Job> {
-    return this.advance(id, {
-      from: JobLifecycle.AKTIF,
-      to: JobLifecycle.SELESAI_SEWA,
-      machinePath: [MachineStatus.SELESAI_SEWA],
-      data: { returnedAt: new Date() },
-    });
-  }
-
-  collect(_user: PrismaUser, id: string): Promise<Job> {
-    return this.advance(id, {
-      from: JobLifecycle.SELESAI_SEWA,
-      to: JobLifecycle.DIKEMBALIKAN,
-      machinePath: [MachineStatus.DIKEMBALIKAN],
-    });
-  }
-
-  // Selesai: mesin lewat PENGECEKAN kembali ke TERSEDIA (jalur maintenance ditangani modul Maintenance).
-  complete(_user: PrismaUser, id: string): Promise<Job> {
-    return this.advance(id, {
-      from: JobLifecycle.DIKEMBALIKAN,
-      to: JobLifecycle.SELESAI,
-      machinePath: [MachineStatus.PENGECEKAN, MachineStatus.TERSEDIA],
-    });
-  }
+  // Tidak ada tombol lifecycle lain di modul ini. Setelah booking dikonfirmasi,
+  // job berjalan mengikuti kenyataan fisik: AKTIF saat cetakan pertama diterima
+  // Sundaya (Log Penerimaan), SELESAI saat seluruh cetakan sudah kembali ke
+  // penyewa (Mold Tracking). Keduanya di jobs/job-transitions.ts.
 
   // MANAGER_PENYEWA mengajukan perpanjangan sewa. Hanya job yang mesinnya sedang
   // dipakai (AKTIF) yang relevan, dan satu pengajuan terbuka pada satu waktu agar
@@ -407,50 +359,6 @@ export class JobsService {
       endDate: e.job.endDate?.toISOString() ?? null,
       sisaHariSewa: remainingDays(e.job.endDate, now),
     }));
-  }
-
-  // Jalur bersama transisi lifecycle + seluruh mesin booking dalam satu transaksi.
-  // Semua mesin booking berjalan lockstep dengan lifecycle job-nya. data boleh fungsi
-  // bila butuh field job yang baru termuat (mis. requestedDurationDays).
-  private async advance(
-    id: string,
-    step: {
-      from: JobLifecycle;
-      to: JobLifecycle;
-      machinePath: MachineStatus[];
-      data?:
-        | Prisma.JobUpdateInput
-        | ((job: { requestedDurationDays: number }) => Prisma.JobUpdateInput);
-    },
-  ): Promise<Job> {
-    const job = await this.prisma.job.findUnique({ where: { id }, ...withDetails });
-    if (!job) throw new NotFoundException('Job tidak ditemukan');
-    this.assertLifecycle(job.lifecycle, step.from);
-    if (!job.machines.length) {
-      throw new ConflictException('Job belum memiliki mesin ter-assign');
-    }
-    nextJobLifecycle(step.from, step.to);
-    // Tiap mesin divalidasi dari statusnya sendiri; satu langkah tak sah membatalkan
-    // seluruh transisi sebelum ada tulisan ke DB.
-    const nextMachines = job.machines.map((m) => ({
-      id: m.id,
-      status: asMachineStatus(machineWalk(m.status as unknown as MachineStatus, ...step.machinePath)),
-    }));
-    const data = typeof step.data === 'function' ? step.data(job) : (step.data ?? {});
-
-    // Mesin lebih dulu, job terakhir: job.update memuat relasi mesin, jadi harus
-    // membaca status yang sudah baru.
-    const ops = await this.prisma.$transaction([
-      ...nextMachines.map((m) =>
-        this.prisma.machine.update({ where: { id: m.id }, data: { status: m.status } }),
-      ),
-      this.prisma.job.update({
-        where: { id: job.id },
-        data: { ...data, lifecycle: asLifecycle(step.to) },
-        ...withDetails,
-      }),
-    ]);
-    return detailJob(ops.at(-1) as JobWithDetails);
   }
 
   private tenantScope(user: PrismaUser): Prisma.JobWhereInput {

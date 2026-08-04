@@ -33,10 +33,7 @@ const AKTIF = JobLifecycle.AKTIF as unknown as $Enums.JobLifecycle;
 // cycle production dashboard Manager.
 const BERJALAN = [
   JobLifecycle.DIKONFIRMASI,
-  JobLifecycle.DIKIRIM,
   JobLifecycle.AKTIF,
-  JobLifecycle.SELESAI_SEWA,
-  JobLifecycle.DIKEMBALIKAN,
 ] as unknown as $Enums.JobLifecycle[];
 
 @Injectable()

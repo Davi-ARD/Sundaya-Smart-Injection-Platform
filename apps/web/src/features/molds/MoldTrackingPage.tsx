@@ -26,11 +26,14 @@ const AUTO_TRIGGER: Partial<Record<MoldTrackingStatus, string>> = {
   [MoldTrackingStatus.DELIVERY]: 'Saat Manager mencatat Log Pengiriman cetakan',
   [MoldTrackingStatus.RECEIVED]: 'Saat Sundaya mencatat Log Penerimaan cetakan',
   [MoldTrackingStatus.PRODUCTION]: 'Saat Admin Penyewa mencatat produksi harian pertama',
+  [MoldTrackingStatus.SEND_BACK]: 'Ditekan Admin Sundaya saat produksi selesai',
+  [MoldTrackingStatus.COMPLETED]: 'Saat penyewa mengonfirmasi cetakan sudah diterima kembali',
 }
 
 // Mold Tracking (staf Sundaya): papan status fisik cetakan. Empat status pertama
-// bergerak otomatis dari event domain; hanya Send Back dan Completed yang ditekan
-// manual, dan hanya oleh Admin Sundaya.
+// bergerak otomatis dari event domain. Status kelima ditekan Admin Sundaya, dan
+// status terakhir bukan wewenang Sundaya: yang menyatakan cetakan sudah sampai
+// kembali adalah penyewa pemiliknya, lewat tab Cetakan mereka.
 export function MoldTrackingPage() {
   const { accessToken, user } = useAuth()
   const toast = useToast()
@@ -64,11 +67,14 @@ export function MoldTrackingPage() {
     [molds],
   )
 
-  // Tombol hanya muncul untuk transisi manual (Send Back, Completed) dan hanya
-  // bila status berikutnya menurut peta memang transisi manual itu.
+  // Halaman ini cuma menampilkan tombol milik Admin Sundaya, yaitu Send Back.
+  // Completed sengaja tidak muncul di sini walau ada di peta transisi: approval
+  // pengembalian datang dari penyewa, bukan dari Sundaya.
   const manualNext = (from: MoldTrackingStatus): MoldTrackingStatus | null => {
     if (!canClose) return null
-    const next = MOLD_TRACKING_FLOW[from].find((to) => MOLD_MANUAL_TRANSITIONS.includes(to))
+    const next = MOLD_TRACKING_FLOW[from].find(
+      (to) => MOLD_MANUAL_TRANSITIONS[to] === Role.ADMIN_SUNDAYA,
+    )
     return next ?? null
   }
 
@@ -122,14 +128,12 @@ export function MoldTrackingPage() {
                   </span>
                 </div>
                 <p className="mb-2 flex items-start gap-1 px-1 text-[11px] leading-4 text-slate-400">
-                  {trigger ? (
-                    <>
-                      <Lock className="mt-0.5 h-3 w-3 shrink-0" />
-                      {trigger}
-                    </>
-                  ) : (
-                    'Ditutup manual Admin Sundaya'
+                  {/* Kolom yang tidak bisa ditekan dari sini diberi gembok supaya
+                      jelas status itu menyusul kejadian, bukan menunggu diklik. */}
+                  {column.status === MoldTrackingStatus.SEND_BACK ? null : (
+                    <Lock className="mt-0.5 h-3 w-3 shrink-0" />
                   )}
+                  {trigger}
                 </p>
                 <div className="space-y-3">
                   {column.molds.map((mold) => {
@@ -150,8 +154,13 @@ export function MoldTrackingPage() {
                             disabled={pendingId === mold.id}
                             onClick={() => void transition(mold, next)}
                           >
-                            {next === MoldTrackingStatus.SEND_BACK ? 'Selesai produksi' : 'Selesai'}
+                            Selesai produksi, kirim balik
                           </Button>
+                        ) : null}
+                        {mold.trackingStatus === MoldTrackingStatus.SEND_BACK ? (
+                          <p className="mt-3 text-xs text-amber-700">
+                            Menunggu penyewa mengonfirmasi cetakan sudah diterima.
+                          </p>
                         ) : null}
                       </div>
                     )
@@ -170,8 +179,10 @@ export function MoldTrackingPage() {
 
       <p className="mt-2 flex items-start gap-2 text-xs leading-5 text-slate-500">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-        Tombol Selesai produksi memindahkan cetakan ke Send Back (siap dikirim balik), lalu tombol
-        Selesai menutup siklus menjadi Completed.
+        Tombol Selesai produksi memindahkan cetakan ke Send Back dan memberi tahu penyewa. Siklus
+        baru tertutup menjadi Completed setelah penyewa sendiri mengonfirmasi cetakan itu sudah
+        sampai kembali, satu konfirmasi per cetakan. Booking ikut selesai otomatis begitu seluruh
+        cetakannya terkonfirmasi.
       </p>
     </div>
   )

@@ -201,7 +201,7 @@ describe('DashboardPenyewaService.jobLogs', () => {
         id: 'l1',
         jobId: 'j1',
         moldId: 'md-1',
-        eventType: LogProduksiEventType.MATERIAL_DATANG,
+        eventType: LogProduksiEventType.PRODUKSI_HARIAN,
         occurredAt: new Date('2026-08-12T09:30:00Z'),
         createdAt: new Date('2026-08-12T09:31:00Z'),
         progressMolding: null,

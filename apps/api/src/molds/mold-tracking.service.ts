@@ -2,6 +2,8 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { $Enums, Prisma, User as PrismaUser } from '@prisma/client';
 import { Mold, MoldTrackingStatus, Role } from '@mold-tracker/shared';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { completeJobIfAllMoldsReturned } from '../jobs/job-transitions';
 import { toMold } from './mold.mapper';
 import { assertManualTransition, assertMoldTransition, moldRank } from './mold-tracking-state';
 import { UpdateMoldTrackingDto } from './mold-tracking.dto';
@@ -11,28 +13,57 @@ const asTracking = (s: MoldTrackingStatus) => s as unknown as $Enums.MoldTrackin
 
 @Injectable()
 export class MoldTrackingService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notifications: NotificationsService,
+  ) {}
 
-  // Transisi manual penutup siklus (ADMIN_SUNDAYA): PRODUCTION -> SEND_BACK ->
-  // COMPLETED. Status sebelumnya digerakkan otomatis lewat advance() dari event
-  // domain, jadi endpoint ini menolak status yang seharusnya otomatis.
+  // Dua transisi penutup siklus, masing-masing punya pemilik tombol sendiri:
+  // PRODUCTION -> SEND_BACK ditekan Admin Sundaya (produksi selesai, cetakan
+  // dikirim balik), SEND_BACK -> COMPLETED ditekan Manager Penyewa pemilik
+  // cetakan sebagai approval bahwa cetakan sudah sampai kembali. Status
+  // sebelumnya digerakkan otomatis lewat advance() dari event domain, jadi
+  // endpoint ini menolak status yang seharusnya otomatis.
+  //
+  // Cetakan terakhir sebuah booking yang dikonfirmasi kembali sekaligus menutup
+  // booking itu (job SELESAI, mesinnya masuk pengecekan) dalam transaksi yang sama.
   async transition(user: PrismaUser, moldId: string, dto: UpdateMoldTrackingDto): Promise<Mold> {
     const mold = await this.prisma.mold.findUnique({ where: { id: moldId } });
     if (!mold) throw new NotFoundException('Cetakan tidak ditemukan');
 
     const from = mold.trackingStatus as unknown as MoldTrackingStatus;
     assertManualTransition(user.role as Role, dto.status);
+    // Cetakan tenant lain sama dengan tidak ada: jangan bocorkan keberadaannya.
+    if (user.role === Role.MANAGER_PENYEWA && mold.managerId !== user.id) {
+      throw new NotFoundException('Cetakan tidak ditemukan');
+    }
     assertMoldTransition(from, dto.status);
 
-    const [updated] = await this.prisma.$transaction([
-      this.prisma.mold.update({
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.mold.update({
         where: { id: moldId },
         data: { trackingStatus: asTracking(dto.status) },
-      }),
-      this.prisma.moldTrackingEvent.create({
+      });
+      await tx.moldTrackingEvent.create({
         data: { moldId, status: asTracking(dto.status), byId: user.id },
-      }),
-    ]);
+      });
+      if (dto.status === MoldTrackingStatus.COMPLETED && row.jobId) {
+        await completeJobIfAllMoldsReturned(tx, row.jobId);
+      }
+      return row;
+    });
+
+    // Hanya arah Sundaya ke penyewa yang diberi notifikasi: cuma di sisi itu ada
+    // tindakan yang harus menyusul (konfirmasi terima). Arah sebaliknya sudah
+    // terbaca sendiri di papan tracking dan menutup booking tanpa campur tangan.
+    if (dto.status === MoldTrackingStatus.SEND_BACK) {
+      await this.notifications.create(
+        updated.managerId,
+        'Cetakan dikirim balik',
+        `Produksi cetakan ${updated.kodeMold} sudah selesai dan cetakan dikirim kembali. Konfirmasi di tab Cetakan begitu barang sampai.`,
+        '/molds',
+      );
+    }
     return toMold(updated);
   }
 
