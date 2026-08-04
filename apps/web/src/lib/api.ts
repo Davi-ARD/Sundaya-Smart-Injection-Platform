@@ -232,25 +232,9 @@ export const api = {
     return request<Job>('PATCH', `/jobs/${id}/reject`, token, body)
   },
 
-  async shipJob(token: string | null, id: string): Promise<Job> {
-    return request<Job>('PATCH', `/jobs/${id}/ship`, token)
-  },
-
-  async activateJob(token: string | null, id: string): Promise<Job> {
-    return request<Job>('PATCH', `/jobs/${id}/activate`, token)
-  },
-
-  async returnJob(token: string | null, id: string): Promise<Job> {
-    return request<Job>('PATCH', `/jobs/${id}/return`, token)
-  },
-
-  async collectJob(token: string | null, id: string): Promise<Job> {
-    return request<Job>('PATCH', `/jobs/${id}/collect`, token)
-  },
-
-  async completeJob(token: string | null, id: string): Promise<Job> {
-    return request<Job>('PATCH', `/jobs/${id}/complete`, token)
-  },
+  // Tidak ada endpoint kirim/aktifkan/selesaikan job: mesin tidak pernah keluar
+  // dari Sundaya, jadi booking jadi AKTIF sendiri saat Log Penerimaan cetakan
+  // dicatat dan SELESAI sendiri saat seluruh cetakannya dikonfirmasi kembali.
 
   // ===================== Perpanjangan sewa =====================
   async createExtension(

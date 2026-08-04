@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { ClipboardList, Info, PackagePlus, Plus, Factory, Layers } from 'lucide-react'
+import { ClipboardList, Info, Plus, Factory, Layers } from 'lucide-react'
 import {
   LogProduksiEventType,
   ProgressMolding,
@@ -23,13 +23,11 @@ import { optionalNumber, optionalText } from '../../lib/form'
 import { formatDateTime, nowLocalInput } from '../../lib/format'
 
 const eventLabel: Record<LogProduksiEventType, string> = {
-  [LogProduksiEventType.MATERIAL_DATANG]: 'Material datang',
   [LogProduksiEventType.PRODUKSI_HARIAN]: 'Produksi harian',
   [LogProduksiEventType.PROGRESS_MOLDING]: 'Progress molding',
 }
 
 const eventIcon = {
-  [LogProduksiEventType.MATERIAL_DATANG]: PackagePlus,
   [LogProduksiEventType.PRODUKSI_HARIAN]: Factory,
   [LogProduksiEventType.PROGRESS_MOLDING]: Layers,
 }
@@ -37,14 +35,12 @@ const eventIcon = {
 // Nilai <input type="datetime-local"> ('YYYY-MM-DDTHH:mm') menjadi ISO string.
 const toIso = (local: string) => new Date(local).toISOString()
 
-// Booking meminjamkan beberapa mesin tanpa memasangkannya ke cetakan, jadi event yang
-// benar-benar berjalan di atas mesin harus menyebut mesin mana yang dipakai.
-const butuhMesin = (eventType: LogProduksiEventType) =>
-  eventType !== LogProduksiEventType.MATERIAL_DATANG
-
-
-// Log Produksi (Layer 2, Admin Penyewa di lokasi Sundaya). Append-only:
-// event tidak bisa diubah atau dihapus, koreksi ditulis sebagai event baru.
+// Log Produksi (Layer 2, Admin Penyewa di lokasi Sundaya). Dua jenis event saja:
+// produksi harian dan progress molding. Kedatangan material tidak dicatat di sini
+// karena sudah ada di Log Pengiriman Manager dan Log Penerimaan Admin Sundaya.
+// Append-only: event tidak bisa diubah atau dihapus, koreksi ditulis sebagai
+// event baru. Booking meminjamkan mesin tanpa memasangkannya ke cetakan, jadi
+// tiap event wajib menyebut cetakan mana berjalan di mesin mana.
 export function LogProduksiPage() {
   const { accessToken } = useAuth()
   const toast = useToast()
@@ -126,7 +122,8 @@ export function LogProduksiPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">Log Produksi</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Catat material datang, produksi harian, dan progress molding di lokasi Sundaya.
+            Catat produksi harian dan progress molding di lokasi Sundaya. Kedatangan material
+            tidak dicatat di sini, sudah tercatat di Log Pengiriman dan Log Penerimaan.
           </p>
         </div>
         <Button
@@ -224,12 +221,7 @@ function TimelineItem({ log }: { log: LogProduksi }) {
           <p className="text-xs text-slate-400">{formatDateTime(log.occurredAt)}</p>
         </div>
         <p className="mt-1 text-sm text-slate-600">
-          {log.eventType === LogProduksiEventType.MATERIAL_DATANG ? (
-            <>
-              {log.materialName} - {log.jumlahKg} kg
-              {log.noSuratJalan ? ` (surat jalan ${log.noSuratJalan})` : ''}
-            </>
-          ) : log.eventType === LogProduksiEventType.PRODUKSI_HARIAN ? (
+          {log.eventType === LogProduksiEventType.PRODUKSI_HARIAN ? (
             <>
               {log.goodProduct?.toLocaleString('id-ID')} baik, {log.rejectCount?.toLocaleString('id-ID')} reject
               {log.materialUsedKg != null ? `, material terpakai ${log.materialUsedKg} kg` : ''}
@@ -269,10 +261,6 @@ function LogFormPanel({
   const [machineId, setMachineId] = useState(machines[0]?.machineId ?? '')
   const [occurredAt, setOccurredAt] = useState(nowLocalInput())
   const [catatan, setCatatan] = useState('')
-  // Material datang
-  const [materialName, setMaterialName] = useState('')
-  const [jumlahKg, setJumlahKg] = useState('')
-  const [noSuratJalan, setNoSuratJalan] = useState('')
   // Produksi harian
   const [goodProduct, setGoodProduct] = useState('')
   const [rejectCount, setRejectCount] = useState('')
@@ -285,7 +273,6 @@ function LogFormPanel({
   const selectedMold = molds.find((m) => m.moldId === moldId)
   // Tonase mesin adalah batas atas: cetakan ini hanya boleh jalan di mesin yang sanggup.
   const mesinCocok = machines.filter((m) => m.tonaseTon >= (selectedMold?.tonaseTon ?? 0))
-  const perluMesin = butuhMesin(eventType)
   // Ganti cetakan bisa membuat mesin terpilih tidak sanggup lagi; jatuh ke mesin cocok
   // pertama supaya yang dikirim selalu sama dengan yang tampil di form.
   const mesinDipakai = mesinCocok.some((m) => m.machineId === machineId)
@@ -298,27 +285,20 @@ function LogFormPanel({
     // Hanya field milik jenis event yang dikirim; server menolak bila wajib kosong.
     const base = {
       moldId,
-      machineId: perluMesin ? mesinDipakai : undefined,
+      machineId: mesinDipakai,
       eventType,
       occurredAt: toIso(occurredAt),
       catatan: optionalText(catatan),
     }
     const body: CreateLogProduksiRequest =
-      eventType === LogProduksiEventType.MATERIAL_DATANG
+      eventType === LogProduksiEventType.PRODUKSI_HARIAN
         ? {
             ...base,
-            materialName: materialName.trim(),
-            jumlahKg: Number(jumlahKg),
-            noSuratJalan: optionalText(noSuratJalan),
+            goodProduct: Number(goodProduct),
+            rejectCount: Number(rejectCount),
+            materialUsedKg: optionalNumber(materialUsedKg),
           }
-        : eventType === LogProduksiEventType.PRODUKSI_HARIAN
-          ? {
-              ...base,
-              goodProduct: Number(goodProduct),
-              rejectCount: Number(rejectCount),
-              materialUsedKg: optionalNumber(materialUsedKg),
-            }
-          : { ...base, progressMolding, keteranganProgress: optionalText(keteranganProgress) }
+        : { ...base, progressMolding, keteranganProgress: optionalText(keteranganProgress) }
 
     try {
       await api.createLog(accessToken, jobId, body)
@@ -373,36 +353,32 @@ function LogFormPanel({
           }))}
         />
 
-        {perluMesin ? (
-          mesinCocok.length ? (
-            <SelectField
-              label="Mesin yang dipakai"
-              value={mesinDipakai}
-              onChange={setMachineId}
-              options={mesinCocok.map((m) => ({
-                value: m.machineId,
-                label: `${m.machineNumber} (${m.tonaseTon} ton)`,
-              }))}
-            />
-          ) : (
-            <p className="rounded-lg bg-rose-50 px-3 py-2.5 text-xs leading-5 text-rose-700 ring-1 ring-inset ring-rose-600/15">
-              Tidak ada mesin pinjaman yang sanggup cetakan ini
-              {selectedMold ? ` (butuh ${selectedMold.tonaseTon} ton)` : ''}. Hubungi Sundaya.
-            </p>
-          )
-        ) : null}
+        {mesinCocok.length ? (
+          <SelectField
+            label="Mesin yang dipakai"
+            value={mesinDipakai}
+            onChange={setMachineId}
+            options={mesinCocok.map((m) => ({
+              value: m.machineId,
+              label: `${m.machineNumber} (${m.tonaseTon} ton)`,
+            }))}
+          />
+        ) : (
+          <p className="rounded-lg bg-rose-50 px-3 py-2.5 text-xs leading-5 text-rose-700 ring-1 ring-inset ring-rose-600/15">
+            Tidak ada mesin pinjaman yang sanggup cetakan ini
+            {selectedMold ? ` (butuh ${selectedMold.tonaseTon} ton)` : ''}. Hubungi Sundaya.
+          </p>
+        )}
 
-        <TextField label="Waktu kejadian" type="datetime-local" value={occurredAt} onChange={setOccurredAt} />
+        <TextField
+          label="Waktu kejadian"
+          type="datetime-local"
+          value={occurredAt}
+          onChange={setOccurredAt}
+          max={nowLocalInput()}
+        />
 
-        {eventType === LogProduksiEventType.MATERIAL_DATANG ? (
-          <>
-            <TextField label="Nama material" value={materialName} onChange={setMaterialName} />
-            <FieldGroup>
-              <TextField label="Jumlah (kg)" type="number" min={0} step="0.1" value={jumlahKg} onChange={setJumlahKg} />
-              <TextField label="No. surat jalan" required={false} value={noSuratJalan} onChange={setNoSuratJalan} />
-            </FieldGroup>
-          </>
-        ) : eventType === LogProduksiEventType.PRODUKSI_HARIAN ? (
+        {eventType === LogProduksiEventType.PRODUKSI_HARIAN ? (
           <>
             <FieldGroup>
               <TextField label="Produk baik" type="number" min={0} value={goodProduct} onChange={setGoodProduct} />
@@ -444,7 +420,7 @@ function LogFormPanel({
           <Button type="button" variant="secondary" onClick={onClose}>
             Batal
           </Button>
-          <Button type="submit" disabled={isSaving || (perluMesin && !mesinDipakai)}>
+          <Button type="submit" disabled={isSaving || !mesinDipakai}>
             {isSaving ? 'Menyimpan...' : 'Catat event'}
           </Button>
         </div>

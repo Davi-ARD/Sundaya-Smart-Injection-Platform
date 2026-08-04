@@ -22,14 +22,14 @@ enum Role {
 }
 
 // Sumbu ketersediaan/rental mesin (siklus booking).
+// Mesin tidak pernah keluar dari Sundaya (penyewa yang mengirim cetakan ke sini),
+// jadi tidak ada status pengiriman atau pengembalian mesin. Tidak ada status
+// "diajukan" terpisah untuk mesin: keputusan Admin sekaligus mengunci mesin dalam
+// satu aksi assign, jadi TERSEDIA langsung ke DIKONFIRMASI.
 enum MachineStatus {
   TERSEDIA
-  DIAJUKAN
   DIKONFIRMASI
-  DIKIRIM
   AKTIF
-  SELESAI_SEWA
-  DIKEMBALIKAN
   PENGECEKAN
   MAINTENANCE
 }
@@ -50,14 +50,14 @@ enum WarrantyStatus {
 }
 
 // Lifecycle booking/job (dulu RentalStatus).
+// DIKONFIRMASI disetel saat Admin Sundaya meminjamkan mesin pertama. AKTIF dan
+// SELESAI otomatis dari event domain: AKTIF saat cetakan pertama diterima Sundaya
+// (Log Penerimaan), SELESAI saat seluruh cetakan booking sudah COMPLETED.
 enum JobLifecycle {
   DIAJUKAN
   DITOLAK
   DIKONFIRMASI
-  DIKIRIM
   AKTIF
-  SELESAI_SEWA
-  DIKEMBALIKAN
   SELESAI
 }
 
@@ -103,8 +103,9 @@ enum ProgressMolding {
 }
 
 // Jenis event Log Produksi (Layer 2 timeline).
+// Kedatangan material tidak ada di sini: sudah dicatat Manager di Log Pengiriman
+// dan dikonfirmasi Admin Sundaya di Log Penerimaan.
 enum LogProduksiEventType {
-  MATERIAL_DATANG
   PRODUKSI_HARIAN
   PROGRESS_MOLDING
 }
@@ -267,9 +268,10 @@ model Job {
   endDate               DateTime?
   catatan               String?
   confirmedAt           DateTime?
-  shippedAt             DateTime?
+  // Cetakan pertama tiba di Sundaya: booking jadi AKTIF dan masa sewa mulai
+  // dihitung dari sini, bukan dari startDate rencana penyewa. Waktu penutupan
+  // tidak disalin ke sini: sudah terekam di MoldTrackingEvent cetakan terakhir.
   receivedAt            DateTime?
-  returnedAt            DateTime?
   rejectionReason       String?
   createdAt             DateTime     @default(now())
 
@@ -310,9 +312,9 @@ model LogPengiriman {
 }
 
 // Log Penerimaan (milik Admin Sundaya). Konfirmasi mold atau material tiba di
-// lokasi Sundaya. Membuat log item MOLD memindahkan tracking mold ke RECEIVED.
-// Manager Penyewa menerima notifikasi. Berbeda dari LogProduksi MATERIAL_DATANG
-// (Layer 2) yang mencatat material masuk stok lantai produksi.
+// lokasi Sundaya. Membuat log item MOLD memindahkan tracking mold ke RECEIVED
+// sekaligus menjalankan booking-nya (DIKONFIRMASI -> AKTIF, masa sewa mulai).
+// Manager Penyewa menerima notifikasi.
 model LogPenerimaan {
   id           String         @id @default(cuid())
   jobId        String
@@ -357,17 +359,12 @@ model LogProduksi {
   moldId     String
   // Mesin yang menjalankan cetakan itu pada event ini. Booking meminjamkan beberapa
   // mesin tanpa memasangkannya ke cetakan, jadi pasangan sebenarnya baru diketahui
-  // dari log ini. Wajib untuk PRODUKSI_HARIAN dan PROGRESS_MOLDING (ditegakkan service),
-  // null untuk MATERIAL_DATANG yang tidak menyentuh mesin.
-  machineId  String?
+  // dari log ini. Kedua jenis event terjadi di atas mesin, jadi selalu terisi.
+  machineId  String
   eventType  LogProduksiEventType
   occurredAt DateTime
   byId       String
   catatan    String?
-  // MATERIAL_DATANG
-  materialName   String?
-  jumlahKg       Float?
-  noSuratJalan   String?
   // PRODUKSI_HARIAN. materialUsedKg = material yang dipakai hari itu; sisa dihitung
   // sistem sebagai Mold.estimasiKg minus akumulasi terpakai.
   goodProduct    Int?
@@ -378,10 +375,10 @@ model LogProduksi {
   keteranganProgress String?
   createdAt          DateTime         @default(now())
 
-  job     Job      @relation(fields: [jobId], references: [id])
-  mold    Mold     @relation(fields: [moldId], references: [id])
-  machine Machine? @relation(fields: [machineId], references: [id])
-  by      User     @relation(fields: [byId], references: [id])
+  job     Job     @relation(fields: [jobId], references: [id])
+  mold    Mold    @relation(fields: [moldId], references: [id])
+  machine Machine @relation(fields: [machineId], references: [id])
+  by      User    @relation(fields: [byId], references: [id])
 
   @@index([jobId, occurredAt])
   @@index([moldId, eventType])

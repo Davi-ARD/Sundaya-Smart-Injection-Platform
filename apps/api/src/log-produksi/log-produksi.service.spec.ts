@@ -1,6 +1,9 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
 import { LogProduksiEventType, ProgressMolding, Role } from '@mold-tracker/shared';
 import { User as PrismaUser } from '@prisma/client';
+import { CreateLogProduksiDto } from './dto';
 import { LogProduksiService } from './log-produksi.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { MoldTrackingService } from '../molds/mold-tracking.service';
@@ -61,14 +64,11 @@ const logRow = (over: Record<string, unknown>) => ({
   id: 'log-1',
   jobId: 'job-1',
   moldId: 'mold-1',
-  machineId: null,
-  eventType: LogProduksiEventType.MATERIAL_DATANG,
+  machineId: 'mesin-1',
+  eventType: LogProduksiEventType.PRODUKSI_HARIAN,
   occurredAt: new Date('2026-08-01'),
   byId: 'ap-1',
   catatan: null,
-  materialName: null,
-  jumlahKg: null,
-  noSuratJalan: null,
   goodProduct: null,
   rejectCount: null,
   materialUsedKg: null,
@@ -79,40 +79,28 @@ const logRow = (over: Record<string, unknown>) => ({
 });
 
 describe('LogProduksiService.append', () => {
-  it('MATERIAL_DATANG: simpan field material + byId actor + occurredAt', async () => {
+  it('PRODUKSI_HARIAN: simpan pasangan cetakan-mesin + byId actor + occurredAt', async () => {
     const prisma = prismaMock();
     prisma.job.findUnique.mockResolvedValue({ id: 'job-1', managerId: 'mgr-1', moldId: 'mold-1' });
     prisma.logProduksi.create.mockResolvedValue(logRow({}));
 
     await svc(prisma).append(adminPenyewa, 'job-1', {
       moldId: 'mold-1',
-      eventType: LogProduksiEventType.MATERIAL_DATANG,
+      machineId: 'mesin-1',
+      eventType: LogProduksiEventType.PRODUKSI_HARIAN,
       occurredAt: PAST_ISO,
-      materialName: 'PP Resin',
-      jumlahKg: 500,
+      goodProduct: 120,
+      rejectCount: 3,
     } as never);
 
     const data = prisma.logProduksi.create.mock.calls[0][0].data;
     expect(data.byId).toBe('ap-1');
-    expect(data.materialName).toBe('PP Resin');
-    expect(data.jumlahKg).toBe(500);
+    expect(data.moldId).toBe('mold-1');
+    expect(data.machineId).toBe('mesin-1');
+    expect(data.goodProduct).toBe(120);
     expect(data.occurredAt).toBeInstanceOf(Date);
     // Field lintas-tipe tidak ikut.
-    expect(data.goodProduct).toBeUndefined();
-  });
-
-  it('MATERIAL_DATANG tanpa jumlahKg -> 400, tidak menulis', async () => {
-    const prisma = prismaMock();
-    prisma.job.findUnique.mockResolvedValue({ id: 'job-1', managerId: 'mgr-1', moldId: 'mold-1' });
-    await expect(
-      svc(prisma).append(adminPenyewa, 'job-1', {
-        moldId: 'mold-1',
-      eventType: LogProduksiEventType.MATERIAL_DATANG,
-        occurredAt: PAST_ISO,
-        materialName: 'PP Resin',
-      } as never),
-    ).rejects.toBeInstanceOf(BadRequestException);
-    expect(prisma.logProduksi.create).not.toHaveBeenCalled();
+    expect(data.progressMolding).toBeUndefined();
   });
 
   it('PRODUKSI_HARIAN tanpa goodProduct -> 400', async () => {
@@ -121,7 +109,8 @@ describe('LogProduksiService.append', () => {
     await expect(
       svc(prisma).append(adminPenyewa, 'job-1', {
         moldId: 'mold-1',
-      eventType: LogProduksiEventType.PRODUKSI_HARIAN,
+        machineId: 'mesin-1',
+        eventType: LogProduksiEventType.PRODUKSI_HARIAN,
         occurredAt: PAST_ISO,
         rejectCount: 2,
       } as never),
@@ -177,18 +166,20 @@ describe('LogProduksiService.append', () => {
     expect(advance).toHaveBeenCalledWith(expect.anything(), 'mold-1', 'PRODUCTION', 'ap-1');
   });
 
-  it('event selain PRODUKSI_HARIAN tidak menyentuh tracking mold', async () => {
+  it('PROGRESS_MOLDING tidak menyentuh tracking mold', async () => {
     const prisma = prismaMock();
     prisma.job.findUnique.mockResolvedValue({ id: 'job-1', managerId: 'mgr-1', moldId: 'mold-1' });
-    prisma.logProduksi.create.mockResolvedValue(logRow({}));
+    prisma.logProduksi.create.mockResolvedValue(
+      logRow({ eventType: LogProduksiEventType.PROGRESS_MOLDING }),
+    );
     const advance = jest.fn();
 
     await svc(prisma, advance).append(adminPenyewa, 'job-1', {
       moldId: 'mold-1',
-      eventType: LogProduksiEventType.MATERIAL_DATANG,
+      machineId: 'mesin-1',
+      eventType: LogProduksiEventType.PROGRESS_MOLDING,
       occurredAt: PAST_ISO,
-      materialName: 'PP Resin',
-      jumlahKg: 500,
+      progressMolding: ProgressMolding.ONGOING,
     } as never);
 
     expect(advance).not.toHaveBeenCalled();
@@ -300,20 +291,18 @@ describe('LogProduksiService.append', () => {
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it('PRODUKSI_HARIAN tanpa machineId -> 400: log harus menyebut mesinnya', async () => {
-    const prisma = prismaMock();
-    prisma.job.findUnique.mockResolvedValue({ id: 'job-1', managerId: 'mgr-1' });
-
-    await expect(
-      svc(prisma).append(adminPenyewa, 'job-1', {
-        moldId: 'mold-1',
-        eventType: LogProduksiEventType.PRODUKSI_HARIAN,
-        occurredAt: PAST_ISO,
-        goodProduct: 10,
-        rejectCount: 0,
-      } as never),
-    ).rejects.toBeInstanceOf(BadRequestException);
-    expect(prisma.logProduksi.create).not.toHaveBeenCalled();
+  // machineId kini wajib untuk kedua jenis event, ditegakkan di batas kepercayaan
+  // (DTO) bukan di service, jadi diuji di sana.
+  it('request tanpa machineId ditolak DTO: log harus menyebut mesinnya', async () => {
+    const dto = plainToInstance(CreateLogProduksiDto, {
+      moldId: 'mold-1',
+      eventType: LogProduksiEventType.PRODUKSI_HARIAN,
+      occurredAt: PAST_ISO,
+      goodProduct: 10,
+      rejectCount: 0,
+    });
+    const errors = await validate(dto);
+    expect(errors.map((e) => e.property)).toContain('machineId');
   });
 
   it('mesin di luar booking -> 404', async () => {
@@ -363,33 +352,17 @@ describe('LogProduksiService.append', () => {
     expect(prisma.logProduksi.create).not.toHaveBeenCalled();
   });
 
-  it('MATERIAL_DATANG tidak menyimpan mesin', async () => {
-    const prisma = prismaMock();
-    prisma.job.findUnique.mockResolvedValue({ id: 'job-1', managerId: 'mgr-1' });
-    prisma.logProduksi.create.mockResolvedValue(logRow({}));
-
-    await svc(prisma).append(adminPenyewa, 'job-1', {
-      moldId: 'mold-1',
-      eventType: LogProduksiEventType.MATERIAL_DATANG,
-      occurredAt: PAST_ISO,
-      materialName: 'PP Resin',
-      jumlahKg: 500,
-    } as never);
-
-    expect(prisma.logProduksi.create.mock.calls[0][0].data.machineId).toBeNull();
-    expect(prisma.machine.findFirst).not.toHaveBeenCalled();
-  });
-
   it('job tenant lain (managerId != parentId) -> 404, tidak menulis', async () => {
     const prisma = prismaMock();
     prisma.job.findUnique.mockResolvedValue({ id: 'job-1', managerId: 'other' });
     await expect(
       svc(prisma).append(adminPenyewa, 'job-1', {
         moldId: 'mold-1',
-      eventType: LogProduksiEventType.MATERIAL_DATANG,
+        machineId: 'mesin-1',
+        eventType: LogProduksiEventType.PRODUKSI_HARIAN,
         occurredAt: PAST_ISO,
-        materialName: 'X',
-        jumlahKg: 1,
+        goodProduct: 1,
+        rejectCount: 0,
       } as never),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(prisma.logProduksi.create).not.toHaveBeenCalled();

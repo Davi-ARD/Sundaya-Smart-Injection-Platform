@@ -47,24 +47,18 @@ export function Badge({ tone = 'slate', children }: { tone?: BadgeTone; children
 // --- Mesin (ketersediaan/rental) ---
 const machineStatusTone: Record<MachineStatus, BadgeTone> = {
   [MachineStatus.TERSEDIA]: 'emerald',
-  [MachineStatus.DIAJUKAN]: 'amber',
   [MachineStatus.DIKONFIRMASI]: 'sky',
-  [MachineStatus.DIKIRIM]: 'sky',
   [MachineStatus.AKTIF]: 'brand',
-  [MachineStatus.SELESAI_SEWA]: 'amber',
-  [MachineStatus.DIKEMBALIKAN]: 'amber',
   [MachineStatus.PENGECEKAN]: 'amber',
   [MachineStatus.MAINTENANCE]: 'rose',
 }
 
+// Label menyebut kondisi mesin di lantai Sundaya, bukan posisi pengiriman:
+// mesin tidak pernah keluar dari sini.
 export const machineStatusLabel: Record<MachineStatus, string> = {
   [MachineStatus.TERSEDIA]: 'Tersedia',
-  [MachineStatus.DIAJUKAN]: 'Diajukan',
-  [MachineStatus.DIKONFIRMASI]: 'Dikonfirmasi',
-  [MachineStatus.DIKIRIM]: 'Dikirim',
-  [MachineStatus.AKTIF]: 'Aktif',
-  [MachineStatus.SELESAI_SEWA]: 'Selesai Sewa',
-  [MachineStatus.DIKEMBALIKAN]: 'Dikembalikan',
+  [MachineStatus.DIKONFIRMASI]: 'Disiapkan untuk booking',
+  [MachineStatus.AKTIF]: 'Dipakai booking',
   [MachineStatus.PENGECEKAN]: 'Pengecekan',
   [MachineStatus.MAINTENANCE]: 'Maintenance',
 }
@@ -114,21 +108,17 @@ const jobLifecycleTone: Record<JobLifecycle, BadgeTone> = {
   [JobLifecycle.DIAJUKAN]: 'amber',
   [JobLifecycle.DITOLAK]: 'rose',
   [JobLifecycle.DIKONFIRMASI]: 'sky',
-  [JobLifecycle.DIKIRIM]: 'sky',
   [JobLifecycle.AKTIF]: 'brand',
-  [JobLifecycle.SELESAI_SEWA]: 'amber',
-  [JobLifecycle.DIKEMBALIKAN]: 'amber',
   [JobLifecycle.SELESAI]: 'emerald',
 }
 
+// Label menjelaskan posisi booking dalam alur, supaya pembaca tahu apa artinya
+// tanpa harus hafal urutan status.
 export const jobLifecycleLabel: Record<JobLifecycle, string> = {
-  [JobLifecycle.DIAJUKAN]: 'Diajukan',
+  [JobLifecycle.DIAJUKAN]: 'Menunggu approval',
   [JobLifecycle.DITOLAK]: 'Ditolak',
-  [JobLifecycle.DIKONFIRMASI]: 'Dikonfirmasi',
-  [JobLifecycle.DIKIRIM]: 'Dikirim',
-  [JobLifecycle.AKTIF]: 'Aktif',
-  [JobLifecycle.SELESAI_SEWA]: 'Selesai Sewa',
-  [JobLifecycle.DIKEMBALIKAN]: 'Dikembalikan',
+  [JobLifecycle.DIKONFIRMASI]: 'Disetujui, menunggu cetakan',
+  [JobLifecycle.AKTIF]: 'Berjalan',
   [JobLifecycle.SELESAI]: 'Selesai',
 }
 

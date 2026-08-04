@@ -56,8 +56,12 @@ SUPER_ADMIN, ADMIN_SUNDAYA, TEKNISI_SUNDAYA, MANAGER_PENYEWA, ADMIN_PENYEWA
 ```
 PLANNING, DELIVERY, RECEIVED, PRODUCTION, SEND_BACK, COMPLETED
 ```
-Empat status pertama digerakkan otomatis oleh event domain (bagian 5), hanya
-SEND_BACK dan COMPLETED yang manual dan khusus ADMIN_SUNDAYA.
+Empat status pertama digerakkan otomatis oleh event domain (bagian 5). Dua status
+penutup ditekan manual, tapi pemiliknya berbeda dan itu disengaja: SEND_BACK milik
+ADMIN_SUNDAYA (produksi selesai, cetakan dikirim balik), COMPLETED milik
+MANAGER_PENYEWA pemilik cetakan sebagai approval bahwa cetakan benar-benar sudah
+sampai kembali. Approval pengembalian karena itu berlaku per cetakan, bukan per job.
+Peta pemilik tombolnya ada di `MOLD_MANUAL_TRANSITIONS` (shared).
 
 **ItemPengiriman** (jenis barang di Log Pengiriman dan Log Penerimaan):
 ```
@@ -84,8 +88,29 @@ itu sendiri. Six big losses tetap tercakup lewat sumber lain (bagian 6a).
 
 **LogProduksiEventType** (baru, jenis event timeline Layer 2):
 ```
-MATERIAL_DATANG, PRODUKSI_HARIAN, PROGRESS_MOLDING
+PRODUKSI_HARIAN, PROGRESS_MOLDING
 ```
+Kedatangan material tidak ada di sini: sudah direncanakan Manager di Log Pengiriman
+dan dikonfirmasi Admin Sundaya di Log Penerimaan, jadi satu kejadian fisik tidak
+diinput dua kali oleh dua pihak. Yang tersisa di Layer 2 adalah pemakaian material
+per hari (`materialUsedKg` pada PRODUKSI_HARIAN).
+
+**JobLifecycle** (lifecycle booking):
+```
+DIAJUKAN, DITOLAK, DIKONFIRMASI, AKTIF, SELESAI
+```
+Tidak ada status pengiriman atau pengembalian mesin: mesin tidak pernah keluar dari
+Sundaya, penyewa yang mengirim cetakannya ke sini. Hanya DIKONFIRMASI dan DITOLAK
+yang berupa tombol Admin Sundaya; AKTIF dan SELESAI otomatis (bagian 5).
+
+**MachineStatus** (sumbu ketersediaan/rental mesin):
+```
+TERSEDIA, DIKONFIRMASI, AKTIF, PENGECEKAN, MAINTENANCE
+```
+Menyusut mengikuti JobLifecycle dengan alasan yang sama; berjalan lockstep lewat
+`MACHINE_FLOW`. Tidak ada DIAJUKAN terpisah seperti di JobLifecycle: keputusan
+Admin Sundaya meminjamkan mesin sekaligus mengunci mesin itu dalam satu aksi
+(`assign`), jadi TERSEDIA langsung ke DIKONFIRMASI tanpa jeda status.
 
 **JobStatus** (baru, status Production Job di dashboard Sundaya):
 ```
@@ -150,8 +175,11 @@ Basis `schema.prisma:134-157`.
   dan progress.
 - Tambah plan fields: `planMaterialUtama String?`, `estimasiMaterialKg Float?`,
   `materialTambahan String?`, `targetOutput Float?`.
-- Tambah `assignedById String?`, pertahankan `confirmedAt/shippedAt/receivedAt/
-  returnedAt/rejectionReason`.
+- Tambah `assignedById String?`, pertahankan `confirmedAt/receivedAt/rejectionReason`.
+  `shippedAt` dan `returnedAt` dihapus bersama langkah pengiriman mesin; `receivedAt`
+  kini berarti "cetakan pertama tiba dan sewa mulai berjalan". Waktu booking ditutup
+  tidak diberi kolom sendiri: sudah terekam sebagai MoldTrackingEvent COMPLETED
+  cetakan terakhir.
 - `rencanaKirimMold` dihapus: rencana kirim dicatat Manager di LogPengiriman,
   bukan sekali saat booking.
 - **`moldId` unique dihapus.** Relasi dibalik menjadi `Mold.jobId`, jadi satu
@@ -181,20 +209,18 @@ Basis `schema.prisma:134-157`.
 
 ### [BARU] LogProduksi (Layer 2, append-only, gabungan pengganti ProductionBatch)
 Single-table timeline dengan kolom nullable per jenis event.
-- `id`, `jobId`, `moldId`, `machineId String?`, `eventType LogProduksiEventType`,
+- `id`, `jobId`, `moldId`, `machineId`, `eventType LogProduksiEventType`,
   `occurredAt DateTime`, `byId` (Admin Penyewa), `catatan String?`, `createdAt`.
-- `machineId` wajib untuk `PRODUKSI_HARIAN` dan `PROGRESS_MOLDING` (ditegakkan service),
-  null untuk `MATERIAL_DATANG` yang tidak menyentuh mesin. Mesin dipinjamkan ke booking
-  tanpa dipasangkan ke cetakan, jadi tabel inilah satu-satunya catatan pasangan
-  cetakan-mesin yang sebenarnya, sekaligus sumber Quality per mesin.
-- Material datang: `materialName String?`, `jumlahKg Float?`, `noSuratJalan String?`.
+- `machineId` selalu wajib: kedua jenis event terjadi di atas mesin. Mesin dipinjamkan
+  ke booking tanpa dipasangkan ke cetakan, jadi tabel inilah satu-satunya catatan
+  pasangan cetakan-mesin yang sebenarnya, sekaligus sumber Quality per mesin.
 - Produksi harian: `goodProduct Int?`, `rejectCount Int?`, `materialUsedKg Float?`.
 - Progress molding: `progressMolding ProgressMolding?`, `keteranganProgress String?`.
+- Kolom material datang (`materialName`, `jumlahKg`, `noSuratJalan`) dihapus bersama
+  event-nya: kedatangan material hidup di Log Pengiriman dan Log Penerimaan.
 - Append-only: tanpa update/delete; koreksi lewat event baru.
-- ponytail: satu tabel kolom-nullable lebih ringkas dari 3 tabel event; naikkan
+- ponytail: satu tabel kolom-nullable lebih ringkas dari 2 tabel event; naikkan
   ke tabel per-tipe hanya jika query jadi kotor.
-- **`MATERIAL_DATANG.occurredAt`** adalah sumber aktual-tiba material di Log
-  Pengiriman.
 - `CauseCategory`/`ReviewStatus`/`flaggedMachineIssue`/`efficiency` dari
   ProductionBatch lama: pindah ke sini hanya jika alur review masih dipakai;
   default buang sampai diminta (belum ada di wireframe/PROJECT_CONTEXT baru).
@@ -215,7 +241,7 @@ Single-table timeline dengan kolom nullable per jenis event.
 - `cycleTimeSec` = durasi satu siklus molding penuh, kanonik dalam detik. UI
   memakai `hmsToSeconds`/`secondsToHms` dari shared untuk input dan tampilan
   jam + menit + detik.
-- `occurredAt` tidak boleh bertanggal masa depan (`assertNotFuture`), karena durasi
+- `occurredAt` tidak boleh melewati waktu sekarang (`assertNotFuture`), karena durasi
   tiap status dihitung dari jarak antar-event.
 
 ### [BARU] Maintenance
@@ -265,7 +291,7 @@ Pemicu tiap status:
 | RECEIVED | `POST /penerimaan` item MOLD (Admin Sundaya) | `MoldTrackingService.advance` |
 | PRODUCTION | `POST /jobs/:id/logs` eventType PRODUKSI_HARIAN (Admin Penyewa) | `MoldTrackingService.advance` |
 | SEND_BACK | `PATCH /molds/:id/tracking` (ADMIN_SUNDAYA) | `transition` |
-| COMPLETED | `PATCH /molds/:id/tracking` (ADMIN_SUNDAYA) | `transition` |
+| COMPLETED | `PATCH /molds/:id/tracking` (MANAGER_PENYEWA pemilik cetakan) | `transition` |
 
 `advance(tx, moldId, target, byId)` dipanggil di dalam transaksi service pemicu,
 jadi log dan transisi status jadi satu unit atomik. Sifatnya **idempoten dan hanya
@@ -276,23 +302,44 @@ lebih dulu).
 
 `transition` menolak status yang seharusnya otomatis dengan 409
 (`assertManualTransition`), supaya papan tracking tidak bisa dipalsukan via tombol.
+Fungsi yang sama juga menolak 403 bila role yang menekan bukan pemilik transisi itu:
+Sundaya tidak boleh menyatakan cetakan sudah diterima penyewa, dan penyewa tidak boleh
+menyatakan cetakan sudah dikirim balik. Manager yang bukan pemilik cetakan dibalas 404.
 
-**Job/booking lifecycle (RentalStatus):**
+**Job/booking lifecycle (`JobLifecycle`):**
 ```
-DIAJUKAN -> (DITOLAK | DIKONFIRMASI+mesin pertama) -> DIKIRIM -> AKTIF ->
-SELESAI_SEWA -> DIKEMBALIKAN -> SELESAI
+DIAJUKAN -> (DITOLAK | DIKONFIRMASI+mesin pertama) -> AKTIF -> SELESAI
 ```
+Tidak ada langkah pengiriman mesin: mesin tidak pernah keluar dari Sundaya, penyewa
+yang mengirim cetakannya ke sini. Karena itu hanya satu sisi lifecycle yang berupa
+tombol (approve lewat assign, atau reject); dua sisanya menyusul kenyataan fisik:
+
+| Transisi | Pemicu | Jalur |
+|---|---|---|
+| DIKONFIRMASI -> AKTIF | `POST /penerimaan` item MOLD (Admin Sundaya) | `activateJobOnMoldReceived` |
+| AKTIF -> SELESAI | cetakan terakhir booking jadi COMPLETED (Manager) | `completeJobIfAllMoldsReturned` |
+
+Peta pemilik tombolnya ada di `MOLD_MANUAL_TRANSITIONS` (shared): status yang tidak
+terdaftar di sana berarti otomatis, dan nilainya adalah role yang berwenang menekan.
+
+Keduanya ada di `jobs/job-transitions.ts` sebagai fungsi lepas bertransaksi, dipanggil
+dari dalam transaksi service pemicunya, dan idempoten seperti `advance`: lifecycle yang
+bukan prasyarat langsung diabaikan, jadi cetakan kedua yang tiba tidak menggeser masa
+sewa dan booking yang masih punya cetakan di jalan tetap AKTIF. Masa sewa dihitung dari
+kedatangan cetakan pertama (`receivedAt = startDate = now`, `endDate = now +
+requestedDurationDays`), bukan dari `startDate` rencana penyewa.
+
 **Mesin dipinjamkan, bukan dipasangkan.** `PATCH /jobs/:id/assign` menambah satu mesin
 ke booking dan hanya boleh oleh Admin Sundaya. Mesin pertama sekaligus memindahkan
 lifecycle DIAJUKAN -> DIKONFIRMASI; mesin berikutnya lewat endpoint yang sama tanpa
 menyentuh lifecycle. `DELETE /jobs/:id/machines/:machineId` menarik satu mesin kembali ke
-TERSEDIA. Keduanya hanya berlaku selama lifecycle DIAJUKAN atau DIKONFIRMASI (sebelum
-mesin dikirim), dan mesin terakhir tidak bisa ditarik.
+TERSEDIA. Keduanya hanya berlaku selama lifecycle DIAJUKAN atau DIKONFIRMASI (selama
+booking belum berjalan), dan mesin terakhir tidak bisa ditarik.
 
 Seluruh mesin booking berjalan lockstep dengan lifecycle job-nya: transisi lifecycle
 memvalidasi jalur tiap mesin dari statusnya masing-masing lalu memperbarui semuanya
 dalam satu transaksi (status mesin ditulis lebih dulu supaya payload job yang memuat
-relasi mesin tidak basi).
+relasi mesin tidak basi). Job selesai mengembalikan mesin lewat PENGECEKAN ke TERSEDIA.
 
 **Tonase mesin adalah batas atas, bukan kesamaan persis.** Karena cetakan tidak
 dipasangkan ke mesin, syarat saat meminjamkan hanya `machine.tonaseTon >=

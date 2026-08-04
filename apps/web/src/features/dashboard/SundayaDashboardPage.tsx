@@ -19,13 +19,7 @@ import { useToast } from '../../components/ui/Toast'
 import { errorMessage } from '../../lib/errorMessage'
 import { formatDate, formatSisaHari } from '../../lib/format'
 
-const ONGOING_LIFECYCLES = [
-  JobLifecycle.DIKONFIRMASI,
-  JobLifecycle.DIKIRIM,
-  JobLifecycle.AKTIF,
-  JobLifecycle.SELESAI_SEWA,
-  JobLifecycle.DIKEMBALIKAN,
-]
+const ONGOING_LIFECYCLES = [JobLifecycle.DIKONFIRMASI, JobLifecycle.AKTIF]
 
 const jobStatusTone: Record<JobStatus, BadgeTone> = {
   [JobStatus.ON_SCHEDULE]: 'emerald',

@@ -27,10 +27,7 @@ const round = (n: number, d = 1) => {
 const ACTIVE_LIFECYCLES: $Enums.JobLifecycle[] = [
   JobLifecycle.DIAJUKAN,
   JobLifecycle.DIKONFIRMASI,
-  JobLifecycle.DIKIRIM,
   JobLifecycle.AKTIF,
-  JobLifecycle.SELESAI_SEWA,
-  JobLifecycle.DIKEMBALIKAN,
 ] as unknown as $Enums.JobLifecycle[];
 
 type RawEvent = { status: string; cycleTimeSec: number | null; occurredAt: Date };

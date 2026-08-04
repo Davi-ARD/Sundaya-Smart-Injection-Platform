@@ -20,15 +20,22 @@ export function assertMoldTransition(from: MT, to: MT): void {
 }
 
 // Empat status pertama hanya boleh berpindah lewat event domain (Log Pengiriman,
-// Log Penerimaan, Log Produksi), bukan tombol. Tombol hanya untuk SEND_BACK dan
-// COMPLETED, dan hanya Admin Sundaya yang berwenang.
+// Log Penerimaan, Log Produksi), bukan tombol. Dua status penutup punya tombol,
+// tapi pemiliknya berbeda: Sundaya menyatakan cetakan sudah dikirim balik
+// (SEND_BACK), penyewa yang menyatakan cetakan itu benar-benar sudah sampai
+// kembali (COMPLETED). Approval pengembalian karena itu berlaku per cetakan.
 export function assertManualTransition(role: Role, to: MT): void {
-  if (!MOLD_MANUAL_TRANSITIONS.includes(to)) {
+  const berwenang = MOLD_MANUAL_TRANSITIONS[to];
+  if (!berwenang) {
     throw new ConflictException(
       `Status ${to} disetel otomatis dari event domain, tidak lewat tombol`,
     );
   }
-  if (role !== Role.ADMIN_SUNDAYA) {
-    throw new ForbiddenException('Hanya Admin Sundaya boleh menutup siklus mold');
+  if (role !== berwenang) {
+    const pesan =
+      to === MT.SEND_BACK
+        ? 'Hanya Admin Sundaya boleh menyatakan cetakan siap dikirim balik'
+        : 'Hanya Manager Penyewa pemilik cetakan boleh mengonfirmasi cetakan sudah diterima kembali';
+    throw new ForbiddenException(pesan);
   }
 }

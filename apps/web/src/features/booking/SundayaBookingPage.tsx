@@ -4,6 +4,7 @@ import {
   ExtensionStatus,
   JobLifecycle,
   MachineStatus,
+  MoldTrackingStatus,
   Role,
   type AssignJobRequest,
   type ExtensionRequestRow,
@@ -24,18 +25,17 @@ import { useToast } from '../../components/ui/Toast'
 import { errorMessage } from '../../lib/errorMessage'
 import { formatDate, formatSisaHari } from '../../lib/format'
 
-const ONGOING_LIFECYCLES = [
-  JobLifecycle.DIKONFIRMASI,
-  JobLifecycle.DIKIRIM,
-  JobLifecycle.AKTIF,
-  JobLifecycle.SELESAI_SEWA,
-  JobLifecycle.DIKEMBALIKAN,
-]
+const ONGOING_LIFECYCLES = [JobLifecycle.DIKONFIRMASI, JobLifecycle.AKTIF]
 
-// Booking (staf Sundaya): approval booking baru, keputusan perpanjangan sewa,
-// dan lifecycle job pasca-assign. Dipisah dari Dashboard supaya dashboard murni
-// pemantauan. Teknisi melihat halaman yang sama persis, hanya tanpa tombol aksi
-// karena semua keputusan booking adalah wewenang ADMIN_SUNDAYA.
+// Booking (staf Sundaya): approval booking baru, peminjaman mesin, dan keputusan
+// perpanjangan sewa. Dipisah dari Dashboard supaya dashboard murni pemantauan.
+// Teknisi melihat halaman yang sama persis, hanya tanpa tombol aksi karena semua
+// keputusan booking adalah wewenang ADMIN_SUNDAYA.
+//
+// Tidak ada tombol "kirim mesin" di sini: mesin tidak pernah keluar dari Sundaya.
+// Setelah booking dikonfirmasi, statusnya berjalan sendiri mengikuti barang yang
+// benar-benar bergerak, jadi kolom terakhir menjelaskan apa yang sedang ditunggu,
+// bukan menyodorkan tombol yang menggeser status secara manual.
 export function SundayaBookingPage() {
   const { accessToken, user } = useAuth()
   const toast = useToast()
@@ -81,36 +81,6 @@ export function SundayaBookingPage() {
     () => extensions.filter((e) => e.status !== ExtensionStatus.DIAJUKAN),
     [extensions],
   )
-
-  const runLifecycleAction = async (job: Job, action: (id: string) => Promise<Job>, successLabel: string) => {
-    setPendingId(job.id)
-    try {
-      await action(job.id)
-      toast.success(successLabel)
-      void load()
-    } catch (caught) {
-      toast.error(errorMessage(caught, 'Aksi gagal'))
-    } finally {
-      setPendingId(null)
-    }
-  }
-
-  const lifecycleAction = (job: Job): { label: string; run: () => void } | null => {
-    switch (job.lifecycle) {
-      case JobLifecycle.DIKONFIRMASI:
-        return { label: 'Kirim mesin', run: () => void runLifecycleAction(job, (id) => api.shipJob(accessToken, id), 'Mesin dikirim') }
-      case JobLifecycle.DIKIRIM:
-        return { label: 'Aktifkan', run: () => void runLifecycleAction(job, (id) => api.activateJob(accessToken, id), 'Job aktif') }
-      case JobLifecycle.AKTIF:
-        return { label: 'Tandai selesai sewa', run: () => void runLifecycleAction(job, (id) => api.returnJob(accessToken, id), 'Selesai sewa') }
-      case JobLifecycle.SELESAI_SEWA:
-        return { label: 'Ambil mesin', run: () => void runLifecycleAction(job, (id) => api.collectJob(accessToken, id), 'Mesin dikembalikan') }
-      case JobLifecycle.DIKEMBALIKAN:
-        return { label: 'Selesaikan job', run: () => void runLifecycleAction(job, (id) => api.completeJob(accessToken, id), 'Job selesai') }
-      default:
-        return null
-    }
-  }
 
   const decideExtension = async (row: ExtensionRequestRow, decision: ExtensionStatus.DITERIMA | ExtensionStatus.DITOLAK) => {
     setPendingId(row.extensionId)
@@ -257,27 +227,21 @@ export function SundayaBookingPage() {
     { header: 'Status', cell: (j) => <JobLifecycleBadge status={j.lifecycle} /> },
     { header: 'Selesai sewa', cell: (j) => formatDate(j.endDate) },
     {
+      header: 'Sedang ditunggu',
+      cell: (j) => <span className="text-sm text-slate-600">{langkahBerikutnya(j)}</span>,
+    },
+    {
       header: '',
       className: 'text-right',
-      cell: (j) => {
-        if (!canManage) return null
-        const action = lifecycleAction(j)
-        return (
-          <div className="flex justify-end gap-2">
-            {/* Susunan mesin masih bisa diubah selama booking belum dikirim. */}
-            {j.lifecycle === JobLifecycle.DIKONFIRMASI ? (
-              <Button size="sm" variant="secondary" onClick={() => setMesinTarget(j)}>
-                <Factory className="h-3.5 w-3.5" /> Atur mesin
-              </Button>
-            ) : null}
-            {action ? (
-              <Button size="sm" variant="secondary" disabled={pendingId === j.id} onClick={action.run}>
-                {action.label}
-              </Button>
-            ) : null}
+      cell: (j) =>
+        // Susunan mesin masih bisa diubah selama booking belum berjalan.
+        canManage && j.lifecycle === JobLifecycle.DIKONFIRMASI ? (
+          <div className="flex justify-end">
+            <Button size="sm" variant="secondary" onClick={() => setMesinTarget(j)}>
+              <Factory className="h-3.5 w-3.5" /> Atur mesin
+            </Button>
           </div>
-        )
-      },
+        ) : null,
     },
   ]
 
@@ -337,9 +301,13 @@ export function SundayaBookingPage() {
         </Card>
       ) : null}
 
-      <Card className="mt-5" title="Job berjalan" subtitle="Rental management: lifecycle pasca-assign.">
+      <Card
+        className="mt-5"
+        title="Job berjalan"
+        subtitle="Status booking mengikuti barang yang benar-benar bergerak, jadi tidak ada tombol untuk menggesernya. Booking mulai berjalan saat cetakan pertama dicatat di Log Penerimaan, dan tutup sendiri setelah semua cetakan dikonfirmasi kembali ke penyewa."
+      >
         {isLoading ? (
-          <TableSkeleton rows={3} columns={5} />
+          <TableSkeleton rows={3} columns={6} />
         ) : ongoingJobs.length === 0 ? (
           <p className="py-8 text-center text-sm text-slate-500">Belum ada job berjalan.</p>
         ) : (
@@ -372,6 +340,29 @@ export function SundayaBookingPage() {
   )
 }
 
+// Booking berjalan tanpa tombol lifecycle, jadi Admin butuh kalimat yang menyebut
+// siapa yang harus bergerak berikutnya. Semuanya dibaca dari status cetakan yang
+// sudah ada, bukan kolom baru.
+function langkahBerikutnya(job: Job): string {
+  if (job.lifecycle === JobLifecycle.DIKONFIRMASI) {
+    return job.machines.length < job.requestedMachineCount
+      ? `Pinjamkan ${job.requestedMachineCount - job.machines.length} mesin lagi, lalu tunggu cetakan tiba`
+      : 'Cetakan dari penyewa. Booking berjalan begitu Log Penerimaan cetakan dicatat'
+  }
+
+  const belumSelesai = job.molds.filter((m) => m.trackingStatus !== MoldTrackingStatus.COMPLETED)
+  if (!belumSelesai.length) return 'Semua cetakan sudah kembali'
+
+  // Yang sudah selesai produksi butuh tindakan Admin; sisanya cuma perlu ditunggu.
+  const siapKirimBalik = belumSelesai.filter(
+    (m) => m.trackingStatus === MoldTrackingStatus.PRODUCTION,
+  )
+  const kode = (list: typeof belumSelesai) => list.map((m) => m.kodeMold).join(', ')
+  return siapKirimBalik.length
+    ? `Tekan Selesai produksi di tab Mold Tracking untuk ${kode(siapKirimBalik)}`
+    : `Menunggu ${kode(belumSelesai)} kembali ke penyewa`
+}
+
 // Rentang tonase cetakan di booking: mesin apa pun yang dipinjamkan harus setidaknya
 // sanggup cetakan terkecil, dan butuh mesin sebesar yang terbesar supaya semua kebagian.
 function rentangTonase(job: Job): string {
@@ -382,7 +373,7 @@ function rentangTonase(job: Job): string {
 }
 
 // Peminjaman mesin: mesin masuk ke booking satu per satu sampai jumlah permintaan
-// penyewa terpenuhi, dan bisa ditarik lagi selama booking belum dikirim. Mesin tidak
+// penyewa terpenuhi, dan bisa ditarik lagi selama booking belum berjalan. Mesin tidak
 // dipasangkan ke cetakan; penyewa bebas menjalankan cetakan mana pun di mesin mana pun,
 // dan pasangan sebenarnya tercatat di Log Produksi mereka.
 function MesinModal({

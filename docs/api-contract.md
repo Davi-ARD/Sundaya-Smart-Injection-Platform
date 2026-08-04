@@ -112,10 +112,18 @@ Role: MANAGER_PENYEWA (pemilik). Ubah field plan saja; `kodeMold` dan `trackingS
 - Response 200: `Mold`
 
 ### PATCH /molds/:id/tracking
-Role: ADMIN_SUNDAYA. **Hanya untuk dua transisi penutup siklus**: PRODUCTION->SEND_BACK dan SEND_BACK->COMPLETED. Empat status sebelumnya (PLANNING, DELIVERY, RECEIVED, PRODUCTION) digerakkan otomatis oleh event domain, bukan endpoint ini. Dalam satu transaksi: update `Mold.trackingStatus` + append `MoldTrackingEvent` (byId, at).
+Role: ADMIN_SUNDAYA atau MANAGER_PENYEWA, **hanya untuk dua transisi penutup siklus**, dan tiap transisi punya pemilik sendiri (peta `MOLD_MANUAL_TRANSITIONS` di shared):
+
+| Transisi | Ditekan oleh | Arti |
+|---|---|---|
+| PRODUCTION -> SEND_BACK | ADMIN_SUNDAYA | produksi selesai, cetakan dikirim balik ke penyewa |
+| SEND_BACK -> COMPLETED | MANAGER_PENYEWA pemilik cetakan | **approval bahwa cetakan sudah sampai kembali**, per cetakan bukan per job |
+
+Empat status sebelumnya (PLANNING, DELIVERY, RECEIVED, PRODUCTION) digerakkan otomatis oleh event domain, bukan endpoint ini. Dalam satu transaksi: update `Mold.trackingStatus` + append `MoldTrackingEvent` (byId, at); khusus COMPLETED, bila itu cetakan terakhir booking maka job ikut ditutup (lihat "Transisi otomatis lifecycle job").
 - Status yang seharusnya otomatis ditolak 409 (`Status RECEIVED disetel otomatis dari event domain, tidak lewat tombol`).
 - Transisi tidak sah menurut urutan ditolak 409 (mis. PRODUCTION langsung ke COMPLETED).
-- Role selain ADMIN_SUNDAYA ditolak 403; mold tidak ada 404.
+- Role yang bukan pemilik transisi itu ditolak 403 (Admin Sundaya tidak boleh menyatakan cetakan sudah diterima penyewa, dan sebaliknya). Manager yang bukan pemilik cetakan dibalas 404, tidak dibocorkan.
+- Setelah transaksi sukses, SEND_BACK memberi notifikasi ke Manager pemilik (link `/molds`) karena hanya di sisi itu ada tindakan yang harus menyusul. COMPLETED tidak menotifikasi siapa pun: Sundaya sudah membacanya di papan tracking dan booking menutup dirinya sendiri.
 - Request: `UpdateMoldTrackingRequest` { status (MoldTrackingStatus) }
 - Response 200: `Mold`
 
@@ -172,7 +180,7 @@ Role: TEKNISI_SUNDAYA, ADMIN_SUNDAYA. Ringkasan realtime Layer 1: jumlah mesin (
 Role: TEKNISI_SUNDAYA. Append event status realtime mesin (Layer 1, append-only). Dalam satu transaksi: menulis `OperationalData` dan menyetel `Machine.operationalStatus` ke status yang diposting. Koreksi lewat event baru, bukan update/delete.
 - `status` hanya boleh `SETUP` atau `RUNNING` (400 bila lain). `STANDBY` hanya status awal mesin baru; `MAINTENANCE` disetel modul Maintenance.
 - Ditolak 409 bila mesin sedang `MAINTENANCE`: statusnya akan dipulihkan modul Maintenance saat maintenance selesai, jadi input di sini akan tertimpa.
-- `occurredAt` tidak boleh bertanggal masa depan (400), karena durasi tiap status dihitung dari jarak antar-event.
+- `occurredAt` tidak boleh melewati waktu sekarang (400), karena durasi tiap status dihitung dari jarak antar-event.
 - `cycleTimeSec` = durasi satu siklus molding penuh dalam detik (UI merakitnya dari input jam + menit + detik).
 - Mesin harus ada (404).
 - Request: `CreateOperationalDataRequest` { status (SETUP | RUNNING), cycleTimeSec?, occurredAt, catatan? }
@@ -182,7 +190,9 @@ Role: TEKNISI_SUNDAYA. Append event status realtime mesin (Layer 1, append-only)
 
 ## Modul Job (SSIP)
 
-Evolusi dari modul Sewa lama. Satu booking menghasilkan satu Production Job yang memuat **satu atau lebih cetakan** (relasi `Mold.jobId`, dikembalikan sebagai `Job.molds`) dan **beberapa mesin pinjaman** (relasi banyak-ke-banyak, dikembalikan sebagai `Job.machines`). Penyewa meminta jumlah mesin (`requestedMachineCount`); Admin Sundaya memenuhinya bertahap. **Mesin dipinjamkan, bukan dipasangkan ke cetakan**: penyewa bebas menjalankan cetakan mana pun di mesin mana pun selama tonasenya cukup, dan pasangan yang benar-benar dipakai dicatat per event di Log Produksi. Plan material dan target output tidak ada di Job: dibaca dari masing-masing cetakan. Lifecycle (`JobLifecycle`) hanya berpindah lewat service layer (peta `JOB_LIFECYCLE_FLOW`); sumbu ketersediaan mesin (`Machine.status`) berjalan lockstep lewat `MACHINE_FLOW`. `jobStatus` (ON_SCHEDULE/WARNING/CRITICAL/COMPLETED) dihitung saat baca dari sisa sewa, bukan disimpan. Scoping tenant di server: staf Sundaya lihat semua; Manager lihat miliknya; Admin Penyewa lihat tenant induknya.
+Evolusi dari modul Sewa lama. Satu booking menghasilkan satu Production Job yang memuat **satu atau lebih cetakan** (relasi `Mold.jobId`, dikembalikan sebagai `Job.molds`) dan **beberapa mesin pinjaman** (relasi banyak-ke-banyak, dikembalikan sebagai `Job.machines`). Penyewa meminta jumlah mesin (`requestedMachineCount`); Admin Sundaya memenuhinya bertahap. **Mesin dipinjamkan, bukan dipasangkan ke cetakan**: penyewa bebas menjalankan cetakan mana pun di mesin mana pun selama tonasenya cukup, dan pasangan yang benar-benar dipakai dicatat per event di Log Produksi. Plan material dan target output tidak ada di Job: dibaca dari masing-masing cetakan. Lifecycle (`JobLifecycle`) hanya berpindah lewat service layer (peta `JOB_LIFECYCLE_FLOW`); sumbu ketersediaan mesin (`Machine.status`) berjalan lockstep lewat `MACHINE_FLOW`.
+
+**Lifecycle hanya empat langkah dan cuma satu yang berupa tombol**: `DIAJUKAN -> DIKONFIRMASI -> AKTIF -> SELESAI` (plus `DIAJUKAN -> DITOLAK`). Admin Sundaya menyetujui booking dengan meminjamkan mesin pertama atau menolaknya; dua perpindahan sisanya otomatis dari event domain (lihat "Transisi otomatis lifecycle job"). Tidak ada langkah pengiriman mesin: mesin tidak pernah keluar dari Sundaya, penyewa yang mengirim cetakannya ke sini. `jobStatus` (ON_SCHEDULE/WARNING/CRITICAL/COMPLETED) dihitung saat baca dari sisa sewa, bukan disimpan. Scoping tenant di server: staf Sundaya lihat semua; Manager lihat miliknya; Admin Penyewa lihat tenant induknya.
 
 ### GET /jobs
 Semua terautentikasi, disaring per tenant di server.
@@ -202,7 +212,7 @@ Role: MANAGER_PENYEWA. Booking satu atau lebih cetakan plus jumlah mesin yang in
 ### PATCH /jobs/:id/assign
 Role: ADMIN_SUNDAYA. **Meminjamkan satu mesin** ke booking. Dipanggil berulang sampai jumlah permintaan penyewa terpenuhi; tidak ada batas atas yang ditegakkan server (`requestedMachineCount` sifatnya permintaan, bukan kuota).
 - Mesin **pertama** sekaligus menyetujui booking: DIAJUKAN -> DIKONFIRMASI, set `assignedById`/`confirmedAt`. Mesin berikutnya cuma menambah, lifecycle tidak disentuh.
-- Hanya boleh selama lifecycle DIAJUKAN atau DIKONFIRMASI (sebelum mesin dikirim); sesudah itu 409.
+- Hanya boleh selama lifecycle DIAJUKAN atau DIKONFIRMASI (selama booking belum berjalan); sesudah itu 409.
 - Mesin harus TERSEDIA (409 bila tidak) dan belum ada di booking ini (409 bila sudah). Mesin berjalan TERSEDIA -> DIKONFIRMASI.
 - **Tonase mesin adalah batas atas, bukan angka yang harus sama.** Karena cetakan tidak dipasangkan ke mesin, syarat di sini hanya mesin sanggup **cetakan terkecil** di booking; bila tidak sanggup satu cetakan pun dibalas 400 beserta cetakan terkecilnya. Kecocokan per pasangan cetakan-mesin ditegakkan saat Log Produksi dicatat.
 - Booking tanpa cetakan dibalas 409.
@@ -210,7 +220,7 @@ Role: ADMIN_SUNDAYA. **Meminjamkan satu mesin** ke booking. Dipanggil berulang s
 - Response 200: `Job`
 
 ### DELETE /jobs/:id/machines/:machineId
-Role: ADMIN_SUNDAYA. Menarik satu mesin dari booking; mesin kembali TERSEDIA. Hanya boleh sebelum mesin dikirim (lifecycle DIAJUKAN atau DIKONFIRMASI, 409 sesudahnya). Mesin yang bukan bagian booking dibalas 404. **Mesin terakhir tidak bisa ditarik** (409): booking tanpa mesin sama dengan booking yang tidak disetujui, jalurnya reject. Menukar mesin tunggal dilakukan dengan menambah pengganti dulu, baru menarik yang lama.
+Role: ADMIN_SUNDAYA. Menarik satu mesin dari booking; mesin kembali TERSEDIA. Hanya boleh selama booking belum berjalan (lifecycle DIAJUKAN atau DIKONFIRMASI, 409 sesudahnya). Mesin yang bukan bagian booking dibalas 404. **Mesin terakhir tidak bisa ditarik** (409): booking tanpa mesin sama dengan booking yang tidak disetujui, jalurnya reject. Menukar mesin tunggal dilakukan dengan menambah pengganti dulu, baru menarik yang lama.
 - Response 200: `Job`
 
 ### PATCH /jobs/:id/reject
@@ -218,25 +228,15 @@ Role: ADMIN_SUNDAYA. DIAJUKAN -> DITOLAK dengan alasan. Cetakan booking ini dile
 - Request: `RejectJobRequest` { reason }
 - Response 200: `Job`
 
-### PATCH /jobs/:id/ship
-Role: ADMIN_SUNDAYA. DIKONFIRMASI -> DIKIRIM (mesin -> DIKIRIM).
-- Response 200: `Job`
+### Transisi otomatis lifecycle job (bukan endpoint)
+Tidak ada endpoint kirim, aktifkan, atau selesaikan job. Mesin tidak pernah keluar dari Sundaya (penyewa yang mengirim cetakan ke sini), jadi dua perpindahan sisanya menyusul kenyataan fisik di dalam transaksi service pemicunya, sejajar dengan cara mold tracking bergerak:
 
-### PATCH /jobs/:id/activate
-Role: ADMIN_SUNDAYA. DIKIRIM -> AKTIF (mesin -> AKTIF). `startDate`/`endDate` dihitung ulang dari momen aktif memakai `requestedDurationDays`.
-- Response 200: `Job`
+| Transisi | Dipicu oleh | Efek samping |
+|---|---|---|
+| DIKONFIRMASI -> AKTIF | `POST /penerimaan` dengan `item: MOLD` | seluruh mesin booking DIKONFIRMASI -> AKTIF, `receivedAt`/`startDate` diisi sekarang, `endDate` = sekarang + `requestedDurationDays` |
+| AKTIF -> SELESAI | `PATCH /molds/:id/tracking` ke COMPLETED pada cetakan terakhir booking | seluruh mesin booking AKTIF -> PENGECEKAN -> TERSEDIA |
 
-### PATCH /jobs/:id/return
-Role: ADMIN_SUNDAYA. AKTIF -> SELESAI_SEWA (mesin -> SELESAI_SEWA), set `returnedAt`.
-- Response 200: `Job`
-
-### PATCH /jobs/:id/collect
-Role: ADMIN_SUNDAYA. SELESAI_SEWA -> DIKEMBALIKAN (mesin -> DIKEMBALIKAN).
-- Response 200: `Job`
-
-### PATCH /jobs/:id/complete
-Role: ADMIN_SUNDAYA. DIKEMBALIKAN -> SELESAI (mesin lewat PENGECEKAN kembali ke TERSEDIA).
-- Response 200: `Job`
+Keduanya idempoten dan hanya maju: cetakan kedua yang tiba tidak menggeser masa sewa, dan booking yang masih punya cetakan belum COMPLETED tetap AKTIF. Booking yang belum dikonfirmasi (mesin belum dipinjamkan) tidak ikut aktif walau cetakannya sudah tiba.
 
 ### POST /jobs/:id/extensions
 Role: MANAGER_PENYEWA. Mengajukan perpanjangan masa sewa untuk job miliknya. Job harus AKTIF (409 bila bukan) dan tidak boleh ada pengajuan lain yang masih DIAJUKAN (409). Job tenant lain dibalas 403. Status pengajuan mulai dari DIAJUKAN.
@@ -256,16 +256,16 @@ Role: ADMIN_SUNDAYA. Memutuskan perpanjangan. Hanya pengajuan berstatus DIAJUKAN
 
 ## Modul Log Produksi (SSIP, Layer 2)
 
-Timeline event produksi **per cetakan** (Layer 2), diinput Admin Penyewa di lokasi Sundaya. Satu booking bisa memuat beberapa cetakan, jadi tiap event menyebut `moldId`; cetakan harus benar-benar bagian dari booking itu (404 bila bukan). **Append-only**: tidak ada PATCH/DELETE; koreksi lewat event baru. Tiga jenis event (`LogProduksiEventType`) berbagi satu timeline; tiap event hanya menyimpan field milik tipenya. `occurredAt` event `MATERIAL_DATANG` dipakai sebagai aktual-tiba material di Log Pengiriman. Scoping tenant di server: job harus milik tenant pengakses (Admin Penyewa lewat `parentId`, Manager lewat dirinya); job tenant lain dibalas 404.
+Timeline event produksi **per cetakan** (Layer 2), diinput Admin Penyewa di lokasi Sundaya. Satu booking bisa memuat beberapa cetakan, jadi tiap event menyebut `moldId`; cetakan harus benar-benar bagian dari booking itu (404 bila bukan). **Append-only**: tidak ada PATCH/DELETE; koreksi lewat event baru. **Dua jenis event** (`LogProduksiEventType`) berbagi satu timeline: `PRODUKSI_HARIAN` dan `PROGRESS_MOLDING`; tiap event hanya menyimpan field milik tipenya. Kedatangan material tidak dicatat di sini: sudah direncanakan Manager di Log Pengiriman dan dikonfirmasi Admin Sundaya di Log Penerimaan, jadi satu kejadian fisik tidak diinput dua kali. Yang tersisa di Layer 2 adalah pemakaian material per hari (`materialUsedKg` pada `PRODUKSI_HARIAN`). Scoping tenant di server: job harus milik tenant pengakses (Admin Penyewa lewat `parentId`, Manager lewat dirinya); job tenant lain dibalas 404.
 
 ### GET /jobs/:jobId/logs
 Role: ADMIN_PENYEWA, MANAGER_PENYEWA, ADMIN_SUNDAYA, SUPER_ADMIN. Timeline event job (urut `occurredAt` menaik).
 - Response 200: `LogProduksi[]`
 
 ### POST /jobs/:jobId/logs
-Role: ADMIN_PENYEWA. Append satu event; `byId` di-set dari token. `occurredAt` tidak boleh bertanggal masa depan (400). Event `PRODUKSI_HARIAN` memajukan `Mold.trackingStatus` cetakan itu ke `PRODUCTION` dalam transaksi yang sama (idempoten).
+Role: ADMIN_PENYEWA. Append satu event; `byId` di-set dari token. `occurredAt` tidak boleh melewati waktu sekarang (400). Event `PRODUKSI_HARIAN` memajukan `Mold.trackingStatus` cetakan itu ke `PRODUCTION` dalam transaksi yang sama (idempoten).
 
-**Event harus menyebut pasangan cetakan-mesin.** `machineId` wajib untuk `PRODUKSI_HARIAN` dan `PROGRESS_MOLDING` (400 bila kosong), tidak dipakai `MATERIAL_DATANG` (disimpan null). Mesin harus salah satu mesin pinjaman booking itu (404 bila bukan) dan tonasenya harus sanggup cetakan itu: `machine.tonaseTon >= mold.tonaseTon`, bila kurang dibalas 400 beserta nomor mesin dan kode cetakannya. Ini satu-satunya tempat pasangan cetakan-mesin tercatat, karena mesin dipinjamkan tanpa dipasangkan.
+**Event harus menyebut pasangan cetakan-mesin.** `machineId` selalu wajib (400 bila kosong): kedua jenis event terjadi di atas mesin. Mesin harus salah satu mesin pinjaman booking itu (404 bila bukan) dan tonasenya harus sanggup cetakan itu: `machine.tonaseTon >= mold.tonaseTon`, bila kurang dibalas 400 beserta nomor mesin dan kode cetakannya. Ini satu-satunya tempat pasangan cetakan-mesin tercatat, karena mesin dipinjamkan tanpa dipasangkan.
 
 **Plan cetakan adalah batas keras** (ditegakkan pada `PRODUKSI_HARIAN`, 400 bila dilewati beserta sisa kuotanya):
 - akumulasi `goodProduct` tidak boleh melewati `Mold.targetOutput`
@@ -273,10 +273,9 @@ Role: ADMIN_PENYEWA. Append satu event; `byId` di-set dari token. `occurredAt` t
 - plan yang null berarti tidak dibatasi; tepat sampai batas masih diterima
 
 Field wajib per `eventType` (400 bila kurang):
-- `MATERIAL_DATANG`: wajib `materialName`, `jumlahKg` (opsional `noSuratJalan`)
 - `PRODUKSI_HARIAN`: wajib `goodProduct`, `rejectCount` (opsional `materialUsedKg`, yaitu material yang dipakai hari itu; sisa kuota dihitung sistem)
 - `PROGRESS_MOLDING`: wajib `progressMolding` (opsional `keteranganProgress`)
-- Request: `CreateLogProduksiRequest` { moldId, machineId (wajib untuk PRODUKSI_HARIAN dan PROGRESS_MOLDING), eventType, occurredAt, catatan?, dan field sesuai tipe di atas }
+- Request: `CreateLogProduksiRequest` { moldId, machineId, eventType, occurredAt, catatan?, dan field sesuai tipe di atas }
 - Response 201: `LogProduksi`
 
 ---
@@ -303,7 +302,9 @@ Role: MANAGER_PENYEWA. Mencatat rencana pengiriman. `byId` di-set dari token. Jo
 
 ## Modul Log Penerimaan (SSIP, Admin Sundaya)
 
-Konfirmasi bahwa mold atau material tiba di lokasi Sundaya. Pemisahan item sama seperti Log Pengiriman. **Berbeda dari `LogProduksi` event `MATERIAL_DATANG` (Layer 2)**: yang ini kedatangan di gerbang Sundaya (tanggung jawab logistik Sundaya), yang itu material masuk stok lantai produksi (tanggung jawab Penyewa). Dua kejadian fisik berbeda, jadi dual-layer tetap terjaga.
+Konfirmasi bahwa mold atau material tiba di lokasi Sundaya. Pemisahan item sama seperti Log Pengiriman. Ini satu-satunya tempat kedatangan barang dicatat: Log Produksi (Layer 2) tidak lagi punya event material datang, jadi satu kejadian fisik tidak diinput dua kali oleh dua pihak.
+
+Tab Log Penerimaan di web juga menampilkan `GET /pengiriman` sebagai kartu rencana baca-saja. Kolom yang ditampilkan harus sepadan dengan tabel Log Pengiriman milik Manager (cetakan/material, jumlah, nomor surat jalan, rencana kirim, catatan): satu data yang sama tidak boleh tampil dengan bentuk berbeda di dua peran.
 
 ### GET /penerimaan
 Role: ADMIN_SUNDAYA, SUPER_ADMIN, MANAGER_PENYEWA (job miliknya). Urut `diterimaAt` menurun.
@@ -313,8 +314,9 @@ Role: ADMIN_SUNDAYA, SUPER_ADMIN, MANAGER_PENYEWA (job miliknya). Urut `diterima
 ### POST /penerimaan
 Role: ADMIN_SUNDAYA. `byId` di-set dari token. Job harus ada (404).
 - `item: MOLD` wajib menyebut `moldId` (400 bila kosong) dan cetakan itu harus bagian dari booking (404 bila bukan); status cetakan itu maju ke `RECEIVED` dalam transaksi yang sama.
+- `item: MOLD` juga **menjalankan booking-nya**: job DIKONFIRMASI -> AKTIF, seluruh mesin pinjamannya ikut AKTIF, dan masa sewa mulai dihitung dari saat ini (lihat "Transisi otomatis lifecycle job"). Idempoten: cetakan kedua yang tiba tidak menggeser masa sewa.
 - `item: MATERIAL` wajib `materialName` dan `jumlahKg` (400 bila kurang).
-- `diterimaAt` tidak boleh bertanggal masa depan (400).
+- `diterimaAt` tidak boleh melewati waktu sekarang (400, toleransi skew 5 menit). Log ini mencatat barang yang **sudah** tiba, jadi tanggal depan tetap ditolak meskipun `rencanaKirim` penyewa memang bertanggal depan: rencana hidup di Log Pengiriman, realisasi hidup di sini. Pesan errornya memakai label form ("Waktu diterima"), bukan nama field API.
 - Setelah transaksi sukses, Manager pemilik job menerima notifikasi (link `/pengiriman`).
 - Request: `CreateLogPenerimaanRequest` { jobId, item, moldId (wajib untuk item MOLD), diterimaAt, materialName?, jumlahKg?, noSuratJalan?, kondisi?, catatan? }
 - Response 201: `LogPenerimaan`
@@ -544,4 +546,4 @@ Role: ADMIN_PENYEWA. Satu baris **per cetakan** pada booking aktif tenant indukn
 
 ### GET /dashboard/job/logs
 Role: ADMIN_PENYEWA. Log utama: seluruh event dari semua job tenant induk dalam satu timeline, terbaru dulu, dibatasi 50 event.
-- Response 200: `JobLogEntry[]` (bentuk `LogProduksi` ditambah `jobNumber`, `moldKode`, dan `machineNumber`) sehingga tiap baris bisa menyebut cetakan mana di mesin mana. `machineNumber` null pada `MATERIAL_DATANG`.
+- Response 200: `JobLogEntry[]` (bentuk `LogProduksi` ditambah `jobNumber`, `moldKode`, dan `machineNumber`) sehingga tiap baris bisa menyebut cetakan mana di mesin mana.
