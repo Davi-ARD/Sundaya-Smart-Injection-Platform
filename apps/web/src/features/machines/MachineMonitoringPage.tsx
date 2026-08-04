@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Activity, Gauge } from 'lucide-react'
 import {
-  DowntimeReason,
   MachineOperationalStatus,
   type CreateOperationalDataRequest,
   type Machine,
@@ -13,35 +12,20 @@ import { PageHeader } from '../../components/PageHeader'
 import { Button } from '../../components/ui/Button'
 import { Card, StatCard } from '../../components/ui/Card'
 import { DataTable, type Column } from '../../components/ui/DataTable'
-import { MachineOperationalStatusBadge, machineOperationalStatusLabel } from '../../components/ui/Badge'
+import { MachineOperationalBadge, machineOperationalLabel } from '../../components/ui/Badge'
 import { SidePanel } from '../../components/ui/SidePanel'
 import { TableSkeleton } from '../../components/ui/Skeleton'
 import { SelectField, TextAreaField, TextField, FieldGroup } from '../../components/ui/FormField'
 import { useToast } from '../../components/ui/Toast'
 import { errorMessage } from '../../lib/errorMessage'
 
-const downtimeReasonLabel: Record<DowntimeReason, string> = {
-  [DowntimeReason.BREAKDOWN]: 'Kerusakan (Breakdown)',
-  [DowntimeReason.SETUP_ADJUSTMENT]: 'Setup & Penyesuaian',
-  [DowntimeReason.MINOR_STOP]: 'Minor Stop',
-  [DowntimeReason.REDUCED_SPEED]: 'Kecepatan Berkurang',
-  [DowntimeReason.STARTUP_REJECT]: 'Reject Saat Startup',
-  [DowntimeReason.PRODUCTION_REJECT]: 'Reject Produksi',
-}
-
 const operationalStatusOptions = Object.values(MachineOperationalStatus).map((status) => ({
   value: status,
-  label: machineOperationalStatusLabel[status],
+  label: machineOperationalLabel[status],
 }))
-
-const downtimeReasonOptions: { value: DowntimeReason | ''; label: string }[] = [
-  { value: '', label: '— pilih alasan —' },
-  ...Object.values(DowntimeReason).map((reason) => ({ value: reason, label: downtimeReasonLabel[reason] })),
-]
 
 type OperationalFormState = {
   status: MachineOperationalStatus
-  downtimeReason: DowntimeReason | ''
   cycleTimeSec: string
   occurredAt: string
   catatan: string
@@ -51,7 +35,6 @@ const nowForInput = () => new Date().toISOString().slice(0, 16)
 
 const emptyOperationalForm: OperationalFormState = {
   status: MachineOperationalStatus.RUNNING,
-  downtimeReason: '',
   cycleTimeSec: '',
   occurredAt: nowForInput(),
   catatan: '',
@@ -87,7 +70,7 @@ export function MachineMonitoringPage() {
 
   const columns: Column<Machine>[] = [
     { header: 'No. Mesin', cell: (m) => <span className="font-semibold text-slate-800">{m.machineNumber}</span> },
-    { header: 'Status Realtime', cell: (m) => <MachineOperationalStatusBadge status={m.operationalStatus} /> },
+    { header: 'Status Realtime', cell: (m) => <MachineOperationalBadge status={m.operationalStatus} /> },
     {
       header: '',
       className: 'text-right',
@@ -154,19 +137,12 @@ function OperationalFormPanel({
   const [form, setForm] = useState<OperationalFormState>(emptyOperationalForm)
   const [isSaving, setIsSaving] = useState(false)
 
-  const isRunning = form.status === MachineOperationalStatus.RUNNING
-
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
-    if (!isRunning && !form.downtimeReason) {
-      toast.error('Alasan downtime wajib diisi untuk status non-Running')
-      return
-    }
     setIsSaving(true)
     try {
       const body: CreateOperationalDataRequest = {
         status: form.status,
-        downtimeReason: isRunning ? undefined : (form.downtimeReason as DowntimeReason),
         cycleTimeSec: form.cycleTimeSec.trim() === '' ? undefined : Number(form.cycleTimeSec),
         occurredAt: new Date(form.occurredAt).toISOString(),
         catatan: form.catatan.trim() === '' ? undefined : form.catatan.trim(),
@@ -191,23 +167,9 @@ function OperationalFormPanel({
         <SelectField
           label="Status"
           value={form.status}
-          onChange={(value) =>
-            setForm((f) => ({
-              ...f,
-              status: value,
-              downtimeReason: value === MachineOperationalStatus.RUNNING ? '' : f.downtimeReason,
-            }))
-          }
+          onChange={(value) => setForm((f) => ({ ...f, status: value }))}
           options={operationalStatusOptions}
         />
-        {!isRunning ? (
-          <SelectField
-            label="Alasan downtime"
-            value={form.downtimeReason}
-            onChange={(value) => setForm((f) => ({ ...f, downtimeReason: value }))}
-            options={downtimeReasonOptions}
-          />
-        ) : null}
         <FieldGroup>
           <TextField
             label="Cycle time (detik)"

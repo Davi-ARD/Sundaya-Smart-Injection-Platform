@@ -36,7 +36,7 @@ const staffBookingSource: SearchSource = {
       id: j.id,
       group: 'Booking',
       title: j.jobNumber,
-      subtitle: j.companyName ?? j.mold?.namaProduk ?? '-',
+      subtitle: j.companyName ?? j.molds.map((m) => m.namaProduk).join(', ') ?? '-',
       to: '/staff/booking',
     }))
   },
@@ -66,7 +66,10 @@ const bookingSource: SearchSource = {
       id: j.id,
       group: 'Booking',
       title: j.jobNumber,
-      subtitle: j.mold?.namaProduk ?? j.machineNumber ?? '-',
+      subtitle:
+        j.molds.map((m) => m.kodeMold).join(', ') ||
+        j.machines.map((m) => m.machineNumber).join(', ') ||
+        '-',
       to: '/booking',
     }))
   },
@@ -77,10 +80,10 @@ const pengirimanSource: SearchSource = {
   load: async (token) => {
     const rows = await api.listPengiriman(token)
     return rows.map((r) => ({
-      id: `${r.jobId}-${r.item}`,
+      id: r.id,
       group: 'Pengiriman',
-      title: r.item,
-      subtitle: r.sumberRencana,
+      title: r.kodeMold ?? r.materialName ?? r.item,
+      subtitle: r.jobNumber ?? '-',
       to: '/pengiriman',
     }))
   },
@@ -116,7 +119,7 @@ const logProduksiSource: SearchSource = {
       id: l.id,
       group: 'Log Produksi',
       title: `${l.jobNumber} - ${l.moldKode}`,
-      subtitle: l.catatan ?? l.materialName ?? l.eventType,
+      subtitle: l.catatan ?? l.machineNumber ?? l.eventType,
       to: '/logs',
     }))
   },
