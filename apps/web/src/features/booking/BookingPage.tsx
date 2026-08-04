@@ -9,6 +9,7 @@ import {
 } from '@mold-tracker/shared'
 import { useAuth } from '../auth/authContextValue'
 import { api } from '../../lib/api'
+import { PageHeader } from '../../components/PageHeader'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { DataTable, type Column } from '../../components/ui/DataTable'
@@ -132,33 +133,32 @@ export function BookingPage() {
             disabled={j.extensions.some((e) => e.status === ExtensionStatus.DIAJUKAN)}
             onClick={() => setExtendTarget(j)}
           >
-            <TimerReset className="h-3.5 w-3.5" /> Ajukan perpanjangan
+            <TimerReset className="h-4 w-4" /> Ajukan perpanjangan
           </Button>
         ) : null,
     },
   ]
 
   return (
-    <div className="mx-auto max-w-6xl">
-      <div className="mb-6 flex items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Booking Mesin</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Ajukan booking cetakan beserta rencana material dan waktu sewa.
-          </p>
-        </div>
-        <Button onClick={() => setIsPanelOpen(true)} disabled={isLoading}>
-          <CalendarPlus className="h-4 w-4" /> Ajukan booking
-        </Button>
-      </div>
+    <div className="mx-auto max-w-screen-2xl">
+      <PageHeader
+        breadcrumb={[{ label: 'Beranda', to: '/manager' }, { label: 'Booking Mesin' }]}
+        title="Booking Mesin"
+        description="Ajukan booking cetakan beserta rencana material dan waktu sewa."
+        actions={
+          <Button onClick={() => setIsPanelOpen(true)} disabled={isLoading}>
+            <CalendarPlus className="h-5 w-5" /> Ajukan booking
+          </Button>
+        }
+      />
 
       <Card>
         {isLoading ? (
           <TableSkeleton rows={5} columns={6} />
         ) : jobs.length === 0 ? (
           <div className="grid place-items-center py-14 text-center">
-            <span className="grid h-12 w-12 place-items-center rounded-xl bg-brand-50 text-brand-700">
-              <CalendarPlus className="h-6 w-6" />
+            <span className="grid h-12 w-12 place-items-center text-brand-700">
+              <CalendarPlus className="h-7 w-7" />
             </span>
             <p className="mt-3 text-sm font-semibold text-slate-800">Belum ada booking</p>
             <p className="mt-1 text-sm text-slate-500">
@@ -360,7 +360,7 @@ function BookingFormPanel({
           />
 
           <div className="flex items-start gap-2 rounded-lg bg-brand-50/70 px-3 py-2.5 text-xs leading-5 text-brand-900 ring-1 ring-inset ring-brand-600/10">
-            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <Info className="mt-0.5 h-4 w-4 shrink-0" />
             Tanggal rencana kirim menjadi pembanding di Log Pengiriman. Isi sekarang agar
             keterlambatan dapat terpantau otomatis.
           </div>

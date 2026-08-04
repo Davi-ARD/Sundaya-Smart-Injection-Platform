@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState, type ComponentType } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import {
+  Activity,
   Bell,
   Boxes,
   CalendarPlus,
   ChevronDown,
+  ClipboardCheck,
   ClipboardList,
   Factory,
   Gauge,
@@ -20,6 +22,7 @@ import {
 } from 'lucide-react'
 import { Role, type AppNotification } from '@mold-tracker/shared'
 import sundayaIcon from '../assets/icon-sundaya.png'
+import { GlobalSearch } from './GlobalSearch'
 import { useAuth } from '../features/auth/authContextValue'
 import { initialsFromName, roleLabels, roleTagline } from '../features/auth/roleLabels'
 import { useNotifications } from '../features/notifications/useNotifications'
@@ -58,19 +61,25 @@ const sundayaItems: MenuItem[] = [
   {
     label: 'Booking',
     to: '/staff/booking',
-    icon: CalendarPlus,
-    roles: [Role.SUPER_ADMIN, Role.ADMIN_SUNDAYA, Role.TEKNISI_SUNDAYA],
-  },
-  {
-    label: 'Mesin',
-    to: '/machines',
-    icon: Factory,
+    icon: ClipboardCheck,
     roles: [Role.SUPER_ADMIN, Role.ADMIN_SUNDAYA, Role.TEKNISI_SUNDAYA],
   },
   {
     label: 'Mold Tracking',
     to: '/tracking',
     icon: RouteIcon,
+    roles: [Role.SUPER_ADMIN, Role.ADMIN_SUNDAYA, Role.TEKNISI_SUNDAYA],
+  },
+  {
+    label: 'Machine Monitoring',
+    to: '/monitoring',
+    icon: Activity,
+    roles: [Role.SUPER_ADMIN, Role.ADMIN_SUNDAYA, Role.TEKNISI_SUNDAYA],
+  },
+  {
+    label: 'Kelola Mesin',
+    to: '/machines',
+    icon: Factory,
     roles: [Role.SUPER_ADMIN, Role.ADMIN_SUNDAYA, Role.TEKNISI_SUNDAYA],
   },
   {
@@ -92,7 +101,9 @@ const menuSections = [
   { label: 'Administrasi', items: administrationItems },
 ]
 
-const SIDEBAR_BG = '#0f1e3d'
+const SIDEBAR_GRADIENT = 'linear-gradient(180deg, #16264a 0%, #0f1e3d 55%, #0a1730 100%)'
+// Sinkron manual dengan version di apps/web/package.json.
+const APP_VERSION = 'v0.1.0'
 
 export function AppLayout() {
   const { user, logout } = useAuth()
@@ -110,7 +121,7 @@ export function AppLayout() {
   const initials = initialsFromName(user.nama)
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-surface">
       {isMobileSidebarOpen ? (
         <button
           type="button"
@@ -122,20 +133,25 @@ export function AppLayout() {
 
       <aside
         className={[
-          'fixed inset-y-0 left-0 z-40 hidden text-white shadow-2xl shadow-slate-900/25 transition-[width] duration-300 ease-out lg:block',
+          'fixed inset-y-0 left-0 z-40 hidden overflow-hidden text-white shadow-2xl shadow-slate-900/25 transition-[width] duration-300 ease-out lg:block',
           isSidebarOpen ? 'w-72' : 'w-20',
         ].join(' ')}
-        style={{ backgroundColor: SIDEBAR_BG }}
+        style={{ background: SIDEBAR_GRADIENT }}
       >
-        <SidebarContent isOpen={isSidebarOpen} sections={visibleSections} onNavigate={() => undefined} />
+        <SidebarContent
+          isOpen={isSidebarOpen}
+          sections={visibleSections}
+          onNavigate={() => undefined}
+          onToggleCollapse={() => setIsSidebarOpen((current) => !current)}
+        />
       </aside>
 
       <aside
         className={[
-          'fixed inset-y-0 left-0 z-40 w-72 text-white shadow-2xl shadow-slate-900/30 transition-transform duration-300 ease-out lg:hidden',
+          'fixed inset-y-0 left-0 z-40 w-72 overflow-hidden text-white shadow-2xl shadow-slate-900/30 transition-transform duration-300 ease-out lg:hidden',
           isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full',
         ].join(' ')}
-        style={{ backgroundColor: SIDEBAR_BG }}
+        style={{ background: SIDEBAR_GRADIENT }}
       >
         <SidebarContent isOpen sections={visibleSections} onNavigate={() => setIsMobileSidebarOpen(false)} />
       </aside>
@@ -146,28 +162,20 @@ export function AppLayout() {
           isSidebarOpen ? 'lg:pl-72' : 'lg:pl-20',
         ].join(' ')}
       >
-        <header className="sticky top-0 z-20 border-b border-slate-200/70 bg-white/80 px-4 py-3 backdrop-blur-md sm:px-6 lg:px-8">
+        <header className="sticky top-[22px] z-20 mx-4 mt-[22px] rounded-2xl border border-slate-200/70 bg-white/80 px-4 py-3 shadow-sm shadow-slate-900/5 backdrop-blur-md sm:mx-6 sm:px-6 lg:mx-8 lg:px-8">
           <div className="flex items-center justify-between gap-4">
             <div className="flex min-w-0 flex-1 items-center gap-3">
               <button
                 type="button"
                 aria-label="Buka sidebar"
                 onClick={() => setIsMobileSidebarOpen(true)}
-                className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-slate-200/70 bg-white text-slate-700 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-slate-50 active:scale-95 lg:hidden"
+                className="grid h-11 w-11 shrink-0 place-items-center rounded-lg border border-slate-200/70 bg-white text-slate-700 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-slate-50 active:scale-95 lg:hidden"
               >
-                <PanelLeft className="h-4 w-4" />
+                <PanelLeft className="h-5 w-5" />
               </button>
-              <button
-                type="button"
-                aria-label={isSidebarOpen ? 'Ringkas sidebar' : 'Buka sidebar'}
-                onClick={() => setIsSidebarOpen((current) => !current)}
-                className="hidden h-10 w-10 shrink-0 place-items-center rounded-lg border border-slate-200/70 bg-white text-slate-700 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-slate-50 active:scale-95 lg:grid"
-              >
-                <PanelLeft className="h-4 w-4" />
-              </button>
-              <p className="hidden truncate text-sm font-medium text-slate-500 sm:block">
-                Selamat datang, <span className="font-semibold text-slate-900">{user.nama}</span>
-              </p>
+              <div className="hidden min-w-0 flex-1 sm:block">
+                <GlobalSearch />
+              </div>
             </div>
 
             <div className="flex shrink-0 items-center gap-2">
@@ -183,7 +191,7 @@ export function AppLayout() {
           </div>
         </header>
 
-        <main className="px-4 py-6 sm:px-6 lg:px-8">
+        <main className="content-dot-grid px-4 py-6 sm:px-6 lg:px-8">
           <Outlet />
         </main>
       </div>
@@ -230,9 +238,9 @@ function NotificationBell() {
         type="button"
         aria-label="Notifikasi"
         onClick={() => setIsOpen((current) => !current)}
-        className="relative grid h-10 w-10 place-items-center rounded-lg text-slate-500 transition-colors duration-150 hover:bg-slate-100"
+        className="relative grid h-11 w-11 place-items-center rounded-lg text-slate-500 transition-colors duration-150 hover:bg-slate-100"
       >
-        <Bell className="h-4 w-4" />
+        <Bell className="h-5 w-5" />
         {unreadCount > 0 ? (
           <span className="absolute right-1.5 top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white ring-2 ring-white">
             {unreadCount > 9 ? '9+' : unreadCount}
@@ -272,7 +280,7 @@ function NotificationBell() {
                   />
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm font-semibold text-slate-950">{notification.title}</span>
-                    <span className="mt-0.5 block text-xs leading-5 text-slate-600">{notification.message}</span>
+                    <span className="mt-0.5 block text-xs leading-normal text-slate-600">{notification.message}</span>
                     <span className="mt-1 block text-[11px] text-slate-400">{formatRelativeTime(notification.createdAt)}</span>
                   </span>
                 </button>
@@ -319,7 +327,7 @@ function UserMenu({
       <button
         type="button"
         onClick={() => setIsOpen((current) => !current)}
-        className="flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors duration-150 hover:bg-slate-100"
+        className="flex h-11 items-center gap-2 rounded-lg px-2 py-1 transition-colors duration-150 hover:bg-slate-100"
       >
         {avatarUrl ? (
           <img
@@ -338,7 +346,7 @@ function UserMenu({
             {roleTagline[role]}
           </span>
         </span>
-        <ChevronDown className={['h-4 w-4 text-slate-400 transition-transform duration-150', isOpen ? 'rotate-180' : ''].join(' ')} />
+        <ChevronDown className={['h-5 w-5 text-slate-400 transition-transform duration-150', isOpen ? 'rotate-180' : ''].join(' ')} />
       </button>
 
       {isOpen ? (
@@ -352,7 +360,7 @@ function UserMenu({
             }}
             className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm font-medium text-slate-700 transition-colors duration-150 hover:bg-slate-100"
           >
-            <Pencil className="h-4 w-4" />
+            <Pencil className="h-5 w-5" />
             Edit Profil
           </button>
           <button
@@ -360,7 +368,7 @@ function UserMenu({
             onClick={onLogout}
             className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm font-medium text-rose-500 transition-colors duration-150 hover:bg-rose-50 hover:text-rose-600"
           >
-            <LogOut className="h-4 w-4" />
+            <LogOut className="h-5 w-5" />
             Logout
           </button>
         </div>
@@ -373,16 +381,34 @@ function SidebarContent({
   isOpen,
   sections,
   onNavigate,
+  onToggleCollapse,
 }: {
   isOpen: boolean
   sections: { label: string; items: MenuItem[] }[]
   onNavigate: () => void
+  // Toggle ringkas/buka; hanya diisi untuk sidebar desktop (mobile tidak
+  // punya mode ringkas, ditutup lewat overlay/nav-click).
+  onToggleCollapse?: () => void
 }) {
   return (
-    <div className="flex h-full flex-col overflow-y-auto overflow-x-hidden px-4 py-5">
-      <div className={['flex items-center gap-3', isOpen ? '' : 'justify-center'].join(' ')}>
-        <div className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-xl bg-white shadow-lg shadow-slate-900/10">
-          <img src={sundayaIcon} alt="Sundaya" className="h-8 w-8 object-contain" />
+    <>
+      {/* Watermark logo samar, dipotong di pojok bawah (posisi relatif ke
+          <aside>, yang sudah fixed + overflow-hidden). */}
+      <img
+        src={sundayaIcon}
+        alt=""
+        aria-hidden
+        className="pointer-events-none absolute -bottom-16 -right-16 h-64 w-64 object-contain opacity-[0.03]"
+      />
+      <div className="relative flex h-full flex-col overflow-y-auto overflow-x-hidden px-4 py-5">
+      <div
+        className={[
+          'flex items-center gap-3 border-b border-white/10 pb-5',
+          isOpen ? '' : 'justify-center',
+        ].join(' ')}
+      >
+        <div className="grid h-16 w-16 shrink-0 place-items-center">
+          <img src={sundayaIcon} alt="Sundaya" className="h-14 w-14 object-contain" />
         </div>
         <div
           className={[
@@ -390,14 +416,13 @@ function SidebarContent({
             isOpen ? 'translate-x-0 opacity-100' : 'pointer-events-none w-0 -translate-x-2 opacity-0',
           ].join(' ')}
         >
-          <p className="truncate text-sm font-bold text-white">SSIP</p>
-          <p className="truncate text-[10px] font-semibold uppercase tracking-wider text-brand-300">
-            Smart Injection Platform
+          <p className="text-base font-semibold uppercase tracking-wider text-brand-300">
+            Sundaya Smart Injection Platfrom
           </p>
         </div>
       </div>
 
-      <nav className="mt-8 space-y-6">
+      <nav className="mt-6 space-y-6">
         {sections.map((section) => (
           <div key={section.label}>
             <p
@@ -426,7 +451,7 @@ function SidebarContent({
                     ].join(' ')
                   }
                 >
-                  <item.icon className="h-4 w-4 shrink-0" />
+                  <item.icon className="h-5 w-5 shrink-0" />
                   <span
                     className={[
                       'whitespace-nowrap transition duration-200',
@@ -443,6 +468,34 @@ function SidebarContent({
           </div>
         ))}
       </nav>
-    </div>
+
+      <div className="mt-auto space-y-3 border-t border-white/10 pt-4">
+        <div className={['flex items-center gap-2', isOpen ? '' : 'justify-center'].join(' ')}>
+          <span className="relative flex h-2 w-2 shrink-0">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+          </span>
+          {isOpen ? <span className="text-xs text-slate-400">Sistem Online</span> : null}
+        </div>
+
+        {isOpen ? <p className="text-[10px] text-slate-500">{APP_VERSION}</p> : null}
+
+        {onToggleCollapse ? (
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            aria-label={isOpen ? 'Ringkas sidebar' : 'Buka sidebar'}
+            className={[
+              'flex h-9 w-full items-center rounded-lg text-slate-400 transition-colors duration-150 hover:bg-white/10 hover:text-white',
+              isOpen ? 'justify-start gap-2 px-2' : 'justify-center',
+            ].join(' ')}
+          >
+            <PanelLeft className={['h-4 w-4 shrink-0 transition-transform duration-200', isOpen ? '' : 'rotate-180'].join(' ')} />
+            {isOpen ? <span className="text-xs font-medium">Ringkas sidebar</span> : null}
+          </button>
+        ) : null}
+      </div>
+      </div>
+    </>
   )
 }

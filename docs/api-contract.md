@@ -168,6 +168,8 @@ Role: TEKNISI_SUNDAYA. Append event status realtime mesin (Layer 1, append-only)
 
 Evolusi dari modul Sewa lama. Satu booking menghasilkan satu Production Job. Mesin di-assign Admin Sundaya (bukan dipilih saat booking), `machineId` null sampai assign. Lifecycle (`JobLifecycle`) hanya berpindah lewat service layer (peta `JOB_LIFECYCLE_FLOW`); sumbu ketersediaan mesin (`Machine.status`) berjalan lockstep lewat `MACHINE_FLOW`. `jobStatus` (ON_SCHEDULE/WARNING/CRITICAL/COMPLETED) dihitung saat baca dari sisa sewa, bukan disimpan. Scoping tenant di server: staf Sundaya lihat semua; Manager lihat miliknya; Admin Penyewa lihat tenant induknya.
 
+`Job.mold` (opsional) menyertakan ringkasan `{ id, kodeMold, namaProduk, trackingStatus, tonaseTon }` di setiap response Job. Staf Sundaya tidak punya akses ke `GET /molds` (khusus Manager Penyewa), jadi field ini adalah sumber info mold mereka untuk assign (cocokkan tonase) dan tracking (tanpa endpoint list mold terpisah).
+
 ### GET /jobs
 Semua terautentikasi, disaring per tenant di server.
 - Query opsional: `lifecycle` (JobLifecycle)

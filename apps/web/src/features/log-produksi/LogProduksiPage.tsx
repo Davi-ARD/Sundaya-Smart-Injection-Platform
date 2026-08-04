@@ -9,6 +9,7 @@ import {
 } from '@mold-tracker/shared'
 import { useAuth } from '../auth/authContextValue'
 import { api } from '../../lib/api'
+import { PageHeader } from '../../components/PageHeader'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { JobLifecycleBadge, progressMoldingLabel } from '../../components/ui/Badge'
@@ -92,7 +93,7 @@ export function LogProduksiPage() {
 
   if (isLoadingJobs) {
     return (
-      <div className="mx-auto max-w-4xl">
+      <div className="mx-auto max-w-screen-2xl">
         <Card>
           <CardSkeleton lines={4} />
         </Card>
@@ -102,11 +103,11 @@ export function LogProduksiPage() {
 
   if (jobs.length === 0) {
     return (
-      <div className="mx-auto max-w-4xl">
+      <div className="mx-auto max-w-screen-2xl">
         <Card>
           <div className="grid place-items-center py-14 text-center">
-            <span className="grid h-12 w-12 place-items-center rounded-xl bg-brand-50 text-brand-700">
-              <ClipboardList className="h-6 w-6" />
+            <span className="grid h-12 w-12 place-items-center text-brand-700">
+              <ClipboardList className="h-7 w-7" />
             </span>
             <p className="mt-3 text-sm font-semibold text-slate-800">Belum ada job</p>
             <p className="mt-1 max-w-sm text-sm text-slate-500">
@@ -120,18 +121,17 @@ export function LogProduksiPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl">
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Log Produksi</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Catat material datang, produksi harian, dan progress molding di lokasi Sundaya.
-          </p>
-        </div>
-        <Button onClick={() => setIsPanelOpen(true)} disabled={!jobId}>
-          <Plus className="h-4 w-4" /> Catat event
-        </Button>
-      </div>
+    <div className="mx-auto max-w-screen-2xl">
+      <PageHeader
+        breadcrumb={[{ label: 'Beranda', to: '/job' }, { label: 'Log Produksi' }]}
+        title="Log Produksi"
+        description="Catat material datang, produksi harian, dan progress molding di lokasi Sundaya."
+        actions={
+          <Button onClick={() => setIsPanelOpen(true)} disabled={!jobId}>
+            <Plus className="h-5 w-5" /> Catat event
+          </Button>
+        }
+      />
 
       <Card>
         <div className="flex flex-wrap items-end gap-4">
@@ -159,8 +159,8 @@ export function LogProduksiPage() {
           <CardSkeleton lines={4} />
         ) : timeline.length === 0 ? (
           <div className="grid place-items-center py-12 text-center">
-            <span className="grid h-12 w-12 place-items-center rounded-xl bg-brand-50 text-brand-700">
-              <ClipboardList className="h-6 w-6" />
+            <span className="grid h-12 w-12 place-items-center text-brand-700">
+              <ClipboardList className="h-7 w-7" />
             </span>
             <p className="mt-3 text-sm font-semibold text-slate-800">Belum ada event</p>
             <p className="mt-1 text-sm text-slate-500">Catat event pertama untuk job ini.</p>
@@ -175,7 +175,7 @@ export function LogProduksiPage() {
       </Card>
 
       <p className="mt-4 flex items-start gap-2 text-xs leading-5 text-slate-500">
-        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+        <Info className="mt-0.5 h-4 w-4 shrink-0" />
         Event bersifat permanen dan tidak dapat diubah atau dihapus. Bila ada kekeliruan, catat
         event baru sebagai koreksi.
       </p>
@@ -198,8 +198,8 @@ function TimelineItem({ log }: { log: LogProduksi }) {
   const Icon = eventIcon[log.eventType]
   return (
     <li className="flex gap-3 rounded-xl border border-slate-200/70 bg-white p-4 shadow-soft">
-      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand-50 text-brand-700">
-        <Icon className="h-4 w-4" />
+      <span className="grid h-9 w-9 shrink-0 place-items-center text-brand-700">
+        <Icon className="h-5 w-5" />
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-baseline justify-between gap-2">

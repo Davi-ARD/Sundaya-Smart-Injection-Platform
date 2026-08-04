@@ -9,6 +9,7 @@ import {
 } from '@mold-tracker/shared'
 import { useAuth } from '../auth/authContextValue'
 import { api } from '../../lib/api'
+import { PageHeader } from '../../components/PageHeader'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { moldTrackingLabel } from '../../components/ui/Badge'
@@ -72,12 +73,11 @@ export function MoldTrackingPage() {
 
   return (
     <div className="mx-auto max-w-full">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900">Mold Tracking</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Transisi status fisik cetakan sepanjang siklus produksi, dari Planning sampai Completed.
-        </p>
-      </div>
+      <PageHeader
+        breadcrumb={[{ label: 'Beranda', to: '/staff' }, { label: 'Mold Tracking' }]}
+        title="Mold Tracking"
+        description="Transisi status fisik cetakan sepanjang siklus produksi, dari Planning sampai Completed."
+      />
 
       {isLoading ? (
         <Card>
@@ -86,8 +86,8 @@ export function MoldTrackingPage() {
       ) : molds.length === 0 ? (
         <Card>
           <div className="grid place-items-center py-14 text-center">
-            <span className="grid h-12 w-12 place-items-center rounded-xl bg-brand-50 text-brand-700">
-              <RouteIcon className="h-6 w-6" />
+            <span className="grid h-12 w-12 place-items-center text-brand-700">
+              <RouteIcon className="h-7 w-7" />
             </span>
             <p className="mt-3 text-sm font-semibold text-slate-800">Belum ada cetakan</p>
             <p className="mt-1 text-sm text-slate-500">Cetakan muncul setelah Manager Penyewa mendaftarkannya.</p>

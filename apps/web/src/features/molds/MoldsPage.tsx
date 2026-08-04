@@ -3,6 +3,7 @@ import { Boxes, Eye, Pencil, Plus } from 'lucide-react'
 import type { CreateMoldRequest, Mold, MoldPlanRow, UpdateMoldRequest } from '@mold-tracker/shared'
 import { useAuth } from '../auth/authContextValue'
 import { api } from '../../lib/api'
+import { PageHeader } from '../../components/PageHeader'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { DataTable, type Column } from '../../components/ui/DataTable'
@@ -87,7 +88,7 @@ export function MoldsPage() {
   const detailRow = detailMoldId ? planByMoldId.get(detailMoldId) : undefined
 
   const columns: Column<Mold>[] = [
-    { header: 'Kode', cell: (m) => <span className="font-semibold text-slate-900">{m.kodeMold}</span> },
+    { header: 'Kode', cell: (m) => <span className="font-semibold text-slate-800">{m.kodeMold}</span> },
     { header: 'Produk', cell: (m) => m.namaProduk },
     { header: 'Cavity', cell: (m) => m.cavity },
     { header: 'Tonase', cell: (m) => `${m.tonaseTon} ton` },
@@ -116,10 +117,10 @@ export function MoldsPage() {
       cell: (m) => (
         <div className="flex justify-end gap-2">
           <Button size="sm" variant="secondary" onClick={() => setDetailMoldId(m.id)}>
-            <Eye className="h-3.5 w-3.5" /> Detail
+            <Eye className="h-4 w-4" /> Detail
           </Button>
           <Button size="sm" variant="secondary" onClick={() => setPanel({ mode: 'edit', mold: m })}>
-            <Pencil className="h-3.5 w-3.5" /> Edit
+            <Pencil className="h-4 w-4" /> Edit
           </Button>
         </div>
       ),
@@ -127,26 +128,25 @@ export function MoldsPage() {
   ]
 
   return (
-    <div className="mx-auto max-w-6xl">
-      <div className="mb-6 flex items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Cetakan</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Master cetakan (mold) perusahaan Anda beserta rencana material dan target.
-          </p>
-        </div>
-        <Button onClick={() => setPanel({ mode: 'create' })}>
-          <Plus className="h-4 w-4" /> Tambah cetakan
-        </Button>
-      </div>
+    <div className="mx-auto max-w-screen-2xl">
+      <PageHeader
+        breadcrumb={[{ label: 'Beranda', to: '/manager' }, { label: 'Cetakan' }]}
+        title="Cetakan"
+        description="Master cetakan (mold) perusahaan Anda beserta rencana material dan target."
+        actions={
+          <Button onClick={() => setPanel({ mode: 'create' })}>
+            <Plus className="h-5 w-5" /> Tambah cetakan
+          </Button>
+        }
+      />
 
       <Card>
         {isLoading ? (
           <TableSkeleton rows={5} columns={6} />
         ) : molds.length === 0 ? (
           <div className="grid place-items-center py-14 text-center">
-            <span className="grid h-12 w-12 place-items-center rounded-xl bg-brand-50 text-brand-700">
-              <Boxes className="h-6 w-6" />
+            <span className="grid h-12 w-12 place-items-center text-brand-700">
+              <Boxes className="h-7 w-7" />
             </span>
             <p className="mt-3 text-sm font-semibold text-slate-800">Belum ada cetakan</p>
             <p className="mt-1 text-sm text-slate-500">Tambahkan cetakan pertama untuk mulai booking.</p>

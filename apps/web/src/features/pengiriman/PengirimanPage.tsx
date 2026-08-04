@@ -3,6 +3,7 @@ import { Info, Truck } from 'lucide-react'
 import { DeliveryStatus, type DeliveryRow } from '@mold-tracker/shared'
 import { useAuth } from '../auth/authContextValue'
 import { api } from '../../lib/api'
+import { PageHeader } from '../../components/PageHeader'
 import { Card, StatCard } from '../../components/ui/Card'
 import { DataTable, type Column } from '../../components/ui/DataTable'
 import { DeliveryStatusBadge } from '../../components/ui/Badge'
@@ -73,13 +74,12 @@ export function PengirimanPage() {
   ]
 
   return (
-    <div className="mx-auto max-w-6xl">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900">Log Pengiriman</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Perbandingan rencana kirim dan aktual kedatangan mold serta material di Sundaya.
-        </p>
-      </div>
+    <div className="mx-auto max-w-screen-2xl">
+      <PageHeader
+        breadcrumb={[{ label: 'Beranda', to: '/manager' }, { label: 'Log Pengiriman' }]}
+        title="Log Pengiriman"
+        description="Perbandingan rencana kirim dan aktual kedatangan mold serta material di Sundaya."
+      />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
@@ -107,8 +107,8 @@ export function PengirimanPage() {
           <TableSkeleton rows={5} columns={6} />
         ) : rows.length === 0 ? (
           <div className="grid place-items-center py-14 text-center">
-            <span className="grid h-12 w-12 place-items-center rounded-xl bg-brand-50 text-brand-700">
-              <Truck className="h-6 w-6" />
+            <span className="grid h-12 w-12 place-items-center text-brand-700">
+              <Truck className="h-7 w-7" />
             </span>
             <p className="mt-3 text-sm font-semibold text-slate-800">Belum ada rencana pengiriman</p>
             <p className="mt-1 max-w-sm text-sm text-slate-500">
@@ -122,7 +122,7 @@ export function PengirimanPage() {
       </Card>
 
       <p className="mt-4 flex items-start gap-2 text-xs leading-5 text-slate-500">
-        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+        <Info className="mt-0.5 h-4 w-4 shrink-0" />
         Halaman ini hanya menampilkan hasil hitung sistem. Rencana diubah lewat Booking dan Cetakan;
         aktual kedatangan berasal dari Log Produksi dan status tracking mold.
       </p>

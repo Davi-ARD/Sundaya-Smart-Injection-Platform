@@ -16,7 +16,7 @@ export function ProtectedRoute({
 
   if (isInitializing) {
     return (
-      <div className="grid min-h-screen place-items-center bg-slate-50">
+      <div className="grid min-h-screen place-items-center bg-surface">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-300 border-t-brand-600" />
       </div>
     )

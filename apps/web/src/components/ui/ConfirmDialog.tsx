@@ -30,7 +30,7 @@ export function ConfirmDialog({
 
   return (
     <Modal title={title} onClose={onCancel}>
-      <p className="text-sm leading-6 text-slate-600">{message}</p>
+      <p className="text-sm leading-normal text-slate-600">{message}</p>
       <div className="mt-5 flex justify-end gap-2">
         <Button variant="secondary" type="button" onClick={onCancel} disabled={isSubmitting}>
           Batal

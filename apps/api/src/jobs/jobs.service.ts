@@ -42,6 +42,8 @@ const withDetails = {
     machine: { select: { machineNumber: true, status: true } },
     manager: { select: { companyName: true } },
     extensions: { orderBy: { requestedAt: 'desc' as const } },
+    // Staf Sundaya tidak punya akses GET /molds; ini sumber info mold mereka.
+    mold: { select: { id: true, kodeMold: true, namaProduk: true, trackingStatus: true, tonaseTon: true } },
   },
 } as const;
 
@@ -79,7 +81,7 @@ export class JobsService {
         },
         ...withDetails,
       });
-      return toJob(job, job.machine?.machineNumber, job.extensions);
+      return toJob(job, job.machine?.machineNumber, job.extensions, job.mold);
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         throw new ConflictException('Cetakan ini sudah dibooking');
@@ -97,14 +99,14 @@ export class JobsService {
       orderBy: { createdAt: 'desc' },
       ...withDetails,
     });
-    return jobs.map((j) => toJob(j, j.machine?.machineNumber, j.extensions));
+    return jobs.map((j) => toJob(j, j.machine?.machineNumber, j.extensions, j.mold));
   }
 
   async findOne(user: PrismaUser, id: string): Promise<Job> {
     const j = await this.prisma.job.findUnique({ where: { id }, ...withDetails });
     if (!j) throw new NotFoundException('Job tidak ditemukan');
     this.assertParty(user, j);
-    return toJob(j, j.machine?.machineNumber, j.extensions);
+    return toJob(j, j.machine?.machineNumber, j.extensions, j.mold);
   }
 
   // ADMIN_SUNDAYA menyetujui + assign mesin: DIAJUKAN -> DIKONFIRMASI. Mesin harus
@@ -149,7 +151,12 @@ export class JobsService {
         data: { status: asMachineStatus(nextMachine) },
       }),
     ]);
-    return toJob(updated as JobWithDetails, machine.machineNumber, (updated as JobWithDetails).extensions);
+    return toJob(
+      updated as JobWithDetails,
+      machine.machineNumber,
+      (updated as JobWithDetails).extensions,
+      (updated as JobWithDetails).mold,
+    );
   }
 
   // ADMIN_SUNDAYA menolak: DIAJUKAN -> DITOLAK. Belum ada mesin ter-assign di DIAJUKAN.
@@ -164,7 +171,7 @@ export class JobsService {
       data: { lifecycle: asLifecycle(JobLifecycle.DITOLAK), rejectionReason: dto.reason },
       ...withDetails,
     });
-    return toJob(updated, updated.machine?.machineNumber, updated.extensions);
+    return toJob(updated, updated.machine?.machineNumber, updated.extensions, updated.mold);
   }
 
   // Transisi pasca-assign (ADMIN_SUNDAYA). Mesin sudah ter-assign, berjalan lockstep.
@@ -344,7 +351,12 @@ export class JobsService {
         data: { status: asMachineStatus(nextMachine) },
       }),
     ]);
-    return toJob(updated as JobWithDetails, job.machine.machineNumber, (updated as JobWithDetails).extensions);
+    return toJob(
+      updated as JobWithDetails,
+      job.machine.machineNumber,
+      (updated as JobWithDetails).extensions,
+      (updated as JobWithDetails).mold,
+    );
   }
 
   private tenantScope(user: PrismaUser): Prisma.JobWhereInput {

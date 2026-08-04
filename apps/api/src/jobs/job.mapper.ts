@@ -1,9 +1,18 @@
-import { Job, RentalExtension } from '@mold-tracker/shared';
+import { Job, MoldTrackingStatus, RentalExtension } from '@mold-tracker/shared';
 import {
   Job as PrismaJob,
   RentalExtension as PrismaRentalExtension,
 } from '@prisma/client';
 import { computeJobStatus } from './job-status';
+
+// Ringkasan mold sebagaimana dimuat via include Prisma di jobs.service.ts.
+type MoldSummary = {
+  id: string;
+  kodeMold: string;
+  namaProduk: string;
+  trackingStatus: string;
+  tonaseTon: number;
+} | null;
 
 // Batas record Prisma -> bentuk API bersama: tanggal jadi ISO string, enum di-cast.
 // jobStatus dihitung saat baca dari lifecycle + endDate (bukan kolom tersimpan basi).
@@ -12,6 +21,7 @@ export function toJob(
   j: PrismaJob & { manager?: { companyName: string | null } },
   machineNumber?: string,
   extensions: PrismaRentalExtension[] = [],
+  mold?: MoldSummary,
   now: Date = new Date(),
 ): Job {
   const lifecycle = j.lifecycle as unknown as Job['lifecycle'];
@@ -19,6 +29,15 @@ export function toJob(
     id: j.id,
     jobNumber: j.jobNumber,
     moldId: j.moldId,
+    mold: mold
+      ? {
+          id: mold.id,
+          kodeMold: mold.kodeMold,
+          namaProduk: mold.namaProduk,
+          trackingStatus: mold.trackingStatus as unknown as MoldTrackingStatus,
+          tonaseTon: mold.tonaseTon,
+        }
+      : undefined,
     managerId: j.managerId,
     machineId: j.machineId,
     machineNumber,

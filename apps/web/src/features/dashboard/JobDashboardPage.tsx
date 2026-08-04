@@ -4,6 +4,7 @@ import { ArrowRight, Boxes, ClipboardList, Factory, Gauge, Layers, PackagePlus }
 import { LogProduksiEventType, type JobDashboard, type JobLogEntry } from '@mold-tracker/shared'
 import { useAuth } from '../auth/authContextValue'
 import { api } from '../../lib/api'
+import { PageHeader } from '../../components/PageHeader'
 import { JobLifecycleBadge, ProgressMoldingBadge, progressMoldingLabel } from '../../components/ui/Badge'
 import { Card, StatCard } from '../../components/ui/Card'
 import { CardSkeleton } from '../../components/ui/Skeleton'
@@ -90,22 +91,20 @@ export function JobDashboardPage() {
   }, [jobs])
 
   return (
-    <div className="mx-auto max-w-5xl">
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Dashboard Job</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Job aktif perusahaan Anda di lokasi Sundaya beserta cetakan, capaian produksi, dan sisa
-            masa sewa mesinnya.
-          </p>
-        </div>
-        <Link
-          to="/logs"
-          className="inline-flex items-center gap-1.5 rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-800"
-        >
-          Catat log produksi <ArrowRight className="h-4 w-4" />
-        </Link>
-      </div>
+    <div className="mx-auto max-w-screen-2xl">
+      <PageHeader
+        breadcrumb={[{ label: 'Beranda', to: '/job' }, { label: 'Dashboard Job' }]}
+        title="Dashboard Job"
+        description="Job aktif perusahaan Anda di lokasi Sundaya beserta cetakan, capaian produksi, dan sisa masa sewa mesinnya."
+        actions={
+          <Link
+            to="/logs"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-800"
+          >
+            Catat log produksi <ArrowRight className="h-5 w-5" />
+          </Link>
+        }
+      />
 
       {isLoading ? (
         <Card>
@@ -114,8 +113,8 @@ export function JobDashboardPage() {
       ) : jobs.length === 0 ? (
         <Card>
           <div className="grid place-items-center py-14 text-center">
-            <span className="grid h-12 w-12 place-items-center rounded-xl bg-brand-50 text-brand-700">
-              <Gauge className="h-6 w-6" />
+            <span className="grid h-12 w-12 place-items-center text-brand-700">
+              <Gauge className="h-7 w-7" />
             </span>
             <p className="mt-3 text-sm font-semibold text-slate-800">Belum ada job aktif</p>
             <p className="mt-1 max-w-sm text-sm text-slate-500">
@@ -159,7 +158,7 @@ export function JobDashboardPage() {
             to="/logs"
             className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50"
           >
-            Log per job <ArrowRight className="h-3.5 w-3.5" />
+            Log per job <ArrowRight className="h-4 w-4" />
           </Link>
         }
       >
@@ -167,8 +166,8 @@ export function JobDashboardPage() {
           <CardSkeleton lines={4} />
         ) : logs.length === 0 ? (
           <div className="grid place-items-center py-12 text-center">
-            <span className="grid h-12 w-12 place-items-center rounded-xl bg-brand-50 text-brand-700">
-              <ClipboardList className="h-6 w-6" />
+            <span className="grid h-12 w-12 place-items-center text-brand-700">
+              <ClipboardList className="h-7 w-7" />
             </span>
             <p className="mt-3 text-sm font-semibold text-slate-800">Belum ada event tercatat</p>
             <p className="mt-1 text-sm text-slate-500">Catat event pertama di halaman Log Produksi.</p>
@@ -182,8 +181,8 @@ export function JobDashboardPage() {
                   key={log.id}
                   className="flex gap-3 rounded-xl border border-slate-200/70 bg-white p-4 shadow-soft"
                 >
-                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand-50 text-brand-700">
-                    <Icon className="h-4 w-4" />
+                  <span className="grid h-9 w-9 shrink-0 place-items-center text-brand-700">
+                    <Icon className="h-5 w-5" />
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -218,11 +217,11 @@ function JobCard({ job }: { job: JobDashboard }) {
           <p className="text-base font-bold text-slate-900">{job.jobNumber}</p>
           <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-500">
             <span className="flex items-center gap-1.5">
-              <Boxes className="h-3.5 w-3.5" />
+              <Boxes className="h-4 w-4" />
               {job.moldKode} - {job.moldProduk} ({job.moldCavity} cavity)
             </span>
             <span className="flex items-center gap-1.5">
-              <Factory className="h-3.5 w-3.5" />
+              <Factory className="h-4 w-4" />
               {job.machineNumber ?? 'Mesin belum di-assign'}
             </span>
           </p>

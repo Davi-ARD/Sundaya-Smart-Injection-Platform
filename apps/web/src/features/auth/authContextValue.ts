@@ -7,7 +7,9 @@ export type AuthContextValue = {
   isAuthenticated: boolean
   // true selama token tersimpan sedang diverifikasi ke /auth/me (reload/deep-link).
   isInitializing: boolean
-  login: (request: LoginRequest) => Promise<AuthResponse>
+  // remember=false menyimpan token di sessionStorage (hilang saat tab ditutup)
+  // alih-alih localStorage.
+  login: (request: LoginRequest, remember?: boolean) => Promise<AuthResponse>
   register: (request: RegisterRequest) => Promise<AuthResponse>
   logout: () => void
   // Perbarui user tersimpan setelah edit profil, tanpa fetch ulang.

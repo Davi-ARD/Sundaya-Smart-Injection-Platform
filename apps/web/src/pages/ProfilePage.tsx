@@ -59,7 +59,7 @@ export function ProfilePage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <h1 className="text-2xl font-bold tracking-tight text-slate-900">Profil</h1>
+      <h1 className="text-2xl font-bold tracking-tight text-slate-800">Profil</h1>
       <p className="mt-1 text-sm text-slate-500">Kelola informasi akun Anda.</p>
 
       <Card className="mt-6">
@@ -72,7 +72,7 @@ export function ProfilePage() {
             </span>
           )}
           <div className="min-w-0">
-            <p className="truncate font-semibold text-slate-900">{user.nama}</p>
+            <p className="truncate font-semibold text-slate-800">{user.nama}</p>
             <p className="text-sm text-slate-500">{roleLabels[user.role]}</p>
           </div>
           <Button
@@ -81,7 +81,7 @@ export function ProfilePage() {
             className="ml-auto"
             onClick={() => fileInputRef.current?.click()}
           >
-            <UploadCloud className="h-4 w-4" /> Ganti foto
+            <UploadCloud className="h-5 w-5" /> Ganti foto
           </Button>
           <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatar} />
         </div>

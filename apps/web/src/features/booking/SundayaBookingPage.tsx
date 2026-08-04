@@ -14,6 +14,7 @@ import {
 } from '@mold-tracker/shared'
 import { useAuth } from '../auth/authContextValue'
 import { api } from '../../lib/api'
+import { PageHeader } from '../../components/PageHeader'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { DataTable, type Column } from '../../components/ui/DataTable'
@@ -148,10 +149,10 @@ export function SundayaBookingPage() {
         canManage ? (
           <div className="flex justify-end gap-2">
             <Button size="sm" onClick={() => setAssignTarget(j)}>
-              <CheckCircle2 className="h-3.5 w-3.5" /> Setujui + assign
+              <CheckCircle2 className="h-4 w-4" /> Setujui + assign
             </Button>
             <Button size="sm" variant="danger" onClick={() => setRejectTarget(j)}>
-              <XCircle className="h-3.5 w-3.5" /> Tolak
+              <XCircle className="h-4 w-4" /> Tolak
             </Button>
           </div>
         ) : (
@@ -186,7 +187,7 @@ export function SundayaBookingPage() {
               disabled={pendingId === e.extensionId}
               onClick={() => void decideExtension(e, ExtensionStatus.DITERIMA)}
             >
-              <CheckCircle2 className="h-3.5 w-3.5" /> Setujui
+              <CheckCircle2 className="h-4 w-4" /> Setujui
             </Button>
             <Button
               size="sm"
@@ -194,7 +195,7 @@ export function SundayaBookingPage() {
               disabled={pendingId === e.extensionId}
               onClick={() => void decideExtension(e, ExtensionStatus.DITOLAK)}
             >
-              <XCircle className="h-3.5 w-3.5" /> Tolak
+              <XCircle className="h-4 w-4" /> Tolak
             </Button>
           </div>
         ) : (
@@ -234,14 +235,12 @@ export function SundayaBookingPage() {
   ]
 
   return (
-    <div className="mx-auto max-w-6xl">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900">Booking</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Approval booking, assign mesin, dan keputusan perpanjangan sewa. Manager Penyewa mengajukan
-          tanpa memilih mesin.
-        </p>
-      </div>
+    <div className="mx-auto max-w-screen-2xl">
+      <PageHeader
+        breadcrumb={[{ label: 'Beranda', to: '/staff' }, { label: 'Booking' }]}
+        title="Booking"
+        description="Approval booking, assign mesin, dan keputusan perpanjangan sewa. Manager Penyewa mengajukan tanpa memilih mesin."
+      />
 
       <Card
         title="Menunggu approval"
@@ -251,8 +250,8 @@ export function SundayaBookingPage() {
           <TableSkeleton rows={2} columns={6} />
         ) : pendingApproval.length === 0 ? (
           <div className="grid place-items-center py-10 text-center">
-            <span className="grid h-12 w-12 place-items-center rounded-xl bg-brand-50 text-brand-700">
-              <CalendarClock className="h-6 w-6" />
+            <span className="grid h-12 w-12 place-items-center text-brand-700">
+              <CalendarClock className="h-7 w-7" />
             </span>
             <p className="mt-3 text-sm font-semibold text-slate-800">Tidak ada booking menunggu</p>
           </div>
@@ -270,8 +269,8 @@ export function SundayaBookingPage() {
           <TableSkeleton rows={2} columns={7} />
         ) : pendingExtensions.length === 0 ? (
           <div className="grid place-items-center py-10 text-center">
-            <span className="grid h-12 w-12 place-items-center rounded-xl bg-brand-50 text-brand-700">
-              <TimerReset className="h-6 w-6" />
+            <span className="grid h-12 w-12 place-items-center text-brand-700">
+              <TimerReset className="h-7 w-7" />
             </span>
             <p className="mt-3 text-sm font-semibold text-slate-800">Tidak ada permintaan perpanjangan</p>
             <p className="mt-1 text-sm text-slate-500">

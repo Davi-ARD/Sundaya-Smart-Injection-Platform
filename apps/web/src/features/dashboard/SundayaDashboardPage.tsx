@@ -12,6 +12,7 @@ import {
 } from '@mold-tracker/shared'
 import { useAuth } from '../auth/authContextValue'
 import { api } from '../../lib/api'
+import { PageHeader } from '../../components/PageHeader'
 import { Badge, ExtensionStatusBadge, type BadgeTone } from '../../components/ui/Badge'
 import { Card, StatCard } from '../../components/ui/Card'
 import { DataTable, type Column } from '../../components/ui/DataTable'
@@ -99,7 +100,7 @@ export function SundayaDashboardPage() {
   ]
 
   const extensionColumns: Column<ExtensionRequestRow>[] = [
-    { header: 'No. Job', cell: (e) => <span className="font-semibold text-slate-900">{e.jobNumber}</span> },
+    { header: 'No. Job', cell: (e) => <span className="font-semibold text-slate-800">{e.jobNumber}</span> },
     { header: 'Penyewa', cell: (e) => e.companyName ?? <span className="text-slate-400">-</span> },
     { header: 'Sisa sewa', cell: (e) => formatSisaHari(e.sisaHariSewa) },
     { header: 'Tambahan diminta', cell: (e) => `${e.additionalDays} hari` },
@@ -109,13 +110,12 @@ export function SundayaDashboardPage() {
   const monitoring = summary?.rentalMonitoring
 
   return (
-    <div className="mx-auto max-w-6xl">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900">Dashboard Sundaya</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Ringkasan operasional seluruh mesin, job aktif, dan status sewa berjalan.
-        </p>
-      </div>
+    <div className="mx-auto max-w-screen-2xl">
+      <PageHeader
+        breadcrumb={[{ label: 'Beranda', to: '/staff' }, { label: 'Dashboard Sundaya' }]}
+        title="Dashboard Sundaya"
+        description="Ringkasan operasional seluruh mesin, job aktif, dan status sewa berjalan."
+      />
 
       {isLoading || !summary ? (
         <Card>
@@ -143,7 +143,7 @@ export function SundayaDashboardPage() {
               to="/staff/booking"
               className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50"
             >
-              Buka Booking <ArrowRight className="h-3.5 w-3.5" />
+              Buka Booking <ArrowRight className="h-4 w-4" />
             </Link>
           }
         >
@@ -187,8 +187,8 @@ export function SundayaDashboardPage() {
             <TableSkeleton rows={2} columns={5} />
           ) : pendingExtensions.length === 0 ? (
             <div className="grid place-items-center py-10 text-center">
-              <span className="grid h-12 w-12 place-items-center rounded-xl bg-brand-50 text-brand-700">
-                <TimerReset className="h-6 w-6" />
+              <span className="grid h-12 w-12 place-items-center text-brand-700">
+                <TimerReset className="h-7 w-7" />
               </span>
               <p className="mt-3 text-sm font-semibold text-slate-800">Tidak ada permintaan</p>
               <p className="mt-1 text-sm text-slate-500">Semua sewa berjalan sesuai periode awal.</p>
@@ -208,8 +208,8 @@ export function SundayaDashboardPage() {
           <TableSkeleton rows={3} columns={5} />
         ) : ongoingJobs.length === 0 ? (
           <div className="grid place-items-center py-10 text-center">
-            <span className="grid h-12 w-12 place-items-center rounded-xl bg-brand-50 text-brand-700">
-              <CalendarClock className="h-6 w-6" />
+            <span className="grid h-12 w-12 place-items-center text-brand-700">
+              <CalendarClock className="h-7 w-7" />
             </span>
             <p className="mt-3 text-sm font-semibold text-slate-800">Belum ada job berjalan</p>
           </div>
@@ -222,7 +222,7 @@ export function SundayaDashboardPage() {
 }
 
 const monitoringToneClasses: Record<'slate' | 'amber' | 'rose', string> = {
-  slate: 'text-slate-900',
+  slate: 'text-slate-800',
   amber: 'text-amber-700',
   rose: 'text-rose-700',
 }

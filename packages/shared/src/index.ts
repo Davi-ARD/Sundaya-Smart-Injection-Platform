@@ -189,6 +189,15 @@ export interface Job {
   id: string;
   jobNumber: string;
   moldId: string;
+  // Ringkasan mold terkait (staf Sundaya tidak punya akses GET /molds langsung;
+  // ini sumber info mold mereka untuk assign & tracking).
+  mold?: {
+    id: string;
+    kodeMold: string;
+    namaProduk: string;
+    trackingStatus: MoldTrackingStatus;
+    tonaseTon: number;
+  };
   managerId: string;
   machineId: string | null; // null sebelum di-assign Admin Sundaya
   machineNumber?: string;
@@ -298,6 +307,8 @@ export interface LoginRequest {
 }
 
 // User / hierarki tenant
+// Satu role internal (ADMIN_SUNDAYA); tanpa field role, akun staf baru selalu
+// dibuat dengan role itu.
 export interface CreateStaffRequest {
   nama: string;
   email: string;

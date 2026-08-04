@@ -1,48 +1,25 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { Archive, ArchiveRestore, Factory, Gauge, Pencil, Plus } from 'lucide-react'
+import { Archive, ArchiveRestore, Factory, Pencil, Plus } from 'lucide-react'
 import {
-  DowntimeReason,
-  MachineOperationalStatus,
-  Role,
   type CreateMachineRequest,
-  type CreateOperationalDataRequest,
   type Machine,
   type UpdateMachineRequest,
 } from '@mold-tracker/shared'
 import { useAuth } from '../auth/authContextValue'
 import { api } from '../../lib/api'
+import { PageHeader } from '../../components/PageHeader'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { DataTable, type Column } from '../../components/ui/DataTable'
-import {
-  MachineOperationalBadge,
-  MachineStatusBadge,
-  WarrantyStatusBadge,
-  machineOperationalLabel,
-} from '../../components/ui/Badge'
+import { MachineStatusBadge, WarrantyStatusBadge } from '../../components/ui/Badge'
 import { SidePanel } from '../../components/ui/SidePanel'
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { TableSkeleton } from '../../components/ui/Skeleton'
-import { FieldGroup, SelectField, TextAreaField, TextField } from '../../components/ui/FormField'
+import { TextField, FieldGroup } from '../../components/ui/FormField'
 import { useToast } from '../../components/ui/Toast'
 import { errorMessage } from '../../lib/errorMessage'
-import { formatDate } from '../../lib/format'
 
-const downtimeReasonLabel: Record<DowntimeReason, string> = {
-  [DowntimeReason.BREAKDOWN]: 'Breakdown',
-  [DowntimeReason.SETUP_ADJUSTMENT]: 'Setup & Adjustment',
-  [DowntimeReason.MINOR_STOP]: 'Minor Stop',
-  [DowntimeReason.REDUCED_SPEED]: 'Reduced Speed',
-  [DowntimeReason.STARTUP_REJECT]: 'Startup Reject',
-  [DowntimeReason.PRODUCTION_REJECT]: 'Production Reject',
-}
-
-const nowLocal = () => {
-  const now = new Date()
-  now.setMinutes(now.getMinutes() - now.getTimezoneOffset())
-  return now.toISOString().slice(0, 16)
-}
-
-type MachineForm = {
+type MachineFormState = {
   machineNumber: string
   spesifikasi: string
   tonaseTon: string
@@ -51,7 +28,7 @@ type MachineForm = {
   warrantyDurationMonths: string
 }
 
-const emptyMachineForm: MachineForm = {
+const emptyMachineForm: MachineFormState = {
   machineNumber: '',
   spesifikasi: '',
   tonaseTon: '',
@@ -60,28 +37,29 @@ const emptyMachineForm: MachineForm = {
   warrantyDurationMonths: '',
 }
 
-const formFromMachine = (machine: Machine): MachineForm => ({
-  machineNumber: machine.machineNumber,
-  spesifikasi: machine.spesifikasi,
-  tonaseTon: String(machine.tonaseTon),
-  standardRatio: String(machine.standardRatio),
-  warrantyStart: machine.warrantyStart.slice(0, 10),
-  warrantyDurationMonths: String(machine.warrantyDurationMonths),
+const formFromMachine = (m: Machine): MachineFormState => ({
+  machineNumber: m.machineNumber,
+  spesifikasi: m.spesifikasi,
+  tonaseTon: String(m.tonaseTon),
+  standardRatio: String(m.standardRatio),
+  warrantyStart: m.warrantyStart.slice(0, 10),
+  warrantyDurationMonths: String(m.warrantyDurationMonths),
 })
 
-// Mesin (staf Sundaya). Dua sumbu status independen: status (ketersediaan,
-// dikendalikan lifecycle job) dan operationalStatus (realtime Layer 1, Teknisi).
+type PanelState = { mode: 'create' } | { mode: 'edit'; machine: Machine }
+
+// Kelola Mesin (master data, ADMIN_SUNDAYA). CRUD + arsip mesin. Sumbu status
+// (ketersediaan & operationalStatus) tidak diubah lewat form ini, hanya lewat
+// lifecycle job dan input Layer 1 (lihat halaman Machine Monitoring).
 export function MachinesPage() {
-  const { accessToken, user } = useAuth()
+  const { accessToken } = useAuth()
   const toast = useToast()
-  const canManage = user?.role === Role.ADMIN_SUNDAYA
-  const canInputOperational = user?.role === Role.TEKNISI_SUNDAYA
 
   const [machines, setMachines] = useState<Machine[]>([])
-  const [showArchived, setShowArchived] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
-  const [panel, setPanel] = useState<{ mode: 'create' } | { mode: 'edit'; machine: Machine } | null>(null)
-  const [operationalTarget, setOperationalTarget] = useState<Machine | null>(null)
+  const [showArchived, setShowArchived] = useState(false)
+  const [panel, setPanel] = useState<PanelState | null>(null)
+  const [archiveTarget, setArchiveTarget] = useState<Machine | null>(null)
 
   const load = useCallback(async () => {
     setIsLoading(true)
@@ -98,98 +76,74 @@ export function MachinesPage() {
     void load()
   }, [load])
 
-  const toggleArchive = async (machine: Machine) => {
-    try {
-      if (machine.isArchived) {
-        await api.unarchiveMachine(accessToken, machine.id)
-        toast.success('Mesin dikembalikan dari arsip')
-      } else {
-        await api.archiveMachine(accessToken, machine.id)
-        toast.success('Mesin diarsipkan')
-      }
-      void load()
-    } catch (caught) {
-      toast.error(errorMessage(caught, 'Aksi gagal'))
-    }
-  }
-
   const columns: Column<Machine>[] = [
-    { header: 'No. Mesin', cell: (m) => <span className="font-semibold text-slate-900">{m.machineNumber}</span> },
+    { header: 'No. Mesin', cell: (m) => <span className="font-semibold text-slate-800">{m.machineNumber}</span> },
     { header: 'Spesifikasi', cell: (m) => m.spesifikasi },
     { header: 'Tonase', cell: (m) => `${m.tonaseTon} ton` },
     { header: 'Ketersediaan', cell: (m) => <MachineStatusBadge status={m.status} /> },
-    { header: 'Operasional', cell: (m) => <MachineOperationalBadge status={m.operationalStatus} /> },
-    {
-      header: 'Garansi',
-      cell: (m) => (
-        <div className="flex items-center gap-2">
-          <WarrantyStatusBadge status={m.warrantyStatus} />
-          <span className="text-xs text-slate-400">s.d. {formatDate(m.warrantyEnd)}</span>
-        </div>
-      ),
-    },
+    { header: 'Garansi', cell: (m) => <WarrantyStatusBadge status={m.warrantyStatus} /> },
     {
       header: '',
       className: 'text-right',
-      cell: (m) => (
-        <div className="flex justify-end gap-2">
-          {canInputOperational ? (
-            <Button size="sm" variant="secondary" onClick={() => setOperationalTarget(m)}>
-              <Gauge className="h-3.5 w-3.5" /> Input status
+      cell: (m) => {
+        return (
+          <div className="flex justify-end gap-2">
+            <Button size="sm" variant="secondary" onClick={() => setPanel({ mode: 'edit', machine: m })}>
+              <Pencil className="h-4 w-4" /> Edit
             </Button>
-          ) : null}
-          {canManage ? (
-            <>
-              <Button size="sm" variant="secondary" onClick={() => setPanel({ mode: 'edit', machine: m })}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Button>
-              <Button size="sm" variant="secondary" onClick={() => void toggleArchive(m)}>
-                {m.isArchived ? <ArchiveRestore className="h-3.5 w-3.5" /> : <Archive className="h-3.5 w-3.5" />}
-                {m.isArchived ? 'Aktifkan' : 'Arsipkan'}
-              </Button>
-            </>
-          ) : null}
-        </div>
-      ),
+            <Button size="sm" variant="secondary" onClick={() => setArchiveTarget(m)}>
+              {m.isArchived ? (
+                <>
+                  <ArchiveRestore className="h-4 w-4" /> Aktifkan
+                </>
+              ) : (
+                <>
+                  <Archive className="h-4 w-4" /> Arsip
+                </>
+              )}
+            </Button>
+          </div>
+        )
+      },
     },
   ]
 
   return (
-    <div className="mx-auto max-w-6xl">
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Mesin</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Katalog mesin Sundaya beserta ketersediaan, status realtime, dan garansi.
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-2 text-sm text-slate-600">
-            <input
-              type="checkbox"
-              checked={showArchived}
-              onChange={(event) => setShowArchived(event.target.checked)}
-              className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-            />
-            Tampilkan arsip
-          </label>
-          {canManage ? (
+    <div className="mx-auto max-w-screen-2xl">
+      <PageHeader
+        breadcrumb={[{ label: 'Beranda', to: '/staff' }, { label: 'Kelola Mesin' }]}
+        title="Kelola Mesin"
+        description="Master mesin Sundaya dan status ketersediaan."
+        actions={
+          <>
+            <label className="flex items-center gap-2 text-sm text-slate-600">
+              <input
+                type="checkbox"
+                checked={showArchived}
+                onChange={(event) => setShowArchived(event.target.checked)}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              Tampilkan arsip
+            </label>
             <Button onClick={() => setPanel({ mode: 'create' })}>
-              <Plus className="h-4 w-4" /> Tambah mesin
+              <Plus className="h-5 w-5" /> Tambah mesin
             </Button>
-          ) : null}
-        </div>
-      </div>
+          </>
+        }
+      />
 
       <Card>
         {isLoading ? (
           <TableSkeleton rows={5} columns={6} />
         ) : machines.length === 0 ? (
           <div className="grid place-items-center py-14 text-center">
-            <span className="grid h-12 w-12 place-items-center rounded-xl bg-brand-50 text-brand-700">
-              <Factory className="h-6 w-6" />
+            <span className="grid h-12 w-12 place-items-center text-brand-700">
+              <Factory className="h-7 w-7" />
             </span>
             <p className="mt-3 text-sm font-semibold text-slate-800">Belum ada mesin</p>
+            <p className="mt-1 text-sm text-slate-500">
+              {showArchived ? 'Tidak ada mesin yang diarsipkan.' : 'Tambahkan mesin pertama untuk mulai.'}
+            </p>
           </div>
         ) : (
           <DataTable columns={columns} rows={machines} rowKey={(m) => m.id} />
@@ -212,7 +166,7 @@ export function MachinesPage() {
                 spesifikasi: form.spesifikasi,
                 tonaseTon: Number(form.tonaseTon),
                 standardRatio: Number(form.standardRatio),
-                warrantyStart: new Date(form.warrantyStart).toISOString(),
+                warrantyStart: form.warrantyStart,
                 warrantyDurationMonths: Number(form.warrantyDurationMonths),
               }
               await api.updateMachine(accessToken, panel.machine.id, body)
@@ -222,7 +176,7 @@ export function MachinesPage() {
                 spesifikasi: form.spesifikasi,
                 tonaseTon: Number(form.tonaseTon),
                 standardRatio: Number(form.standardRatio),
-                warrantyStart: new Date(form.warrantyStart).toISOString(),
+                warrantyStart: form.warrantyStart,
                 warrantyDurationMonths: Number(form.warrantyDurationMonths),
               }
               await api.createMachine(accessToken, body)
@@ -231,13 +185,31 @@ export function MachinesPage() {
         />
       ) : null}
 
-      {operationalTarget ? (
-        <OperationalFormPanel
-          machine={operationalTarget}
-          onClose={() => setOperationalTarget(null)}
-          onSaved={() => {
-            setOperationalTarget(null)
-            void load()
+      {archiveTarget ? (
+        <ConfirmDialog
+          title={archiveTarget.isArchived ? 'Aktifkan mesin' : 'Arsipkan mesin'}
+          message={
+            archiveTarget.isArchived
+              ? `Mesin ${archiveTarget.machineNumber} akan muncul kembali di daftar aktif.`
+              : `Mesin ${archiveTarget.machineNumber} akan disembunyikan dari daftar aktif. Data dan relasi tetap tersimpan.`
+          }
+          confirmLabel={archiveTarget.isArchived ? 'Aktifkan' : 'Arsipkan'}
+          tone={archiveTarget.isArchived ? 'primary' : 'warning'}
+          onCancel={() => setArchiveTarget(null)}
+          onConfirm={async () => {
+            try {
+              if (archiveTarget.isArchived) {
+                await api.unarchiveMachine(accessToken, archiveTarget.id)
+                toast.success('Mesin diaktifkan kembali')
+              } else {
+                await api.archiveMachine(accessToken, archiveTarget.id)
+                toast.success('Mesin diarsipkan')
+              }
+              setArchiveTarget(null)
+              void load()
+            } catch (caught) {
+              toast.error(errorMessage(caught, 'Gagal memproses mesin'))
+            }
           }}
         />
       ) : null}
@@ -252,17 +224,17 @@ function MachineFormPanel({
   onSaved,
   save,
 }: {
-  initial: MachineForm
+  initial: MachineFormState
   isEdit: boolean
   onClose: () => void
   onSaved: () => void
-  save: (form: MachineForm) => Promise<void>
+  save: (form: MachineFormState) => Promise<void>
 }) {
   const toast = useToast()
-  const [form, setForm] = useState<MachineForm>(initial)
+  const [form, setForm] = useState<MachineFormState>(initial)
   const [isSaving, setIsSaving] = useState(false)
 
-  const set = (key: keyof MachineForm) => (value: string) => setForm((f) => ({ ...f, [key]: value }))
+  const set = (key: keyof MachineFormState) => (value: string) => setForm((f) => ({ ...f, [key]: value }))
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
@@ -286,7 +258,7 @@ function MachineFormPanel({
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {!isEdit ? (
-          <TextField label="Nomor mesin" value={form.machineNumber} onChange={set('machineNumber')} />
+          <TextField label="No. Mesin" value={form.machineNumber} onChange={set('machineNumber')} />
         ) : null}
         <TextField label="Spesifikasi" value={form.spesifikasi} onChange={set('spesifikasi')} />
         <FieldGroup>
@@ -295,7 +267,7 @@ function MachineFormPanel({
             label="Standard ratio"
             type="number"
             min={0}
-            step="0.1"
+            step="0.01"
             value={form.standardRatio}
             onChange={set('standardRatio')}
           />
@@ -317,108 +289,6 @@ function MachineFormPanel({
           </Button>
           <Button type="submit" disabled={isSaving}>
             {isSaving ? 'Menyimpan...' : 'Simpan'}
-          </Button>
-        </div>
-      </form>
-    </SidePanel>
-  )
-}
-
-// Input status realtime (Layer 1, Teknisi). Reason wajib saat non-RUNNING,
-// dilarang saat RUNNING (ditegakkan juga di server).
-function OperationalFormPanel({
-  machine,
-  onClose,
-  onSaved,
-}: {
-  machine: Machine
-  onClose: () => void
-  onSaved: () => void
-}) {
-  const { accessToken } = useAuth()
-  const toast = useToast()
-  const [status, setStatus] = useState<MachineOperationalStatus>(MachineOperationalStatus.RUNNING)
-  const [downtimeReason, setDowntimeReason] = useState<DowntimeReason>(DowntimeReason.BREAKDOWN)
-  const [cycleTimeSec, setCycleTimeSec] = useState('')
-  const [occurredAt, setOccurredAt] = useState(nowLocal())
-  const [catatan, setCatatan] = useState('')
-  const [isSaving, setIsSaving] = useState(false)
-
-  const isRunning = status === MachineOperationalStatus.RUNNING
-
-  const handleSubmit = async (event: FormEvent) => {
-    event.preventDefault()
-    setIsSaving(true)
-    try {
-      const body: CreateOperationalDataRequest = {
-        status,
-        downtimeReason: isRunning ? undefined : downtimeReason,
-        cycleTimeSec: cycleTimeSec.trim() === '' ? undefined : Number(cycleTimeSec),
-        occurredAt: new Date(occurredAt).toISOString(),
-        catatan: catatan.trim() === '' ? undefined : catatan.trim(),
-      }
-      await api.addOperationalData(accessToken, machine.id, body)
-      toast.success('Status mesin dicatat')
-      onSaved()
-    } catch (caught) {
-      toast.error(errorMessage(caught, 'Gagal mencatat status'))
-    } finally {
-      setIsSaving(false)
-    }
-  }
-
-  return (
-    <SidePanel
-      title={`Input status - ${machine.machineNumber}`}
-      subtitle="Event realtime Layer 1, append-only. Koreksi lewat event baru."
-      onClose={onClose}
-    >
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <SelectField
-          label="Status"
-          value={status}
-          onChange={setStatus}
-          options={Object.values(MachineOperationalStatus).map((value) => ({
-            value,
-            label: machineOperationalLabel[value],
-          }))}
-        />
-        {!isRunning ? (
-          <SelectField
-            label="Alasan (reason code)"
-            value={downtimeReason}
-            onChange={setDowntimeReason}
-            options={Object.values(DowntimeReason).map((value) => ({
-              value,
-              label: downtimeReasonLabel[value],
-            }))}
-          />
-        ) : null}
-        <FieldGroup>
-          <TextField
-            label="Waktu kejadian"
-            type="datetime-local"
-            value={occurredAt}
-            onChange={setOccurredAt}
-          />
-          <TextField
-            label="Cycle time (detik)"
-            type="number"
-            min={0}
-            step="0.1"
-            required={false}
-            value={cycleTimeSec}
-            onChange={setCycleTimeSec}
-          />
-        </FieldGroup>
-        <TextAreaField label="Catatan" value={catatan} onChange={setCatatan} />
-
-        <div className="flex justify-end gap-2 pt-2">
-          <Button type="button" variant="secondary" onClick={onClose}>
-            Batal
-          </Button>
-          <Button type="submit" disabled={isSaving}>
-            {isSaving ? 'Menyimpan...' : 'Catat status'}
           </Button>
         </div>
       </form>

@@ -10,6 +10,7 @@ import {
 } from '@mold-tracker/shared'
 import { useAuth } from '../auth/authContextValue'
 import { api } from '../../lib/api'
+import { PageHeader } from '../../components/PageHeader'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { DataTable, type Column } from '../../components/ui/DataTable'
@@ -112,26 +113,27 @@ export function MaintenancePage() {
   ]
 
   return (
-    <div className="mx-auto max-w-6xl">
-      <div className="mb-6 flex items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Maintenance</h1>
-          <p className="mt-1 text-sm text-slate-500">Jadwalkan dan eksekusi maintenance mesin.</p>
-        </div>
-        {canWrite ? (
-          <Button onClick={() => setIsPanelOpen(true)}>
-            <Plus className="h-4 w-4" /> Jadwalkan maintenance
-          </Button>
-        ) : null}
-      </div>
+    <div className="mx-auto max-w-screen-2xl">
+      <PageHeader
+        breadcrumb={[{ label: 'Beranda', to: '/staff' }, { label: 'Maintenance' }]}
+        title="Maintenance"
+        description="Jadwalkan dan eksekusi maintenance mesin."
+        actions={
+          canWrite ? (
+            <Button onClick={() => setIsPanelOpen(true)}>
+              <Plus className="h-5 w-5" /> Jadwalkan maintenance
+            </Button>
+          ) : null
+        }
+      />
 
       <Card>
         {isLoading ? (
           <TableSkeleton rows={4} columns={5} />
         ) : records.length === 0 ? (
           <div className="grid place-items-center py-14 text-center">
-            <span className="grid h-12 w-12 place-items-center rounded-xl bg-brand-50 text-brand-700">
-              <Wrench className="h-6 w-6" />
+            <span className="grid h-12 w-12 place-items-center text-brand-700">
+              <Wrench className="h-7 w-7" />
             </span>
             <p className="mt-3 text-sm font-semibold text-slate-800">Belum ada maintenance</p>
           </div>

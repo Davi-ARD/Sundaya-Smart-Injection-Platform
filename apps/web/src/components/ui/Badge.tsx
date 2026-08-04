@@ -83,7 +83,7 @@ const machineOperationalTone: Record<MachineOperationalStatus, BadgeTone> = {
   [MachineOperationalStatus.MAINTENANCE]: 'amber',
 }
 
-export const machineOperationalLabel: Record<MachineOperationalStatus, string> = {
+export const machineOperationalStatusLabel: Record<MachineOperationalStatus, string> = {
   [MachineOperationalStatus.RUNNING]: 'Running',
   [MachineOperationalStatus.SETUP]: 'Setup',
   [MachineOperationalStatus.STANDBY]: 'Standby',
@@ -91,8 +91,8 @@ export const machineOperationalLabel: Record<MachineOperationalStatus, string> =
   [MachineOperationalStatus.MAINTENANCE]: 'Maintenance',
 }
 
-export function MachineOperationalBadge({ status }: { status: MachineOperationalStatus }) {
-  return <Badge tone={machineOperationalTone[status]}>{machineOperationalLabel[status]}</Badge>
+export function MachineOperationalStatusBadge({ status }: { status: MachineOperationalStatus }) {
+  return <Badge tone={machineOperationalTone[status]}>{machineOperationalStatusLabel[status]}</Badge>
 }
 
 // --- Maintenance (SSIP) ---

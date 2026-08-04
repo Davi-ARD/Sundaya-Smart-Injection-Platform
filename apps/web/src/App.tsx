@@ -5,21 +5,22 @@ import { ProtectedRoute } from './features/auth/ProtectedRoute'
 import { LandingPage } from './pages/LandingPage'
 import { LoginPage } from './pages/LoginPage'
 import { RegisterPage } from './pages/RegisterPage'
-import { InternalLoginPage } from './pages/InternalLoginPage'
+import { KontakPage, FaqPage, SyaratKetentuanPage } from './pages/InfoPages'
 import { ProfilePage } from './pages/ProfilePage'
 import { MoldsPage } from './features/molds/MoldsPage'
-import { BookingPage } from './features/booking/BookingPage'
-import { SundayaBookingPage } from './features/booking/SundayaBookingPage'
-import { PengirimanPage } from './features/pengiriman/PengirimanPage'
-import { ManagerDashboardPage } from './features/dashboard/ManagerDashboardPage'
-import { PenyewaAdminsPage } from './features/penyewa-admins/PenyewaAdminsPage'
-import { LogProduksiPage } from './features/log-produksi/LogProduksiPage'
-import { JobDashboardPage } from './features/dashboard/JobDashboardPage'
-import { SundayaDashboardPage } from './features/dashboard/SundayaDashboardPage'
 import { MachinesPage } from './features/machines/MachinesPage'
+import { MachineMonitoringPage } from './features/machines/MachineMonitoringPage'
+import { SundayaDashboardPage } from './features/dashboard/SundayaDashboardPage'
+import { SundayaBookingPage } from './features/booking/SundayaBookingPage'
 import { MoldTrackingPage } from './features/molds/MoldTrackingPage'
 import { MaintenancePage } from './features/maintenance/MaintenancePage'
 import { UsersPage } from './features/users/UsersPage'
+import { ManagerDashboardPage } from './features/dashboard/ManagerDashboardPage'
+import { JobDashboardPage } from './features/dashboard/JobDashboardPage'
+import { BookingPage } from './features/booking/BookingPage'
+import { PengirimanPage } from './features/pengiriman/PengirimanPage'
+import { PenyewaAdminsPage } from './features/penyewa-admins/PenyewaAdminsPage'
+import { LogProduksiPage } from './features/log-produksi/LogProduksiPage'
 
 const MANAGER = [Role.MANAGER_PENYEWA]
 const ADMIN_PENYEWA = [Role.ADMIN_PENYEWA]
@@ -32,7 +33,9 @@ export default function App() {
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
-      <Route path="/internal" element={<InternalLoginPage />} />
+      <Route path="/kontak" element={<KontakPage />} />
+      <Route path="/faq" element={<FaqPage />} />
+      <Route path="/syarat-ketentuan" element={<SyaratKetentuanPage />} />
 
       {/* Butuh login */}
       <Route element={<ProtectedRoute />}>
@@ -54,12 +57,13 @@ export default function App() {
             <Route path="/logs" element={<LogProduksiPage />} />
           </Route>
 
-          {/* Staf Sundaya (diisi Dev A) */}
+          {/* Staf Sundaya */}
           <Route element={<ProtectedRoute allowedRoles={STAF} />}>
             <Route path="/staff" element={<SundayaDashboardPage />} />
             <Route path="/staff/booking" element={<SundayaBookingPage />} />
-            <Route path="/machines" element={<MachinesPage />} />
             <Route path="/tracking" element={<MoldTrackingPage />} />
+            <Route path="/monitoring" element={<MachineMonitoringPage />} />
+            <Route path="/machines" element={<MachinesPage />} />
             <Route path="/maintenance" element={<MaintenancePage />} />
           </Route>
 
