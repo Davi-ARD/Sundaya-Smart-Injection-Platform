@@ -1,0 +1,17 @@
+#!/bin/sh
+# Tolak subjek commit yang tidak mengikuti format Conventional Commits proyek ini.
+# ponytail: cek baris pertama saja, badan pesan bebas.
+subject=$(head -n 1 "$1")
+
+case "$subject" in
+  Merge\ *|Revert\ *|fixup!\ *|squash!\ *) exit 0 ;;
+esac
+
+if ! printf '%s' "$subject" | grep -Eq '^(feat|fix|docs|chore|refactor|test|perf|build|ci)(\([a-z0-9/-]+\))?: .+'; then
+  echo "commit-msg: subjek harus '<tipe>(<scope>): ringkasan'." >&2
+  echo "  Tipe: feat, fix, docs, chore, refactor, test, perf, build, ci" >&2
+  echo "  Dapat: $subject" >&2
+  echo "  Pesan multi baris: tulis ke file lalu 'git commit -F <file>'," >&2
+  echo "  jangan pakai here-string @'...'@ di Bash." >&2
+  exit 1
+fi

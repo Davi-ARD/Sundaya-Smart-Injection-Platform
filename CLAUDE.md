@@ -26,6 +26,17 @@ RTK aktif lewat hook. Untuk perintah dengan output besar (test, build, migrate, 
 
 Ponytail full aktif tiap sesi. Solusi paling ringkas yang jalan, stdlib dan fitur native sebelum dependensi baru, tanpa abstraksi spekulatif. Jalankan /ponytail-review sebelum tiap PR. RBAC dan validasi tidak pernah disederhanakan.
 
+## Aturan commit
+
+- Subjek memakai format Conventional Commits berbahasa Indonesia: `tipe(scope): ringkasan`. Tipe yang dipakai: feat, fix, docs, chore, refactor, test, perf, build, ci. Scope biasanya api, web, shared, atau ssip. Contoh: `feat(web): jumlah mesin di booking, pengelolaan mesin pinjaman, dan revisi dashboard Admin Penyewa`.
+- Baris pertama pesan adalah subjek itu sendiri, bukan penanda shell atau baris kosong. Badan pesan menyusul setelah satu baris kosong.
+- Pesan multi baris ditulis dulu ke file lalu `git commit -F <file>`. Jangan pakai here-string PowerShell `@'...'@` lewat tool Bash: penanda `@` ikut masuk jadi baris pertama dan terakhir pesan.
+- Hook `commit-msg` di `.githooks/` menolak subjek yang tidak sesuai. Aktifkan sekali per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
 ## Struktur
 
 ```
