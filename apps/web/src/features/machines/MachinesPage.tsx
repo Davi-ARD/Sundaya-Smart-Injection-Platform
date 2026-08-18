@@ -141,8 +141,8 @@ export function MachinesPage() {
   return (
     <div className="mx-auto max-w-6xl">
       <PageHeader
-        breadcrumb={[{ label: 'Beranda', to: '/staff' }, { label: 'Kelola Mesin' }]}
-        title="Kelola Mesin"
+        breadcrumb={[{ label: 'Beranda', to: '/staff' }, { label: 'Mesin' }]}
+        title="Mesin"
         description="Katalog mesin Sundaya beserta ketersediaan, status realtime, dan garansi."
         actions={
           <>

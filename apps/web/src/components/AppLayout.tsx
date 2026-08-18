@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type ComponentType } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import {
-  Activity,
   Bell,
   Boxes,
   CalendarPlus,
@@ -72,21 +71,15 @@ const sundayaItems: MenuItem[] = [
     roles: [Role.SUPER_ADMIN, Role.ADMIN_SUNDAYA],
   },
   {
+    label: 'Mesin',
+    to: '/machines',
+    icon: Factory,
+    roles: [Role.SUPER_ADMIN, Role.ADMIN_SUNDAYA, Role.TEKNISI_SUNDAYA],
+  },
+  {
     label: 'Mold Tracking',
     to: '/tracking',
     icon: RouteIcon,
-    roles: [Role.SUPER_ADMIN, Role.ADMIN_SUNDAYA, Role.TEKNISI_SUNDAYA],
-  },
-  {
-    label: 'Machine Monitoring',
-    to: '/monitoring',
-    icon: Activity,
-    roles: [Role.SUPER_ADMIN, Role.ADMIN_SUNDAYA, Role.TEKNISI_SUNDAYA],
-  },
-  {
-    label: 'Kelola Mesin',
-    to: '/machines',
-    icon: Factory,
     roles: [Role.SUPER_ADMIN, Role.ADMIN_SUNDAYA, Role.TEKNISI_SUNDAYA],
   },
   {

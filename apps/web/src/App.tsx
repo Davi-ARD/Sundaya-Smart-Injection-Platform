@@ -9,7 +9,6 @@ import { KontakPage, FaqPage, SyaratKetentuanPage } from './pages/InfoPages'
 import { ProfilePage } from './pages/ProfilePage'
 import { MoldsPage } from './features/molds/MoldsPage'
 import { MachinesPage } from './features/machines/MachinesPage'
-import { MachineMonitoringPage } from './features/machines/MachineMonitoringPage'
 import { SundayaDashboardPage } from './features/dashboard/SundayaDashboardPage'
 import { SundayaBookingPage } from './features/booking/SundayaBookingPage'
 import { MoldTrackingPage } from './features/molds/MoldTrackingPage'
@@ -64,7 +63,6 @@ export default function App() {
             <Route path="/staff/booking" element={<SundayaBookingPage />} />
             <Route path="/penerimaan" element={<PenerimaanPage />} />
             <Route path="/tracking" element={<MoldTrackingPage />} />
-            <Route path="/monitoring" element={<MachineMonitoringPage />} />
             <Route path="/machines" element={<MachinesPage />} />
             <Route path="/maintenance" element={<MaintenancePage />} />
           </Route>
