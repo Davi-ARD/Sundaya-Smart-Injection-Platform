@@ -4,7 +4,6 @@ import { ItemPengiriman, LogPenerimaan, MoldTrackingStatus, Role } from '@mold-t
 import { PrismaService } from '../prisma/prisma.service';
 import { MoldTrackingService } from '../molds/mold-tracking.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { activateJobOnMoldReceived } from '../jobs/job-transitions';
 import { assertMaterialFields, assertMoldRef, moldInJob } from '../common/log-refs';
 import { assertNotFuture } from '../common/time';
 import { CreateLogPenerimaanDto } from './dto';
@@ -23,11 +22,11 @@ export class PenerimaanService {
     private notifications: NotificationsService,
   ) {}
 
-  // Log Penerimaan (ADMIN_SUNDAYA): konfirmasi mold atau material tiba di lokasi
-  // Sundaya. Dalam satu transaksi: tulis log, dan untuk item MOLD majukan tracking
-  // mold ke RECEIVED sekaligus jalankan booking-nya (DIKONFIRMASI -> AKTIF, mesin
-  // pinjamannya ikut AKTIF, masa sewa mulai dihitung). Mesin tidak pernah dikirim
-  // ke penyewa, jadi kedatangan cetakan inilah tanda sewa benar-benar mulai.
+  // Log Aktivitas (ADMIN_SUNDAYA): catatan mold atau material tiba di lokasi
+  // Sundaya. Pencatatan tidak memvalidasi status apa pun dan tidak menjalankan
+  // booking: masa sewa mengikuti jadwal yang diinput penyewa, dan job berpindah ke
+  // AKTIF saat produksi harian pertama dicatat. Untuk item MOLD status cetakan
+  // tetap dimajukan ke RECEIVED sebagai catatan posisi fisiknya.
   // Manager pemilik job diberi notifikasi setelah transaksi sukses.
   async create(user: PrismaUser, dto: CreateLogPenerimaanDto): Promise<LogPenerimaan> {
     // Penerimaan mencatat barang yang sudah tiba, bukan rencana kedatangan.
@@ -61,7 +60,6 @@ export class PenerimaanService {
       });
       if (dto.item === ItemPengiriman.MOLD && dto.moldId) {
         await this.moldTracking.advance(tx, dto.moldId, MoldTrackingStatus.RECEIVED, user.id);
-        await activateJobOnMoldReceived(tx, dto.jobId);
       }
       return created;
     });

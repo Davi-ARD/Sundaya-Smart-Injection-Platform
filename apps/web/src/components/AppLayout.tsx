@@ -14,7 +14,6 @@ import {
   LogOut,
   PanelLeft,
   Pencil,
-  Route as RouteIcon,
   Truck,
   UserCog,
   Users,
@@ -65,7 +64,7 @@ const sundayaItems: MenuItem[] = [
     roles: [Role.SUPER_ADMIN, Role.ADMIN_SUNDAYA, Role.TEKNISI_SUNDAYA],
   },
   {
-    label: 'Log Penerimaan',
+    label: 'Log Aktivitas',
     to: '/penerimaan',
     icon: Inbox,
     roles: [Role.SUPER_ADMIN, Role.ADMIN_SUNDAYA],
@@ -74,12 +73,6 @@ const sundayaItems: MenuItem[] = [
     label: 'Mesin',
     to: '/machines',
     icon: Factory,
-    roles: [Role.SUPER_ADMIN, Role.ADMIN_SUNDAYA, Role.TEKNISI_SUNDAYA],
-  },
-  {
-    label: 'Mold Tracking',
-    to: '/tracking',
-    icon: RouteIcon,
     roles: [Role.SUPER_ADMIN, Role.ADMIN_SUNDAYA, Role.TEKNISI_SUNDAYA],
   },
   {

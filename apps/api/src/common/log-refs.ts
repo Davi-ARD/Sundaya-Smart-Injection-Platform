@@ -1,5 +1,8 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { ItemPengiriman } from '@mold-tracker/shared';
+import {
+  ItemPengiriman,
+  MaterialType,
+} from '@mold-tracker/shared';
 import { PrismaService } from '../prisma/prisma.service';
 
 // Aturan referensi yang dipakai bersama tiga log berbasis booking: Log Produksi
@@ -11,7 +14,7 @@ import { PrismaService } from '../prisma/prisma.service';
 // supaya barisnya tidak setengah terisi.
 export function assertMaterialFields(
   item: ItemPengiriman,
-  materialName?: string,
+  materialName?: MaterialType,
   jumlahKg?: number,
 ): void {
   if (item !== ItemPengiriman.MATERIAL) return;

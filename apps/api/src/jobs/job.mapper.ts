@@ -1,4 +1,10 @@
-import { Job, JobMachine, JobMold, RentalExtension } from '@mold-tracker/shared';
+import {
+  Job,
+  JobMachine,
+  JobMold,
+  MaterialType,
+  RentalExtension,
+} from '@mold-tracker/shared';
 import {
   Job as PrismaJob,
   Mold as PrismaMold,
@@ -32,7 +38,7 @@ export function toJobMold(m: PrismaMold): JobMold {
     cavity: m.cavity,
     tonaseTon: m.tonaseTon,
     trackingStatus: m.trackingStatus as unknown as JobMold['trackingStatus'],
-    planMaterialUtama: m.planMaterialUtama,
+    planMaterialUtama: m.planMaterialUtama as unknown as MaterialType | null,
     estimasiKg: m.estimasiKg,
     targetOutput: m.targetOutput,
   };

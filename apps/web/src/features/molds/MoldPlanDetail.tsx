@@ -14,14 +14,14 @@ const MAIN_FLOW = [
   MoldTrackingStatus.DELIVERY,
   MoldTrackingStatus.RECEIVED,
   MoldTrackingStatus.PRODUCTION,
-  MoldTrackingStatus.SEND_BACK,
   MoldTrackingStatus.COMPLETED,
 ]
 
-// Rangkaian status tracking dengan posisi saat ini ditebalkan.
-export function MoldTrackingSteps({ current }: { current: MoldTrackingStatus }) {
+// Rangkaian status tracking dengan posisi saat ini ditebalkan. Cetakan yang
+// booking-nya belum disetujui belum punya status: seluruh langkah tampil redup.
+export function MoldTrackingSteps({ current }: { current: MoldTrackingStatus | null }) {
   const steps = MAIN_FLOW
-  const currentIndex = steps.indexOf(current)
+  const currentIndex = current ? steps.indexOf(current) : -1
 
   return (
     <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs">

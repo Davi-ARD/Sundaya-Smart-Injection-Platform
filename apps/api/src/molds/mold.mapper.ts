@@ -1,4 +1,7 @@
-import { Mold } from '@mold-tracker/shared';
+import {
+  MaterialType,
+  Mold,
+} from '@mold-tracker/shared';
 import { Mold as PrismaMold } from '@prisma/client';
 
 // Batas record Prisma <-> bentuk API bersama: tanggal jadi ISO string, enum
@@ -15,7 +18,7 @@ export function toMold(m: PrismaMold): Mold {
     managerId: m.managerId,
     jobId: m.jobId,
     trackingStatus: m.trackingStatus as unknown as Mold['trackingStatus'],
-    planMaterialUtama: m.planMaterialUtama,
+    planMaterialUtama: m.planMaterialUtama as unknown as MaterialType | null,
     estimasiKg: m.estimasiKg,
     targetOutput: m.targetOutput,
     createdAt: m.createdAt.toISOString(),

@@ -17,7 +17,6 @@ export function toMachine(m: PrismaMachine): Machine {
       m.statusBeforeMaintenance as unknown as Machine['statusBeforeMaintenance'],
     ownerId: m.ownerId,
     warrantyStart: m.warrantyStart.toISOString(),
-    warrantyDurationMonths: m.warrantyDurationMonths,
     warrantyEnd: m.warrantyEnd.toISOString(),
     warrantyStatus: m.warrantyStatus as unknown as Machine['warrantyStatus'],
     isArchived: m.isArchived,

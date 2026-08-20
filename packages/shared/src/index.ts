@@ -44,6 +44,22 @@ export const TEKNISI_INPUT_STATUS: MachineOperationalStatus[] = [
   MachineOperationalStatus.RUNNING,
 ];
 
+// Jenis material plastik untuk injection molding. Dipakai sebagai pilihan
+// (dropdown) di plan cetakan, Log Pengiriman, dan Log Aktivitas supaya penamaan
+// material seragam lintas peran, bukan teks bebas.
+export enum MaterialType {
+  PP = "PP",
+  PE = "PE",
+  PS = "PS",
+  ABS = "ABS",
+  PVC = "PVC",
+  PC = "PC",
+  POM = "POM",
+  PA = "PA",
+  PET = "PET",
+  SAN = "SAN",
+}
+
 export enum WarrantyStatus {
   AKTIF = "AKTIF",
   HABIS = "HABIS",
@@ -75,14 +91,15 @@ export enum ExtensionStatus {
   DITOLAK = "DITOLAK",
 }
 
-// Tracking fisik mold (6-state linear). Empat transisi pertama otomatis dari
-// event domain, dua terakhir manual lewat tombol Admin Sundaya.
+// Tracking fisik mold (5-state linear), seluruhnya otomatis dari event domain.
+// Cetakan baru belum punya status sama sekali (null): PLANNING baru disetel saat
+// booking-nya disetujui Admin Sundaya. Tidak ada langkah kirim balik terpisah,
+// produksi selesai langsung menutup siklus ke COMPLETED.
 export enum MoldTrackingStatus {
   PLANNING = "PLANNING",
   DELIVERY = "DELIVERY",
   RECEIVED = "RECEIVED",
   PRODUCTION = "PRODUCTION",
-  SEND_BACK = "SEND_BACK",
   COMPLETED = "COMPLETED",
 }
 
@@ -148,7 +165,6 @@ export interface Machine {
   statusBeforeMaintenance: MachineOperationalStatus | null;
   ownerId: string; // user sistem Sundaya
   warrantyStart: ISODateString;
-  warrantyDurationMonths: number;
   warrantyEnd: ISODateString;
   warrantyStatus: WarrantyStatus;
   isArchived: boolean;
@@ -164,8 +180,8 @@ export interface Mold {
   deskripsi: string | null;
   managerId: string;
   jobId: string | null; // null berarti belum dibooking
-  trackingStatus: MoldTrackingStatus;
-  planMaterialUtama: string | null;
+  trackingStatus: MoldTrackingStatus | null;
+  planMaterialUtama: MaterialType | null;
   estimasiKg: number | null;
   targetOutput: number | null;
   createdAt: ISODateString;
@@ -187,8 +203,8 @@ export interface JobMold {
   namaProduk: string;
   cavity: number;
   tonaseTon: number;
-  trackingStatus: MoldTrackingStatus;
-  planMaterialUtama: string | null;
+  trackingStatus: MoldTrackingStatus | null;
+  planMaterialUtama: MaterialType | null;
   estimasiKg: number | null;
   targetOutput: number | null;
 }
@@ -304,7 +320,7 @@ export interface LogPengiriman {
   item: ItemPengiriman;
   rencanaKirim: ISODateString;
   // Khusus item MATERIAL.
-  materialName: string | null;
+  materialName: MaterialType | null;
   jumlahKg: number | null;
   noSuratJalan: string | null;
   catatan: string | null;
@@ -323,7 +339,7 @@ export interface LogPenerimaan {
   item: ItemPengiriman;
   diterimaAt: ISODateString;
   // Khusus item MATERIAL.
-  materialName: string | null;
+  materialName: MaterialType | null;
   jumlahKg: number | null;
   noSuratJalan: string | null;
   kondisi: string | null;
@@ -384,14 +400,14 @@ export interface CreateMachineRequest {
   spesifikasi: string;
   tonaseTon: number;
   warrantyStart: ISODateString;
-  warrantyDurationMonths: number;
+  warrantyEnd: ISODateString;
 }
 
 export interface UpdateMachineRequest {
   spesifikasi?: string;
   tonaseTon?: number;
   warrantyStart?: ISODateString;
-  warrantyDurationMonths?: number;
+  warrantyEnd?: ISODateString;
 }
 
 // Operational Data (Layer 1, Teknisi). Append event, bukan update mesin langsung.
@@ -424,7 +440,7 @@ export interface CreateMoldRequest {
   cavity: number;
   tonaseTon: number;
   deskripsi?: string;
-  planMaterialUtama?: string;
+  planMaterialUtama?: MaterialType;
   estimasiKg?: number;
   targetOutput?: number;
 }
@@ -434,14 +450,9 @@ export interface UpdateMoldRequest {
   cavity?: number;
   tonaseTon?: number;
   deskripsi?: string;
-  planMaterialUtama?: string;
+  planMaterialUtama?: MaterialType;
   estimasiKg?: number;
   targetOutput?: number;
-}
-
-// Transisi tracking mold (service-guarded, hanya state berikutnya yang sah).
-export interface UpdateMoldTrackingRequest {
-  status: MoldTrackingStatus;
 }
 
 // Booking / Job. Manager memilih satu atau lebih cetakan plus jumlah mesin yang
@@ -457,9 +468,17 @@ export interface CreateJobRequest {
 }
 
 // Admin Sundaya menambah satu mesin ke booking. Mesin pertama sekaligus menyetujui
-// booking; mesin berikutnya ditambahkan lewat endpoint yang sama.
+// booking. Admin Sundaya boleh memilih beberapa mesin sekaligus dalam satu aksi;
+// mesin berikutnya tetap bisa ditambahkan lewat endpoint yang sama.
 export interface AssignJobRequest {
-  machineId: string;
+  machineIds: string[];
+}
+
+// Tukar satu mesin booking dengan mesin lain, mis. mesin yang sedang dipakai
+// masuk maintenance. Berlaku juga saat booking sudah berjalan supaya produksi
+// tidak berhenti; kontrak tetap dihitung per hari tanpa kompensasi.
+export interface ReplaceMachineRequest {
+  replacementId: string;
 }
 
 export interface RejectJobRequest {
@@ -499,7 +518,7 @@ export interface CreateLogPengirimanRequest {
   moldId?: string; // wajib untuk item MOLD
   item: ItemPengiriman;
   rencanaKirim: ISODateString;
-  materialName?: string;
+  materialName?: MaterialType;
   jumlahKg?: number;
   noSuratJalan?: string;
   catatan?: string;
@@ -511,7 +530,7 @@ export interface CreateLogPenerimaanRequest {
   moldId?: string; // wajib untuk item MOLD
   item: ItemPengiriman;
   diterimaAt: ISODateString;
-  materialName?: string;
+  materialName?: MaterialType;
   jumlahKg?: number;
   noSuratJalan?: string;
   kondisi?: string;
@@ -634,7 +653,7 @@ export interface MoldPlanRow {
   namaProduk: string;
   cavity: number;
   tonaseTon: number;
-  trackingStatus: MoldTrackingStatus;
+  trackingStatus: MoldTrackingStatus | null;
   jobId: string | null;
   jobNumber: string | null;
   lifecycle: JobLifecycle | null;
@@ -647,7 +666,7 @@ export interface MoldPlanRow {
   rejectRate: number; // persen dari total output
   sisaHariSewa: number | null;
   etaHari: number | null; // perkiraan hari sampai target tercapai
-  planMaterialUtama: string | null;
+  planMaterialUtama: MaterialType | null;
   // Kuota material: plan (estimasiKg) adalah batas keras, terpakai adalah akumulasi
   // materialUsedKg dari Log Produksi, sisa adalah selisihnya.
   estimasiKg: number | null;
@@ -670,7 +689,7 @@ export interface MoldCycleProduction {
   achievement: number; // persen good terhadap target
   rejectRate: number; // persen reject terhadap total output
   remainingTarget: number | null; // target minus good
-  planMaterialUtama: string | null;
+  planMaterialUtama: MaterialType | null;
   planMaterialKg: number | null;
   materialUsedKg: number;
   materialRemainingKg: number | null;
@@ -724,21 +743,8 @@ export const MOLD_TRACKING_FLOW: Record<MoldTrackingStatus, MoldTrackingStatus[]
   [MoldTrackingStatus.PLANNING]: [MoldTrackingStatus.DELIVERY],
   [MoldTrackingStatus.DELIVERY]: [MoldTrackingStatus.RECEIVED],
   [MoldTrackingStatus.RECEIVED]: [MoldTrackingStatus.PRODUCTION],
-  [MoldTrackingStatus.PRODUCTION]: [MoldTrackingStatus.SEND_BACK],
-  [MoldTrackingStatus.SEND_BACK]: [MoldTrackingStatus.COMPLETED],
+  [MoldTrackingStatus.PRODUCTION]: [MoldTrackingStatus.COMPLETED],
   [MoldTrackingStatus.COMPLETED]: [],
-};
-
-// Status mold yang tidak digerakkan event domain melainkan tombol, beserta role
-// yang berwenang menekannya. Sisanya otomatis (lihat PROJECT_CONTEXT.md bagian 5a).
-//
-// SEND_BACK ditekan Admin Sundaya (produksi selesai, cetakan dikirim balik).
-// COMPLETED ditekan Manager Penyewa pemilik cetakan: ini approval bahwa cetakan
-// benar-benar sudah sampai kembali di tangan penyewa, per cetakan bukan per job.
-// Status yang tidak ada di sini digerakkan event domain, bukan tombol.
-export const MOLD_MANUAL_TRANSITIONS: Partial<Record<MoldTrackingStatus, Role>> = {
-  [MoldTrackingStatus.SEND_BACK]: Role.ADMIN_SUNDAYA,
-  [MoldTrackingStatus.COMPLETED]: Role.MANAGER_PENYEWA,
 };
 
 // Cycle time disimpan kanonik dalam detik tapi diinput sebagai jam + menit + detik.

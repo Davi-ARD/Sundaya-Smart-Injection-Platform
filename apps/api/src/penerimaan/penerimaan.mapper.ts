@@ -1,5 +1,9 @@
 import { LogPenerimaan as PrismaLogPenerimaan } from '@prisma/client';
-import { ItemPengiriman, LogPenerimaan } from '@mold-tracker/shared';
+import {
+  ItemPengiriman,
+  LogPenerimaan,
+  MaterialType,
+} from '@mold-tracker/shared';
 
 export function toLogPenerimaan(
   row: PrismaLogPenerimaan,
@@ -14,7 +18,7 @@ export function toLogPenerimaan(
     kodeMold,
     item: row.item as unknown as ItemPengiriman,
     diterimaAt: row.diterimaAt.toISOString(),
-    materialName: row.materialName,
+    materialName: row.materialName as unknown as MaterialType | null,
     jumlahKg: row.jumlahKg,
     noSuratJalan: row.noSuratJalan,
     kondisi: row.kondisi,

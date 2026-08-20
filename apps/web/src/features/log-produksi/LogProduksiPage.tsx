@@ -38,7 +38,7 @@ const toIso = (local: string) => new Date(local).toISOString()
 
 // Log Produksi (Layer 2, Admin Penyewa di lokasi Sundaya). Dua jenis event saja:
 // produksi harian dan progress molding. Kedatangan material tidak dicatat di sini
-// karena sudah ada di Log Pengiriman Manager dan Log Penerimaan Admin Sundaya.
+// karena sudah ada di Log Pengiriman Manager dan Log Aktivitas Admin Sundaya.
 // Append-only: event tidak bisa diubah atau dihapus, koreksi ditulis sebagai
 // event baru. Booking meminjamkan mesin tanpa memasangkannya ke cetakan, jadi
 // tiap event wajib menyebut cetakan mana berjalan di mesin mana.
@@ -122,7 +122,7 @@ export function LogProduksiPage() {
       <PageHeader
         breadcrumb={[{ label: 'Beranda', to: '/job' }, { label: 'Log Produksi' }]}
         title="Log Produksi"
-        description="Catat produksi harian dan progress molding di lokasi Sundaya. Kedatangan material tidak dicatat di sini, sudah tercatat di Log Pengiriman dan Log Penerimaan."
+        description="Catat produksi harian dan progress molding di lokasi Sundaya. Produksi harian pertama menandai booking sudah berjalan. Kedatangan material tidak dicatat di sini, sudah tercatat di Log Pengiriman dan Log Aktivitas."
         actions={
           <Button
             onClick={() => setIsPanelOpen(true)}

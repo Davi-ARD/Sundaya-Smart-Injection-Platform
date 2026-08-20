@@ -11,7 +11,6 @@ import { MoldsPage } from './features/molds/MoldsPage'
 import { MachinesPage } from './features/machines/MachinesPage'
 import { SundayaDashboardPage } from './features/dashboard/SundayaDashboardPage'
 import { SundayaBookingPage } from './features/booking/SundayaBookingPage'
-import { MoldTrackingPage } from './features/molds/MoldTrackingPage'
 import { MaintenancePage } from './features/maintenance/MaintenancePage'
 import { UsersPage } from './features/users/UsersPage'
 import { ManagerDashboardPage } from './features/dashboard/ManagerDashboardPage'
@@ -62,7 +61,6 @@ export default function App() {
             <Route path="/staff" element={<SundayaDashboardPage />} />
             <Route path="/staff/booking" element={<SundayaBookingPage />} />
             <Route path="/penerimaan" element={<PenerimaanPage />} />
-            <Route path="/tracking" element={<MoldTrackingPage />} />
             <Route path="/machines" element={<MachinesPage />} />
             <Route path="/maintenance" element={<MaintenancePage />} />
           </Route>

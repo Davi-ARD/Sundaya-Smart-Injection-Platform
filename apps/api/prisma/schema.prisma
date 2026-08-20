@@ -85,8 +85,22 @@ enum MoldTrackingStatus {
   DELIVERY
   RECEIVED
   PRODUCTION
-  SEND_BACK
   COMPLETED
+}
+
+// Jenis material plastik. Dipakai sebagai pilihan tetap supaya penamaan material
+// seragam lintas peran (plan cetakan, Log Pengiriman, Log Aktivitas).
+enum MaterialType {
+  PP
+  PE
+  PS
+  ABS
+  PVC
+  PC
+  POM
+  PA
+  PET
+  SAN
 }
 
 // Jenis barang pada Log Pengiriman (Manager) dan Log Penerimaan (Admin Sundaya).
@@ -182,7 +196,6 @@ model Machine {
   // relasi tetap eksplisit; penegakan single-provider ada di service.
   ownerId                String
   warrantyStart          DateTime
-  warrantyDurationMonths Int
   warrantyEnd            DateTime
   warrantyStatus         WarrantyStatus
   // Arsip (soft-delete): mesin tetap ada demi relasi job/operational, cuma
@@ -215,8 +228,8 @@ model Mold {
   deskripsi         String?
   managerId         String
   jobId             String?
-  trackingStatus    MoldTrackingStatus @default(PLANNING)
-  planMaterialUtama String?
+  trackingStatus    MoldTrackingStatus?
+  planMaterialUtama MaterialType?
   estimasiKg        Float?
   targetOutput      Float?
   createdAt         DateTime           @default(now())
@@ -297,7 +310,7 @@ model LogPengiriman {
   item         ItemPengiriman
   rencanaKirim DateTime
   // Khusus item MATERIAL.
-  materialName String?
+  materialName MaterialType?
   jumlahKg     Float?
   noSuratJalan String?
   catatan      String?
@@ -323,7 +336,7 @@ model LogPenerimaan {
   item         ItemPengiriman
   diterimaAt   DateTime
   // Khusus item MATERIAL.
-  materialName String?
+  materialName MaterialType?
   jumlahKg     Float?
   noSuratJalan String?
   kondisi      String?

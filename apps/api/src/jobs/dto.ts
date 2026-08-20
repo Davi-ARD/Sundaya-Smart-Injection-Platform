@@ -18,6 +18,7 @@ import {
   DecideExtensionRequest,
   ExtensionStatus,
   RejectJobRequest,
+  ReplaceMachineRequest,
 } from '@mold-tracker/shared';
 
 // Booking oleh MANAGER_PENYEWA: satu atau lebih cetakan plus jumlah mesin yang ingin
@@ -51,9 +52,17 @@ export class CreateJobDto implements CreateJobRequest {
 
 // Menambah satu mesin ke booking. Dipanggil berulang sampai jumlah permintaan terpenuhi.
 export class AssignJobDto implements AssignJobRequest {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayUnique()
+  @IsString({ each: true })
+  machineIds: string[];
+}
+
+export class ReplaceMachineDto implements ReplaceMachineRequest {
   @IsString()
   @MinLength(1)
-  machineId: string;
+  replacementId: string;
 }
 
 export class RejectJobDto implements RejectJobRequest {

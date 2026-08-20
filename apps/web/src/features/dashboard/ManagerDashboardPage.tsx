@@ -161,7 +161,7 @@ export function ManagerDashboardPage() {
           <StatCard
             label="Cetakan di Sundaya"
             value={summary.moldsAtSundaya}
-            hint="Sudah diterima, belum dikirim balik"
+            hint="Sudah diterima, produksinya belum selesai"
             tone="brand"
           />
           <StatCard label="Booking berjalan" value={summary.ongoing} tone="slate" />

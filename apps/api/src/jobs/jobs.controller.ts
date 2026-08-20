@@ -15,6 +15,7 @@ import {
   CreateJobDto,
   DecideExtensionDto,
   RejectJobDto,
+  ReplaceMachineDto,
 } from './dto';
 
 // Modul jobs dipakai berdua (koordinasi Dev A/Dev B). Pemilik file = Dev A
@@ -94,6 +95,18 @@ export class JobsController {
     @Param('machineId') machineId: string,
   ): Promise<Job> {
     return this.jobs.releaseMachine(id, machineId);
+  }
+
+  // Menukar satu mesin booking dengan mesin lain, mis. mesin masuk maintenance.
+  // Berbeda dari releaseMachine, ini juga berlaku saat booking sudah berjalan.
+  @Roles(Role.ADMIN_SUNDAYA)
+  @Patch(':id/machines/:machineId/replace')
+  replaceMachine(
+    @Param('id') id: string,
+    @Param('machineId') machineId: string,
+    @Body() dto: ReplaceMachineDto,
+  ): Promise<Job> {
+    return this.jobs.replaceMachine(id, machineId, dto);
   }
 
   @Roles(Role.ADMIN_SUNDAYA)

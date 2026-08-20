@@ -4,10 +4,16 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { ExtensionStatus, JobLifecycle, MachineStatus, Role } from '@mold-tracker/shared';
+import {
+  ExtensionStatus,
+  JobLifecycle,
+  MachineStatus,
+  MoldTrackingStatus,
+  Role,
+} from '@mold-tracker/shared';
 import { User as PrismaUser } from '@prisma/client';
 import { JobsService } from './jobs.service';
-import { activateJobOnMoldReceived, completeJobIfAllMoldsReturned } from './job-transitions';
+import { activateJobOnProduksi, completeJobIfAllMoldsReturned } from './job-transitions';
 import { PrismaService } from '../prisma/prisma.service';
 
 // Transaksi yang dipinjamkan service pemicu (Log Penerimaan, Mold Tracking) ke
@@ -28,7 +34,7 @@ function prismaMock() {
       create: jest.fn(),
       count: jest.fn().mockResolvedValue(0),
     },
-    machine: { findUnique: jest.fn(), update: jest.fn() },
+    machine: { findUnique: jest.fn(), findMany: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
     mold: { findUnique: jest.fn(), findMany: jest.fn(), updateMany: jest.fn() },
     rentalExtension: {
       count: jest.fn(),
@@ -160,7 +166,7 @@ describe('JobsService.assign (pinjamkan mesin)', () => {
   const jobDiajukan = (o: Record<string, unknown> = {}) => ({
     id: 'job-1',
     lifecycle: 'DIAJUKAN',
-    molds: [{ kodeMold: 'MLD-1', tonaseTon: 150 }],
+    molds: [{ id: 'mold-1', kodeMold: 'MLD-1', tonaseTon: 150 }],
     machines: [],
     ...o,
   });
@@ -168,7 +174,7 @@ describe('JobsService.assign (pinjamkan mesin)', () => {
   it('mesin pertama menyetujui booking dan keluar dari TERSEDIA', async () => {
     const prisma = prismaMock();
     prisma.job.findUnique.mockResolvedValue(jobDiajukan());
-    prisma.machine.findUnique.mockResolvedValue(machineTersedia);
+    prisma.machine.findMany.mockResolvedValue([machineTersedia]);
     prisma.job.update.mockReturnValue(
       jobRow({
         assignedById: 'admin-1',
@@ -176,18 +182,18 @@ describe('JobsService.assign (pinjamkan mesin)', () => {
         machines: [machineDipinjam({ machineNumber: 'IM-03', tonaseTon: 150 })],
       }),
     );
-    prisma.machine.update.mockReturnValue(machineTersedia);
+    prisma.machine.updateMany.mockReturnValue({ count: 1 });
 
     const service = new JobsService(prisma as unknown as PrismaService);
-    const result = await service.assign(adminSundaya, 'job-1', { machineId: 'm-1' });
+    const result = await service.assign(adminSundaya, 'job-1', { machineIds: ['m-1'] });
 
     const jobData = prisma.job.update.mock.calls[0][0].data;
-    expect(jobData.machines).toEqual({ connect: { id: 'm-1' } });
+    expect(jobData.machines).toEqual({ connect: [{ id: 'm-1' }] });
     expect(jobData.assignedById).toBe('admin-1');
     expect(jobData.lifecycle).toBe(JobLifecycle.DIKONFIRMASI);
     expect(jobData.confirmedAt).toBeInstanceOf(Date);
-    expect(prisma.machine.update).toHaveBeenCalledWith({
-      where: { id: 'm-1' },
+    expect(prisma.machine.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['m-1'] } },
       data: { status: MachineStatus.DIKONFIRMASI },
     });
     expect(result.lifecycle).toBe(JobLifecycle.DIKONFIRMASI);
@@ -199,15 +205,15 @@ describe('JobsService.assign (pinjamkan mesin)', () => {
     prisma.job.findUnique.mockResolvedValue(
       jobDiajukan({ lifecycle: 'DIKONFIRMASI', machines: [{ id: 'm-0' }] }),
     );
-    prisma.machine.findUnique.mockResolvedValue(machineTersedia);
+    prisma.machine.findMany.mockResolvedValue([machineTersedia]);
     prisma.job.update.mockReturnValue(jobRow({ lifecycle: 'DIKONFIRMASI' }));
-    prisma.machine.update.mockReturnValue(machineTersedia);
+    prisma.machine.updateMany.mockReturnValue({ count: 1 });
 
     const service = new JobsService(prisma as unknown as PrismaService);
-    await service.assign(adminSundaya, 'job-1', { machineId: 'm-1' });
+    await service.assign(adminSundaya, 'job-1', { machineIds: ['m-1'] });
 
     const jobData = prisma.job.update.mock.calls[0][0].data;
-    expect(jobData.machines).toEqual({ connect: { id: 'm-1' } });
+    expect(jobData.machines).toEqual({ connect: [{ id: 'm-1' }] });
     expect(jobData.lifecycle).toBeUndefined();
     expect(jobData.confirmedAt).toBeUndefined();
   });
@@ -219,19 +225,56 @@ describe('JobsService.assign (pinjamkan mesin)', () => {
     );
 
     const service = new JobsService(prisma as unknown as PrismaService);
-    await expect(service.assign(adminSundaya, 'job-1', { machineId: 'm-1' })).rejects.toBeInstanceOf(
+    await expect(service.assign(adminSundaya, 'job-1', { machineIds: ['m-1'] })).rejects.toBeInstanceOf(
       ConflictException,
     );
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
+  it('memilih beberapa mesin sekaligus dalam satu aksi assign', async () => {
+    const prisma = prismaMock();
+    prisma.job.findUnique.mockResolvedValue(jobDiajukan());
+    prisma.machine.findMany.mockResolvedValue([
+      machineTersedia,
+      { ...machineTersedia, id: 'm-2', machineNumber: 'IM-04' },
+    ]);
+    prisma.job.update.mockReturnValue(jobRow({ lifecycle: 'DIKONFIRMASI' }));
+    prisma.machine.updateMany.mockReturnValue({ count: 2 });
+
+    const service = new JobsService(prisma as unknown as PrismaService);
+    await service.assign(adminSundaya, 'job-1', { machineIds: ['m-1', 'm-2'] });
+
+    const jobData = prisma.job.update.mock.calls[0][0].data;
+    expect(jobData.machines).toEqual({ connect: [{ id: 'm-1' }, { id: 'm-2' }] });
+    expect(prisma.machine.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['m-1', 'm-2'] } },
+      data: { status: MachineStatus.DIKONFIRMASI },
+    });
+  });
+
+  it('booking yang disetujui menempatkan seluruh cetakannya ke PLANNING', async () => {
+    const prisma = prismaMock();
+    prisma.job.findUnique.mockResolvedValue(jobDiajukan());
+    prisma.machine.findMany.mockResolvedValue([machineTersedia]);
+    prisma.job.update.mockReturnValue(jobRow({ lifecycle: 'DIKONFIRMASI' }));
+    prisma.machine.updateMany.mockReturnValue({ count: 1 });
+
+    const service = new JobsService(prisma as unknown as PrismaService);
+    await service.assign(adminSundaya, 'job-1', { machineIds: ['m-1'] });
+
+    const jobData = prisma.job.update.mock.calls[0][0].data;
+    expect(jobData.molds).toEqual({
+      updateMany: { where: {}, data: { trackingStatus: MoldTrackingStatus.PLANNING } },
+    });
+  });
+
   it('menolak mesin non-TERSEDIA (409)', async () => {
     const prisma = prismaMock();
     prisma.job.findUnique.mockResolvedValue(jobDiajukan());
-    prisma.machine.findUnique.mockResolvedValue({ ...machineTersedia, status: 'AKTIF' });
+    prisma.machine.findMany.mockResolvedValue([{ ...machineTersedia, status: 'AKTIF' }]);
 
     const service = new JobsService(prisma as unknown as PrismaService);
-    await expect(service.assign(adminSundaya, 'job-1', { machineId: 'm-1' })).rejects.toBeInstanceOf(
+    await expect(service.assign(adminSundaya, 'job-1', { machineIds: ['m-1'] })).rejects.toBeInstanceOf(
       ConflictException,
     );
     expect(prisma.$transaction).not.toHaveBeenCalled();
@@ -242,10 +285,10 @@ describe('JobsService.assign (pinjamkan mesin)', () => {
     prisma.job.findUnique.mockResolvedValue(
       jobDiajukan({ molds: [{ kodeMold: 'MLD-1', tonaseTon: 200 }] }),
     );
-    prisma.machine.findUnique.mockResolvedValue(machineTersedia); // 150 ton
+    prisma.machine.findMany.mockResolvedValue([machineTersedia]); // 150 ton
 
     const service = new JobsService(prisma as unknown as PrismaService);
-    await expect(service.assign(adminSundaya, 'job-1', { machineId: 'm-1' })).rejects.toBeInstanceOf(
+    await expect(service.assign(adminSundaya, 'job-1', { machineIds: ['m-1'] })).rejects.toBeInstanceOf(
       BadRequestException,
     );
   });
@@ -255,12 +298,12 @@ describe('JobsService.assign (pinjamkan mesin)', () => {
     prisma.job.findUnique.mockResolvedValue(
       jobDiajukan({ molds: [{ kodeMold: 'MLD-1', tonaseTon: 100 }] }),
     );
-    prisma.machine.findUnique.mockResolvedValue(machineTersedia); // 150 ton
+    prisma.machine.findMany.mockResolvedValue([machineTersedia]); // 150 ton
     prisma.job.update.mockReturnValue(jobRow({ lifecycle: 'DIKONFIRMASI' }));
-    prisma.machine.update.mockReturnValue(machineTersedia);
+    prisma.machine.updateMany.mockReturnValue({ count: 1 });
 
     const service = new JobsService(prisma as unknown as PrismaService);
-    await expect(service.assign(adminSundaya, 'job-1', { machineId: 'm-1' })).resolves.toBeDefined();
+    await expect(service.assign(adminSundaya, 'job-1', { machineIds: ['m-1'] })).resolves.toBeDefined();
   });
 
   it('cukup sanggup cetakan terkecil: mesin sedang tetap diterima untuk booking campuran', async () => {
@@ -273,14 +316,14 @@ describe('JobsService.assign (pinjamkan mesin)', () => {
         ],
       }),
     );
-    prisma.machine.findUnique.mockResolvedValue(machineTersedia); // 150 ton
+    prisma.machine.findMany.mockResolvedValue([machineTersedia]); // 150 ton
     prisma.job.update.mockReturnValue(jobRow({ lifecycle: 'DIKONFIRMASI' }));
-    prisma.machine.update.mockReturnValue(machineTersedia);
+    prisma.machine.updateMany.mockReturnValue({ count: 1 });
 
     // Cetakan tidak dipasangkan ke mesin, jadi mesin 150 ton tetap berguna untuk MLD-1.
     // Kecocokan MLD-2 baru ditegakkan saat Log Produksi dicatat.
     const service = new JobsService(prisma as unknown as PrismaService);
-    await expect(service.assign(adminSundaya, 'job-1', { machineId: 'm-1' })).resolves.toBeDefined();
+    await expect(service.assign(adminSundaya, 'job-1', { machineIds: ['m-1'] })).resolves.toBeDefined();
   });
 
   it('menolak tambah mesin setelah mesin dikirim (409)', async () => {
@@ -288,7 +331,7 @@ describe('JobsService.assign (pinjamkan mesin)', () => {
     prisma.job.findUnique.mockResolvedValue(jobDiajukan({ lifecycle: 'AKTIF' }));
 
     const service = new JobsService(prisma as unknown as PrismaService);
-    await expect(service.assign(adminSundaya, 'job-1', { machineId: 'm-1' })).rejects.toBeInstanceOf(
+    await expect(service.assign(adminSundaya, 'job-1', { machineIds: ['m-1'] })).rejects.toBeInstanceOf(
       ConflictException,
     );
   });
@@ -298,7 +341,7 @@ describe('JobsService.assign (pinjamkan mesin)', () => {
     prisma.job.findUnique.mockResolvedValue(null);
 
     const service = new JobsService(prisma as unknown as PrismaService);
-    await expect(service.assign(adminSundaya, 'x', { machineId: 'm-1' })).rejects.toBeInstanceOf(
+    await expect(service.assign(adminSundaya, 'x', { machineIds: ['m-1'] })).rejects.toBeInstanceOf(
       NotFoundException,
     );
   });
@@ -389,8 +432,8 @@ describe('JobsService.reject', () => {
 // Tidak ada lagi tombol "kirim mesin": mesin tidak pernah keluar dari Sundaya.
 // Dua perpindahan sisa berjalan otomatis dari event domain, diuji di sini karena
 // keduanya menggerakkan job + mesin bersama-sama.
-describe('activateJobOnMoldReceived (cetakan tiba -> booking berjalan)', () => {
-  it('DIKONFIRMASI -> AKTIF, seluruh mesin pinjaman ikut AKTIF, masa sewa mulai', async () => {
+describe('activateJobOnProduksi (produksi harian -> booking berjalan)', () => {
+  it('DIKONFIRMASI -> AKTIF, seluruh mesin pinjaman ikut AKTIF, tanggal tidak digeser', async () => {
     const tx = txMock();
     tx.job.findUnique.mockResolvedValue({
       lifecycle: 'DIKONFIRMASI',
@@ -398,7 +441,7 @@ describe('activateJobOnMoldReceived (cetakan tiba -> booking berjalan)', () => {
       machines: [machineDipinjam(), machineDipinjam({ id: 'm-2' })],
     });
 
-    await activateJobOnMoldReceived(tx as unknown as Parameters<typeof activateJobOnMoldReceived>[0], 'job-1');
+    await activateJobOnProduksi(tx as unknown as Parameters<typeof activateJobOnProduksi>[0], 'job-1');
 
     expect(tx.machine.update).toHaveBeenCalledTimes(2);
     expect(tx.machine.update).toHaveBeenCalledWith({
@@ -407,9 +450,10 @@ describe('activateJobOnMoldReceived (cetakan tiba -> booking berjalan)', () => {
     });
     const data = tx.job.update.mock.calls[0][0].data;
     expect(data.lifecycle).toBe(JobLifecycle.AKTIF);
-    // Masa sewa dihitung dari kedatangan cetakan, bukan dari startDate rencana.
-    expect(data.startDate).toEqual(data.receivedAt);
-    expect(data.endDate.getTime() - data.startDate.getTime()).toBe(30 * 24 * 60 * 60 * 1000);
+    // Masa sewa ditetapkan dari jadwal penyewa saat booking dibuat, jadi aktivasi
+    // tidak lagi menyentuh tanggal apa pun.
+    expect(data.startDate).toBeUndefined();
+    expect(data.endDate).toBeUndefined();
   });
 
   it('booking yang belum dikonfirmasi tidak ikut berjalan', async () => {
@@ -420,11 +464,11 @@ describe('activateJobOnMoldReceived (cetakan tiba -> booking berjalan)', () => {
       machines: [],
     });
 
-    await activateJobOnMoldReceived(tx as unknown as Parameters<typeof activateJobOnMoldReceived>[0], 'job-1');
+    await activateJobOnProduksi(tx as unknown as Parameters<typeof activateJobOnProduksi>[0], 'job-1');
     expect(tx.job.update).not.toHaveBeenCalled();
   });
 
-  it('idempoten: cetakan kedua yang tiba tidak menggeser masa sewa', async () => {
+  it('idempoten: produksi harian berikutnya tidak mengubah apa pun', async () => {
     const tx = txMock();
     tx.job.findUnique.mockResolvedValue({
       lifecycle: 'AKTIF',
@@ -432,7 +476,7 @@ describe('activateJobOnMoldReceived (cetakan tiba -> booking berjalan)', () => {
       machines: [machineDipinjam({ status: 'AKTIF' })],
     });
 
-    await activateJobOnMoldReceived(tx as unknown as Parameters<typeof activateJobOnMoldReceived>[0], 'job-1');
+    await activateJobOnProduksi(tx as unknown as Parameters<typeof activateJobOnProduksi>[0], 'job-1');
     expect(tx.job.update).not.toHaveBeenCalled();
     expect(tx.machine.update).not.toHaveBeenCalled();
   });
@@ -463,7 +507,7 @@ describe('completeJobIfAllMoldsReturned (cetakan terakhir pulang -> booking tutu
     const tx = txMock();
     tx.job.findUnique.mockResolvedValue({
       lifecycle: 'AKTIF',
-      molds: [{ trackingStatus: 'COMPLETED' }, { trackingStatus: 'SEND_BACK' }],
+      molds: [{ trackingStatus: 'COMPLETED' }, { trackingStatus: 'PRODUCTION' }],
       machines: [machineDipinjam({ status: 'AKTIF' })],
     });
 

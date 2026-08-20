@@ -39,7 +39,7 @@ export class MachinesService {
   // single-provider ditegakkan di sini, bukan lewat kolom bebas dari client.
   async create(user: PrismaUser, dto: CreateMachineDto): Promise<Machine> {
     const warrantyStart = new Date(dto.warrantyStart);
-    const { warrantyEnd, warrantyStatus } = computeWarranty(warrantyStart, dto.warrantyDurationMonths);
+    const { warrantyEnd, warrantyStatus } = computeWarranty(warrantyStart, new Date(dto.warrantyEnd));
     const m = await this.prisma.machine.create({
       data: {
         machineNumber: await this.nextMachineNumber(),
@@ -47,7 +47,6 @@ export class MachinesService {
         tonaseTon: dto.tonaseTon,
         ownerId: user.id,
         warrantyStart,
-        warrantyDurationMonths: dto.warrantyDurationMonths,
         warrantyEnd,
         warrantyStatus: asWarrantyStatus(warrantyStatus),
       },
@@ -65,13 +64,12 @@ export class MachinesService {
       tonaseTon: dto.tonaseTon,
     };
 
-    // Warranty dihitung ulang bila start atau durasi berubah.
-    if (dto.warrantyStart !== undefined || dto.warrantyDurationMonths !== undefined) {
+    // Warranty dihitung ulang bila salah satu ujung rentang tanggalnya berubah.
+    if (dto.warrantyStart !== undefined || dto.warrantyEnd !== undefined) {
       const warrantyStart = dto.warrantyStart ? new Date(dto.warrantyStart) : existing.warrantyStart;
-      const months = dto.warrantyDurationMonths ?? existing.warrantyDurationMonths;
-      const { warrantyEnd, warrantyStatus } = computeWarranty(warrantyStart, months);
+      const akhir = dto.warrantyEnd ? new Date(dto.warrantyEnd) : existing.warrantyEnd;
+      const { warrantyEnd, warrantyStatus } = computeWarranty(warrantyStart, akhir);
       data.warrantyStart = warrantyStart;
-      data.warrantyDurationMonths = months;
       data.warrantyEnd = warrantyEnd;
       data.warrantyStatus = asWarrantyStatus(warrantyStatus);
     }

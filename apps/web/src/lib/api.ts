@@ -33,12 +33,12 @@ import type {
   ManagerDashboard,
   Mold,
   RejectJobRequest,
+  ReplaceMachineRequest,
   Role,
   SundayaDashboard,
   UpdateMachineRequest,
   UpdateMaintenanceStatusRequest,
   UpdateMoldRequest,
-  UpdateMoldTrackingRequest,
   UpdateProfileRequest,
   UpdateUserRequest,
   User,
@@ -198,14 +198,6 @@ export const api = {
     return request<Mold>('PATCH', `/molds/${id}`, token, body)
   },
 
-  async updateMoldTracking(
-    token: string | null,
-    id: string,
-    body: UpdateMoldTrackingRequest,
-  ): Promise<Mold> {
-    return request<Mold>('PATCH', `/molds/${id}/tracking`, token, body)
-  },
-
   // ===================== Job (Booking + lifecycle) =====================
   async createJob(token: string | null, body: CreateJobRequest): Promise<Job> {
     return request<Job>('POST', '/jobs', token, body)
@@ -226,6 +218,15 @@ export const api = {
 
   async releaseJobMachine(token: string | null, id: string, machineId: string): Promise<Job> {
     return request<Job>('DELETE', `/jobs/${id}/machines/${machineId}`, token)
+  },
+
+  async replaceMachine(
+    token: string | null,
+    jobId: string,
+    machineId: string,
+    body: ReplaceMachineRequest,
+  ): Promise<Job> {
+    return request<Job>('PATCH', `/jobs/${jobId}/machines/${machineId}/replace`, token, body)
   },
 
   async rejectJob(token: string | null, id: string, body: RejectJobRequest): Promise<Job> {

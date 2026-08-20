@@ -15,9 +15,8 @@ export class CreateMachineDto implements CreateMachineRequest {
   @IsDateString()
   warrantyStart: string;
 
-  @IsInt()
-  @IsPositive()
-  warrantyDurationMonths: number;
+  @IsDateString()
+  warrantyEnd: string;
 }
 
 export class UpdateMachineDto implements UpdateMachineRequest {
@@ -36,7 +35,6 @@ export class UpdateMachineDto implements UpdateMachineRequest {
   warrantyStart?: string;
 
   @IsOptional()
-  @IsInt()
-  @IsPositive()
-  warrantyDurationMonths?: number;
+  @IsDateString()
+  warrantyEnd?: string;
 }

@@ -7,7 +7,11 @@ import {
   IsString,
   MinLength,
 } from 'class-validator';
-import { CreateLogPenerimaanRequest, ItemPengiriman } from '@mold-tracker/shared';
+import {
+  CreateLogPenerimaanRequest,
+  ItemPengiriman,
+  MaterialType,
+} from '@mold-tracker/shared';
 
 // Log Penerimaan dibuat Admin Sundaya saat barang tiba di lokasi Sundaya. Field
 // material hanya wajib untuk item MATERIAL (ditegakkan di service).
@@ -31,7 +35,7 @@ export class CreateLogPenerimaanDto implements CreateLogPenerimaanRequest {
   @IsOptional()
   @IsString()
   @MinLength(1)
-  materialName?: string;
+  materialName?: MaterialType;
 
   @IsOptional()
   @IsNumber()

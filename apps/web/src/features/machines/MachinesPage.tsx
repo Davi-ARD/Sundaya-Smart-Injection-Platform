@@ -36,21 +36,21 @@ type MachineForm = {
   spesifikasi: string
   tonaseTon: string
   warrantyStart: string
-  warrantyDurationMonths: string
+  warrantyEnd: string
 }
 
 const emptyMachineForm: MachineForm = {
   spesifikasi: '',
   tonaseTon: '',
   warrantyStart: '',
-  warrantyDurationMonths: '',
+  warrantyEnd: '',
 }
 
 const formFromMachine = (machine: Machine): MachineForm => ({
   spesifikasi: machine.spesifikasi,
   tonaseTon: String(machine.tonaseTon),
   warrantyStart: machine.warrantyStart.slice(0, 10),
-  warrantyDurationMonths: String(machine.warrantyDurationMonths),
+  warrantyEnd: machine.warrantyEnd.slice(0, 10),
 })
 
 // Mesin (staf Sundaya). Dua sumbu status independen: status (ketersediaan,
@@ -190,7 +190,7 @@ export function MachinesPage() {
                 spesifikasi: form.spesifikasi,
                 tonaseTon: Number(form.tonaseTon),
                 warrantyStart: new Date(form.warrantyStart).toISOString(),
-                warrantyDurationMonths: Number(form.warrantyDurationMonths),
+                warrantyEnd: new Date(form.warrantyEnd).toISOString(),
               }
               await api.updateMachine(accessToken, panel.machine.id, body)
             } else {
@@ -198,7 +198,7 @@ export function MachinesPage() {
                 spesifikasi: form.spesifikasi,
                 tonaseTon: Number(form.tonaseTon),
                 warrantyStart: new Date(form.warrantyStart).toISOString(),
-                warrantyDurationMonths: Number(form.warrantyDurationMonths),
+                warrantyEnd: new Date(form.warrantyEnd).toISOString(),
               }
               await api.createMachine(accessToken, body)
             }
@@ -279,11 +279,10 @@ function MachineFormPanel({
         <FieldGroup>
           <TextField label="Mulai garansi" type="date" value={form.warrantyStart} onChange={set('warrantyStart')} />
           <TextField
-            label="Durasi garansi (bulan)"
-            type="number"
-            min={1}
-            value={form.warrantyDurationMonths}
-            onChange={set('warrantyDurationMonths')}
+            label="Akhir garansi"
+            type="date"
+            value={form.warrantyEnd}
+            onChange={set('warrantyEnd')}
           />
         </FieldGroup>
 
