@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Boxes, Info, PackagePlus, Plus } from 'lucide-react'
 import {
+  MaterialType,
   ItemPengiriman,
   type CreateLogPengirimanRequest,
   type Job,
@@ -9,6 +10,7 @@ import {
 import { useAuth } from '../auth/authContextValue'
 import { api } from '../../lib/api'
 import { Button } from '../../components/ui/Button'
+import { PageHeader } from '../../components/PageHeader'
 import { Card } from '../../components/ui/Card'
 import { DataTable, type Column } from '../../components/ui/DataTable'
 import { EmptyState } from '../../components/ui/EmptyState'
@@ -99,13 +101,11 @@ export function PengirimanPage() {
 
   return (
     <div className="mx-auto max-w-6xl">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900">Log Pengiriman</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Catat kapan cetakan dan material akan dikirim ke Sundaya. Admin Sundaya langsung
-          diberi tahu setiap ada rencana pengiriman baru.
-        </p>
-      </div>
+      <PageHeader
+        breadcrumb={[{ label: 'Beranda', to: '/manager' }, { label: 'Log Pengiriman' }]}
+        title="Log Pengiriman"
+        description="Catat kapan cetakan dan material akan dikirim ke Sundaya. Admin Sundaya langsung diberi tahu setiap ada rencana pengiriman baru."
+      />
 
       <Card
         title="Pengiriman cetakan"
@@ -168,7 +168,7 @@ export function PengirimanPage() {
       <p className="mt-4 flex items-start gap-2 text-xs leading-5 text-slate-500">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
         Halaman ini murni catatan rencana pengiriman. Konfirmasi barang benar-benar tiba dicatat
-        Admin Sundaya di Log Penerimaan, dan Anda akan menerima notifikasinya.
+        Admin Sundaya di Log Aktivitas, dan Anda akan menerima notifikasinya.
       </p>
 
       {panelItem ? (
@@ -203,7 +203,7 @@ function PengirimanFormPanel({
 
   const { jobId, moldId, setMoldId, pilihJob, jobOptions, moldOptions } = useMoldPicker(jobs)
   const [rencanaKirim, setRencanaKirim] = useState(todayInput())
-  const [materialName, setMaterialName] = useState('')
+  const [materialName, setMaterialName] = useState<MaterialType | ''>('')
   const [jumlahKg, setJumlahKg] = useState('')
   const [noSuratJalan, setNoSuratJalan] = useState('')
   const [catatan, setCatatan] = useState('')
@@ -224,7 +224,7 @@ function PengirimanFormPanel({
         ? base
         : {
             ...base,
-            materialName: materialName.trim(),
+            materialName: materialName || undefined,
             jumlahKg: Number(jumlahKg),
             noSuratJalan: optionalText(noSuratJalan),
           }
@@ -267,7 +267,15 @@ function PengirimanFormPanel({
 
         {!isMold ? (
           <>
-            <TextField label="Nama material" value={materialName} onChange={setMaterialName} />
+            <SelectField
+              label="Nama material"
+              value={materialName}
+              onChange={setMaterialName}
+              options={[
+                { value: '', label: '- pilih material -' },
+                ...Object.values(MaterialType).map((m) => ({ value: m, label: m })),
+              ]}
+            />
             <FieldGroup>
               <TextField
                 label="Jumlah (kg)"

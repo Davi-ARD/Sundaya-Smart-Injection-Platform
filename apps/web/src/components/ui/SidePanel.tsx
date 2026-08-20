@@ -49,7 +49,7 @@ export function SidePanel({
             onClick={onClose}
             className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-500 transition-colors duration-150 hover:bg-slate-100"
           >
-            <X className="h-4 w-4" />
+            <X className="h-5 w-5" />
           </button>
         </div>
         <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>

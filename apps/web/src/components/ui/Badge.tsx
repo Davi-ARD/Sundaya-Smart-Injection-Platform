@@ -149,7 +149,6 @@ const moldTrackingTone: Record<MoldTrackingStatus, BadgeTone> = {
   [MoldTrackingStatus.DELIVERY]: 'sky',
   [MoldTrackingStatus.RECEIVED]: 'sky',
   [MoldTrackingStatus.PRODUCTION]: 'brand',
-  [MoldTrackingStatus.SEND_BACK]: 'amber',
   [MoldTrackingStatus.COMPLETED]: 'emerald',
 }
 
@@ -158,11 +157,12 @@ export const moldTrackingLabel: Record<MoldTrackingStatus, string> = {
   [MoldTrackingStatus.DELIVERY]: 'Delivery',
   [MoldTrackingStatus.RECEIVED]: 'Received',
   [MoldTrackingStatus.PRODUCTION]: 'On Machine (Production)',
-  [MoldTrackingStatus.SEND_BACK]: 'Send Back',
   [MoldTrackingStatus.COMPLETED]: 'Completed',
 }
 
-export function MoldTrackingBadge({ status }: { status: MoldTrackingStatus }) {
+// Cetakan yang booking-nya belum disetujui belum punya status sama sekali.
+export function MoldTrackingBadge({ status }: { status: MoldTrackingStatus | null }) {
+  if (!status) return <Badge tone="slate">Belum dibooking</Badge>
   return <Badge tone={moldTrackingTone[status]}>{moldTrackingLabel[status]}</Badge>
 }
 

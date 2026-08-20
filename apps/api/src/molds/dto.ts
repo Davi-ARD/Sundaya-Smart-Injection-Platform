@@ -1,5 +1,9 @@
 import { IsInt, IsNumber, IsOptional, IsPositive, IsString, MinLength } from 'class-validator';
-import { CreateMoldRequest, UpdateMoldRequest } from '@mold-tracker/shared';
+import {
+  CreateMoldRequest,
+  MaterialType,
+  UpdateMoldRequest,
+} from '@mold-tracker/shared';
 
 // Cetakan dibuat Manager Penyewa. trackingStatus tidak diterima dari client:
 // service memaksa PLANNING (transisi hanya lewat service layer, modul tracking).
@@ -26,7 +30,7 @@ export class CreateMoldDto implements CreateMoldRequest {
 
   @IsOptional()
   @IsString()
-  planMaterialUtama?: string;
+  planMaterialUtama?: MaterialType;
 
   @IsOptional()
   @IsNumber()
@@ -61,7 +65,7 @@ export class UpdateMoldDto implements UpdateMoldRequest {
 
   @IsOptional()
   @IsString()
-  planMaterialUtama?: string;
+  planMaterialUtama?: MaterialType;
 
   @IsOptional()
   @IsNumber()

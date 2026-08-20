@@ -8,6 +8,7 @@ import {
   JobLogEntry,
   LogProduksiEventType,
   ManagerDashboard,
+  MaterialType,
   MoldCycleProduction,
   MoldPlanRow,
   MoldTrackingStatus,
@@ -124,7 +125,7 @@ export class DashboardPenyewaService {
       kodeMold: string;
       namaProduk: string;
       targetOutput: number | null;
-      planMaterialUtama: string | null;
+      planMaterialUtama: $Enums.MaterialType | null;
       estimasiKg: number | null;
     },
     logs: LogRow[],
@@ -155,7 +156,7 @@ export class DashboardPenyewaService {
       rejectRate: totalOutput ? round((stats.totalReject / totalOutput) * 100) : 0,
       remainingTarget:
         mold.targetOutput == null ? null : Math.max(mold.targetOutput - stats.totalGoodProduct, 0),
-      planMaterialUtama: mold.planMaterialUtama,
+      planMaterialUtama: mold.planMaterialUtama as unknown as MaterialType | null,
       planMaterialKg: mold.estimasiKg,
       materialUsedKg: stats.materialUsedKg,
       materialRemainingKg: material.remaining,
@@ -284,7 +285,7 @@ export class DashboardPenyewaService {
         rejectRate: totalOutput ? round((stats.totalReject / totalOutput) * 100) : 0,
         sisaHariSewa: remainingDays(job?.endDate ?? null, now),
         etaHari: etaDays(stats.totalGoodProduct, mold.targetOutput, stats.produksiHari),
-        planMaterialUtama: mold.planMaterialUtama,
+        planMaterialUtama: mold.planMaterialUtama as unknown as MaterialType | null,
         estimasiKg: mold.estimasiKg,
         materialUsedKg: stats.materialUsedKg,
         materialRemainingKg: material.remaining,

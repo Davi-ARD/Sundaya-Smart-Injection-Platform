@@ -13,6 +13,7 @@ import {
 import { useAuth } from '../auth/authContextValue'
 import { api } from '../../lib/api'
 import { Button } from '../../components/ui/Button'
+import { PageHeader } from '../../components/PageHeader'
 import { Card } from '../../components/ui/Card'
 import { DataTable, type Column } from '../../components/ui/DataTable'
 import { EmptyState } from '../../components/ui/EmptyState'
@@ -35,21 +36,21 @@ type MachineForm = {
   spesifikasi: string
   tonaseTon: string
   warrantyStart: string
-  warrantyDurationMonths: string
+  warrantyEnd: string
 }
 
 const emptyMachineForm: MachineForm = {
   spesifikasi: '',
   tonaseTon: '',
   warrantyStart: '',
-  warrantyDurationMonths: '',
+  warrantyEnd: '',
 }
 
 const formFromMachine = (machine: Machine): MachineForm => ({
   spesifikasi: machine.spesifikasi,
   tonaseTon: String(machine.tonaseTon),
   warrantyStart: machine.warrantyStart.slice(0, 10),
-  warrantyDurationMonths: String(machine.warrantyDurationMonths),
+  warrantyEnd: machine.warrantyEnd.slice(0, 10),
 })
 
 // Mesin (staf Sundaya). Dua sumbu status independen: status (ketersediaan,
@@ -139,30 +140,29 @@ export function MachinesPage() {
 
   return (
     <div className="mx-auto max-w-6xl">
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Mesin</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Katalog mesin Sundaya beserta ketersediaan, status realtime, dan garansi.
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-2 text-sm text-slate-600">
-            <input
-              type="checkbox"
-              checked={showArchived}
-              onChange={(event) => setShowArchived(event.target.checked)}
-              className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-            />
-            Tampilkan arsip
-          </label>
-          {canManage ? (
-            <Button onClick={() => setPanel({ mode: 'create' })}>
-              <Plus className="h-4 w-4" /> Tambah mesin
-            </Button>
-          ) : null}
-        </div>
-      </div>
+      <PageHeader
+        breadcrumb={[{ label: 'Beranda', to: '/staff' }, { label: 'Mesin' }]}
+        title="Mesin"
+        description="Katalog mesin Sundaya beserta ketersediaan, status realtime, dan garansi."
+        actions={
+          <>
+            <label className="flex items-center gap-2 text-sm text-slate-600">
+              <input
+                type="checkbox"
+                checked={showArchived}
+                onChange={(event) => setShowArchived(event.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+              />
+              Tampilkan arsip
+            </label>
+            {canManage ? (
+              <Button onClick={() => setPanel({ mode: 'create' })}>
+                <Plus className="h-5 w-5" /> Tambah mesin
+              </Button>
+            ) : null}
+          </>
+        }
+      />
 
       <Card>
         {isLoading ? (
@@ -190,7 +190,7 @@ export function MachinesPage() {
                 spesifikasi: form.spesifikasi,
                 tonaseTon: Number(form.tonaseTon),
                 warrantyStart: new Date(form.warrantyStart).toISOString(),
-                warrantyDurationMonths: Number(form.warrantyDurationMonths),
+                warrantyEnd: new Date(form.warrantyEnd).toISOString(),
               }
               await api.updateMachine(accessToken, panel.machine.id, body)
             } else {
@@ -198,7 +198,7 @@ export function MachinesPage() {
                 spesifikasi: form.spesifikasi,
                 tonaseTon: Number(form.tonaseTon),
                 warrantyStart: new Date(form.warrantyStart).toISOString(),
-                warrantyDurationMonths: Number(form.warrantyDurationMonths),
+                warrantyEnd: new Date(form.warrantyEnd).toISOString(),
               }
               await api.createMachine(accessToken, body)
             }
@@ -279,11 +279,10 @@ function MachineFormPanel({
         <FieldGroup>
           <TextField label="Mulai garansi" type="date" value={form.warrantyStart} onChange={set('warrantyStart')} />
           <TextField
-            label="Durasi garansi (bulan)"
-            type="number"
-            min={1}
-            value={form.warrantyDurationMonths}
-            onChange={set('warrantyDurationMonths')}
+            label="Akhir garansi"
+            type="date"
+            value={form.warrantyEnd}
+            onChange={set('warrantyEnd')}
           />
         </FieldGroup>
 

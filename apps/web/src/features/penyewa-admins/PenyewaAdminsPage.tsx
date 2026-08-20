@@ -3,6 +3,7 @@ import { Ban, Trash2, UserCog, UserPlus } from 'lucide-react'
 import type { User } from '@mold-tracker/shared'
 import { useAuth } from '../auth/authContextValue'
 import { api } from '../../lib/api'
+import { PageHeader } from '../../components/PageHeader'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
@@ -76,11 +77,11 @@ export function PenyewaAdminsPage() {
         <div className="flex justify-end gap-2">
           {u.isActive ? (
             <Button size="sm" variant="secondary" onClick={() => setPending({ action: 'deactivate', admin: u })}>
-              <Ban className="h-3.5 w-3.5" /> Nonaktifkan
+              <Ban className="h-4 w-4" /> Nonaktifkan
             </Button>
           ) : null}
           <Button size="sm" variant="danger" onClick={() => setPending({ action: 'delete', admin: u })}>
-            <Trash2 className="h-3.5 w-3.5" /> Hapus
+            <Trash2 className="h-4 w-4" /> Hapus
           </Button>
         </div>
       ),
@@ -88,26 +89,25 @@ export function PenyewaAdminsPage() {
   ]
 
   return (
-    <div className="mx-auto max-w-5xl">
-      <div className="mb-6 flex items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Akun Admin Penyewa</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Admin Penyewa berada di lokasi Sundaya dan menginput Log Produksi harian.
-          </p>
-        </div>
-        <Button onClick={() => setIsPanelOpen(true)}>
-          <UserPlus className="h-4 w-4" /> Tambah akun
-        </Button>
-      </div>
+    <div className="mx-auto max-w-screen-2xl">
+      <PageHeader
+        breadcrumb={[{ label: 'Beranda', to: '/manager' }, { label: 'Akun Admin Penyewa' }]}
+        title="Akun Admin Penyewa"
+        description="Admin Penyewa berada di lokasi Sundaya dan menginput Log Produksi harian."
+        actions={
+          <Button onClick={() => setIsPanelOpen(true)}>
+            <UserPlus className="h-5 w-5" /> Tambah akun
+          </Button>
+        }
+      />
 
       <Card>
         {isLoading ? (
           <TableSkeleton rows={3} columns={5} />
         ) : admins.length === 0 ? (
           <div className="grid place-items-center py-14 text-center">
-            <span className="grid h-12 w-12 place-items-center rounded-xl bg-brand-50 text-brand-700">
-              <UserCog className="h-6 w-6" />
+            <span className="grid h-12 w-12 place-items-center text-brand-700">
+              <UserCog className="h-7 w-7" />
             </span>
             <p className="mt-3 text-sm font-semibold text-slate-800">Belum ada Admin Penyewa</p>
             <p className="mt-1 max-w-sm text-sm text-slate-500">

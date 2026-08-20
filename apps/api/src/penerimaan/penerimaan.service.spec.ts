@@ -1,5 +1,6 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { ItemPengiriman, MoldTrackingStatus, Role } from '@mold-tracker/shared';
+import {
+  MaterialType, ItemPengiriman, MoldTrackingStatus, Role } from '@mold-tracker/shared';
 import { User as PrismaUser } from '@prisma/client';
 import { PenerimaanService } from './penerimaan.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -75,7 +76,7 @@ describe('PenerimaanService.create', () => {
     const prisma = prismaMock();
     prisma.job.findUnique.mockResolvedValue(jobRow);
     prisma.logPenerimaan.create.mockResolvedValue(
-      row({ item: ItemPengiriman.MATERIAL, materialName: 'PP Resin', jumlahKg: 500 }),
+      row({ item: ItemPengiriman.MATERIAL, materialName: MaterialType.PP, jumlahKg: 500 }),
     );
     const advance = jest.fn();
 
@@ -83,7 +84,7 @@ describe('PenerimaanService.create', () => {
       jobId: 'job-1',
       item: ItemPengiriman.MATERIAL,
       diterimaAt: PAST_ISO,
-      materialName: 'PP Resin',
+      materialName: MaterialType.PP,
       jumlahKg: 500,
     });
 
@@ -99,7 +100,7 @@ describe('PenerimaanService.create', () => {
         jobId: 'job-1',
         item: ItemPengiriman.MATERIAL,
         diterimaAt: PAST_ISO,
-        materialName: 'PP Resin',
+        materialName: MaterialType.PP,
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.logPenerimaan.create).not.toHaveBeenCalled();

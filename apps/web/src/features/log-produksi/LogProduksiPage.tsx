@@ -12,6 +12,7 @@ import {
 import { useAuth } from '../auth/authContextValue'
 import { api } from '../../lib/api'
 import { Button } from '../../components/ui/Button'
+import { PageHeader } from '../../components/PageHeader'
 import { Card } from '../../components/ui/Card'
 import { JobLifecycleBadge, progressMoldingLabel } from '../../components/ui/Badge'
 import { SidePanel } from '../../components/ui/SidePanel'
@@ -37,7 +38,7 @@ const toIso = (local: string) => new Date(local).toISOString()
 
 // Log Produksi (Layer 2, Admin Penyewa di lokasi Sundaya). Dua jenis event saja:
 // produksi harian dan progress molding. Kedatangan material tidak dicatat di sini
-// karena sudah ada di Log Pengiriman Manager dan Log Penerimaan Admin Sundaya.
+// karena sudah ada di Log Pengiriman Manager dan Log Aktivitas Admin Sundaya.
 // Append-only: event tidak bisa diubah atau dihapus, koreksi ditulis sebagai
 // event baru. Booking meminjamkan mesin tanpa memasangkannya ke cetakan, jadi
 // tiap event wajib menyebut cetakan mana berjalan di mesin mana.
@@ -118,21 +119,19 @@ export function LogProduksiPage() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Log Produksi</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Catat produksi harian dan progress molding di lokasi Sundaya. Kedatangan material
-            tidak dicatat di sini, sudah tercatat di Log Pengiriman dan Log Penerimaan.
-          </p>
-        </div>
-        <Button
-          onClick={() => setIsPanelOpen(true)}
-          disabled={!jobId || !activeJob?.molds.length || !activeJob?.machines.length}
-        >
-          <Plus className="h-4 w-4" /> Catat event
-        </Button>
-      </div>
+      <PageHeader
+        breadcrumb={[{ label: 'Beranda', to: '/job' }, { label: 'Log Produksi' }]}
+        title="Log Produksi"
+        description="Catat produksi harian dan progress molding di lokasi Sundaya. Produksi harian pertama menandai booking sudah berjalan. Kedatangan material tidak dicatat di sini, sudah tercatat di Log Pengiriman dan Log Aktivitas."
+        actions={
+          <Button
+            onClick={() => setIsPanelOpen(true)}
+            disabled={!jobId || !activeJob?.molds.length || !activeJob?.machines.length}
+          >
+            <Plus className="h-5 w-5" /> Catat event
+          </Button>
+        }
+      />
 
       <Card>
         <div className="flex flex-wrap items-end gap-4">

@@ -143,15 +143,18 @@ Ringkasan akses:
    dikirim, **jumlah mesin yang ingin dipinjam**, plus waktu sewa dan catatan.
    **Tidak memilih mesin mana** saat booking, dan tidak mengisi plan material atau
    target output lagi (sudah ada di cetakan).
-3. Admin Sundaya approval **dan meminjamkan mesin ke booking itu satu per satu**
-   sampai jumlah permintaan terpenuhi. Mesin tidak dipasangkan ke cetakan tertentu.
+3. Admin Sundaya approval **dan meminjamkan mesin ke booking itu; beberapa mesin
+   boleh dipilih sekaligus dalam satu aksi** sampai jumlah permintaan terpenuhi.
+   Mesin tidak dipasangkan ke cetakan tertentu. Booking yang disetujui inilah yang
+   menempatkan cetakan-cetakannya ke **Planning**: sebelum disetujui, cetakan yang
+   didaftarkan Manager belum punya status sama sekali.
 4. Manager Penyewa mencatat **Log Pengiriman**: kapan mold akan dikirim ke Sundaya,
    dan materialnya dicatat di log yang sama. Mold otomatis menjadi **Delivery**,
    Admin Sundaya dapat notifikasi.
-5. Admin Sundaya mencatat **Log Penerimaan** saat barang tiba (mold ataupun
+5. Admin Sundaya mencatat **Log Aktivitas** saat barang tiba (mold ataupun
    material). Mold otomatis menjadi **Received**, Manager dapat notifikasi.
-   Kedatangan cetakan pertama sekaligus **menjalankan booking-nya**: job menjadi
-   **Aktif**, mesin pinjamannya ikut aktif, dan masa sewa mulai dihitung.
+   Pencatatan ini **tidak memvalidasi status** dan tidak menjalankan booking:
+   masa sewa mengikuti jadwal yang diinput penyewa saat booking dibuat.
 6. **Teknisi Sundaya memasang cetakan ke mesin lalu menjalankannya, dan mencatat
    tiap perubahan kondisi mesin itu di tab Mesin lewat tombol "Input status".**
    Ini satu langkah, bukan dua: aksi fisik dan pencatatannya dilakukan orang yang
@@ -168,35 +171,31 @@ Ringkasan akses:
 7. Admin Penyewa (datang ke Sundaya) input **Log Produksi** (timeline): produksi
    harian dan progress molding. Tiap event wajib menyebut **cetakan mana di mesin
    mana**, karena mesin dipinjamkan tanpa dipasangkan. Produksi harian pertama
-   otomatis memindahkan mold ke **Production**.
-8. Admin Sundaya menekan tombol selesai produksi: mold menjadi **Send Back**,
-   cetakan dikirim balik ke penyewa dan Manager dapat notifikasi.
-9. Manager Penyewa menekan konfirmasi terima: mold menjadi **Completed**. Ini
-   approval bahwa cetakan sudah benar-benar kembali, **per cetakan bukan per job**.
-   Cetakan terakhir yang dikonfirmasi menutup booking-nya sendiri (job **Selesai**,
-   mesin kembali ke pengecekan lalu tersedia).
+   otomatis memindahkan mold ke **Production** sekaligus **menjalankan booking-nya**
+   (job menjadi **Aktif**, mesin pinjamannya ikut aktif): mengisi produksi harian
+   itulah bukti job sudah on-going.
+8. Progress molding **Sudah diproduksi** menutup siklus cetakan langsung ke
+   **Completed**. Tidak ada langkah kirim balik terpisah. Cetakan terakhir yang
+   selesai menutup booking-nya sendiri (job **Selesai**, mesin kembali ke
+   pengecekan lalu tersedia).
 
 **Tidak ada langkah pengiriman mesin di alur ini.** Mesin tidak pernah keluar dari
 Sundaya, penyewa yang mengirim cetakannya ke sini. Jangan menambahkan tombol atau
 status yang mengasumsikan mesin dikirim atau dikembalikan.
 
-## 5a. Mold tracking dan lifecycle booking otomatis (penting)
+## 5a. Status cetakan dan lifecycle booking otomatis (penting)
 
-Status fisik mold **tidak digeser manual** kecuali dua langkah penutup. Peta
-pemicunya:
+Status fisik mold **tidak pernah digeser manual**: seluruhnya menyusul event
+domain. Tidak ada tab Mold Tracking dan tidak ada tombol transisi. Peta pemicunya:
 
 | Status | Pemicu |
 |---|---|
-| Planning | Manager Penyewa mendaftarkan cetakan |
+| (belum ada) | Manager Penyewa mendaftarkan cetakan; status masih kosong |
+| Planning | Booking yang memuat cetakan itu disetujui Admin Sundaya |
 | Delivery | Manager Penyewa membuat Log Pengiriman item Mold |
-| Received | Admin Sundaya membuat Log Penerimaan item Mold |
+| Received | Admin Sundaya membuat Log Aktivitas item Mold |
 | Production | Admin Penyewa mencatat produksi harian pertama di Log Produksi |
-| Send Back | Tombol Admin Sundaya di tab Mold Tracking |
-| Completed | Tombol konfirmasi terima Manager Penyewa di tab Cetakan |
-
-Dua status penutup sama-sama tombol, tapi **pemiliknya sengaja dibedakan**: yang
-mengirim balik adalah Sundaya, yang menyatakan barang sudah sampai adalah penyewa.
-Karena itu approval pengembalian berlaku per cetakan.
+| Completed | Progress molding Sudah diproduksi di Log Produksi |
 
 Lifecycle booking ikut aturan yang sama, cuma dua sisi yang berupa tombol:
 
@@ -204,8 +203,8 @@ Lifecycle booking ikut aturan yang sama, cuma dua sisi yang berupa tombol:
 |---|---|
 | Diajukan -> Dikonfirmasi | Admin Sundaya meminjamkan mesin pertama |
 | Diajukan -> Ditolak | Tombol tolak Admin Sundaya |
-| Dikonfirmasi -> Aktif | Log Penerimaan cetakan pertama (otomatis) |
-| Aktif -> Selesai | Cetakan terakhir booking dikonfirmasi Completed (otomatis) |
+| Dikonfirmasi -> Aktif | Produksi harian pertama di Log Produksi (otomatis) |
+| Aktif -> Selesai | Cetakan terakhir booking mencapai Completed (otomatis) |
 
 Transisi otomatis bersifat **idempoten dan hanya maju**: event domain yang
 terulang tidak menulis event ganda dan tidak menurunkan status. Lompatan maju
@@ -318,12 +317,11 @@ Kalau nanti ditambah, paling natural sebagai jenis event timeline.
 
 ## 6. Status enums (gunakan persis ini, jangan improvisasi nama status baru)
 
-**Mold Tracking status** (urutan linear, sisi tracking fisik mold):
-Planning, Delivery, Received, Production, Send Back, Completed
+**Status cetakan** (urutan linear, sisi fisik mold; null sebelum booking disetujui):
+Planning, Delivery, Received, Production, Completed
 
-Empat status pertama **tidak digeser manual**, melainkan otomatis dari event
-domain (lihat bagian 5a). Send Back ditekan Admin Sundaya; Completed ditekan
-Manager Penyewa pemilik cetakan sebagai approval bahwa cetakan sudah kembali.
+Seluruh status **tidak digeser manual**, melainkan otomatis dari event domain
+(lihat bagian 5a). Cetakan yang booking-nya belum disetujui belum punya status.
 
 **Job lifecycle** (status booking):
 Diajukan, Ditolak, Dikonfirmasi, Aktif, Selesai
@@ -423,12 +421,11 @@ Machine, notifications, reports, dan komponen UI web.
   cek bagian 8 dulu.
 - Transisi status (mold tracking, job lifecycle, machine status) hanya lewat
   service layer dengan validasi transisi yang sah, bukan query mentah.
-- **Mold tracking dan lifecycle booking otomatis (bagian 5a).** Jangan tambahkan
-  tombol untuk status Delivery, Received, Production, job Aktif, atau job Selesai:
-  semuanya digerakkan event domain. Kalau butuh status pindah, cari event
-  pemicunya, bukan bikin endpoint baru. Yang manual cuma Send Back (Admin
-  Sundaya), Completed (Manager Penyewa pemilik cetakan), serta approve/reject
-  booking (Admin Sundaya).
+- **Status cetakan dan lifecycle booking otomatis (bagian 5a).** Jangan tambahkan
+  tombol untuk status Planning, Delivery, Received, Production, Completed, job
+  Aktif, atau job Selesai: semuanya digerakkan event domain. Kalau butuh status
+  pindah, cari event pemicunya, bukan bikin endpoint baru. Yang manual hanya
+  approve/reject booking dan penukaran mesin (keduanya Admin Sundaya).
 - **Mesin tidak pernah keluar dari Sundaya.** Jangan menambahkan status, tombol,
   atau field yang mengasumsikan mesin dikirim ke penyewa atau dikembalikan; yang
   bergerak adalah cetakan milik penyewa.

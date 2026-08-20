@@ -5,7 +5,15 @@ export default {
     extend: {
       fontFamily: {
         sans: [
-          'Hanken Grotesk',
+          'Inter',
+          'ui-sans-serif',
+          'system-ui',
+          '-apple-system',
+          'Segoe UI',
+          'sans-serif',
+        ],
+        heading: [
+          'Montserrat',
           'ui-sans-serif',
           'system-ui',
           '-apple-system',
@@ -36,6 +44,8 @@ export default {
           600: '#16a34a',
           700: '#15803d',
         },
+        // Latar halaman: ice blue tint, harmonis dengan sidebar gelap dan aksen brand.
+        surface: '#F0F4F8',
       },
       boxShadow: {
         // Soft UI Evolution: bayangan lembut, lebih jelas dari neumorphism.

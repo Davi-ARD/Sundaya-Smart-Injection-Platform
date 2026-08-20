@@ -9,6 +9,7 @@ import type {
 } from '@mold-tracker/shared'
 import { useAuth } from '../auth/authContextValue'
 import { api } from '../../lib/api'
+import { PageHeader } from '../../components/PageHeader'
 import { Card, StatCard } from '../../components/ui/Card'
 import { DataTable, type Column } from '../../components/ui/DataTable'
 import { EmptyState } from '../../components/ui/EmptyState'
@@ -145,13 +146,11 @@ export function ManagerDashboardPage() {
 
   return (
     <div className="mx-auto max-w-6xl">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900">Dashboard</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Ringkasan produksi {user?.companyName ?? 'perusahaan Anda'}. Halaman ini hanya menampilkan
-          informasi; aksi ada di tab masing-masing.
-        </p>
-      </div>
+      <PageHeader
+        breadcrumb={[{ label: 'Beranda', to: '/manager' }, { label: 'Dashboard' }]}
+        title="Dashboard"
+        description={`Ringkasan produksi ${user?.companyName ?? 'perusahaan Anda'}. Halaman ini hanya menampilkan informasi; aksi ada di tab masing-masing.`}
+      />
 
       {isLoading || !summary ? (
         <Card>
@@ -162,7 +161,7 @@ export function ManagerDashboardPage() {
           <StatCard
             label="Cetakan di Sundaya"
             value={summary.moldsAtSundaya}
-            hint="Sudah diterima, belum dikirim balik"
+            hint="Sudah diterima, produksinya belum selesai"
             tone="brand"
           />
           <StatCard label="Booking berjalan" value={summary.ongoing} tone="slate" />

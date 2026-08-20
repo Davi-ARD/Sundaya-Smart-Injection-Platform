@@ -1,15 +1,16 @@
+import { BadRequestException } from '@nestjs/common';
 import { WarrantyStatus } from '@mold-tracker/shared';
 
-// Fungsi hitung biasa (bukan service): warrantyEnd = start + durasi bulan,
-// status ditentukan relatif terhadap now.
-// ponytail: setMonth bisa overflow hari (31 Jan + 1 bln), cukup untuk warranty bulanan.
+// Fungsi hitung biasa (bukan service): garansi diinput sebagai rentang tanggal
+// (mulai dan berakhir), bukan durasi bulan. Status ditentukan relatif terhadap now.
 export function computeWarranty(
   warrantyStart: Date,
-  durationMonths: number,
+  warrantyEnd: Date,
   now: Date = new Date(),
 ): { warrantyEnd: Date; warrantyStatus: WarrantyStatus } {
-  const warrantyEnd = new Date(warrantyStart);
-  warrantyEnd.setMonth(warrantyEnd.getMonth() + durationMonths);
+  if (warrantyEnd <= warrantyStart) {
+    throw new BadRequestException('Tanggal akhir garansi harus setelah tanggal mulai');
+  }
   return {
     warrantyEnd,
     warrantyStatus: warrantyEnd > now ? WarrantyStatus.AKTIF : WarrantyStatus.HABIS,

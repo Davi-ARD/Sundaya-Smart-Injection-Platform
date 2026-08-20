@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { CalendarClock, CheckCircle2, Factory, TimerReset, Trash2, XCircle } from 'lucide-react'
+import { CalendarClock, CheckCircle2, Factory, Repeat, TimerReset, Trash2, XCircle } from 'lucide-react'
 import {
   ExtensionStatus,
   JobLifecycle,
@@ -15,6 +15,7 @@ import {
 import { useAuth } from '../auth/authContextValue'
 import { api } from '../../lib/api'
 import { Button } from '../../components/ui/Button'
+import { PageHeader } from '../../components/PageHeader'
 import { Card } from '../../components/ui/Card'
 import { DataTable, type Column } from '../../components/ui/DataTable'
 import { ExtensionStatusBadge, JobLifecycleBadge } from '../../components/ui/Badge'
@@ -247,13 +248,11 @@ export function SundayaBookingPage() {
 
   return (
     <div className="mx-auto max-w-6xl">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900">Booking</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Approval booking, peminjaman mesin, dan keputusan perpanjangan sewa. Penyewa meminta
-          jumlah mesin; mesin mana yang dipinjamkan ditentukan di sini.
-        </p>
-      </div>
+      <PageHeader
+        breadcrumb={[{ label: 'Beranda', to: '/staff' }, { label: 'Booking' }]}
+        title="Booking"
+        description="Approval booking, peminjaman mesin, dan keputusan perpanjangan sewa. Penyewa meminta jumlah mesin; mesin mana yang dipinjamkan ditentukan di sini."
+      />
 
       <Card
         title="Menunggu approval"
@@ -304,7 +303,7 @@ export function SundayaBookingPage() {
       <Card
         className="mt-5"
         title="Job berjalan"
-        subtitle="Status booking mengikuti barang yang benar-benar bergerak, jadi tidak ada tombol untuk menggesernya. Booking mulai berjalan saat cetakan pertama dicatat di Log Penerimaan, dan tutup sendiri setelah semua cetakan dikonfirmasi kembali ke penyewa."
+        subtitle="Status booking mengikuti kejadian nyata, jadi tidak ada tombol untuk menggesernya. Booking mulai berjalan saat produksi harian pertama dicatat, dan tutup sendiri setelah semua cetakannya selesai diproduksi."
       >
         {isLoading ? (
           <TableSkeleton rows={3} columns={6} />
@@ -347,7 +346,7 @@ function langkahBerikutnya(job: Job): string {
   if (job.lifecycle === JobLifecycle.DIKONFIRMASI) {
     return job.machines.length < job.requestedMachineCount
       ? `Pinjamkan ${job.requestedMachineCount - job.machines.length} mesin lagi, lalu tunggu cetakan tiba`
-      : 'Cetakan dari penyewa. Booking berjalan begitu Log Penerimaan cetakan dicatat'
+      : 'Cetakan dari penyewa. Booking berjalan begitu produksi harian pertama dicatat'
   }
 
   const belumSelesai = job.molds.filter((m) => m.trackingStatus !== MoldTrackingStatus.COMPLETED)
@@ -396,11 +395,20 @@ function MesinModal({
   const dipinjam = new Set(current.machines.map((m) => m.machineId))
   // Mesin yang tidak sanggup cetakan terkecil pun tidak berguna untuk booking ini.
   const tersedia = machines.filter((m) => !dipinjam.has(m.id) && m.tonaseTon >= tonaseTerkecil)
-  const [machineId, setMachineId] = useState('')
-  // Daftar mesin tersedia berubah tiap kali satu dipinjamkan atau ditarik, jadi pilihan
-  // dijatuhkan ke opsi pertama bila yang tersimpan sudah tidak ada di daftar. Tanpa ini
-  // state bisa menunjuk mesin yang tidak lagi tampil di select.
-  const mesinDipilih = tersedia.some((m) => m.id === machineId) ? machineId : (tersedia[0]?.id ?? '')
+  // Admin Sundaya boleh memilih beberapa mesin sekaligus. Daftar mesin tersedia
+  // berubah tiap kali satu dipinjamkan atau ditarik, jadi pilihan yang sudah tidak
+  // ada di daftar disaring supaya state tidak menunjuk mesin yang tak lagi tampil.
+  const [checked, setChecked] = useState<string[]>([])
+  const mesinDipilih = checked.filter((id) => tersedia.some((m) => m.id === id))
+  // Tukar mesin (mis. mesin masuk maintenance) boleh saat booking sudah berjalan;
+  // menarik mesin hanya boleh selama booking belum berjalan.
+  const [tukarTarget, setTukarTarget] = useState<string | null>(null)
+  const [pengganti, setPengganti] = useState('')
+  const penggantiDipilih = tersedia.some((m) => m.id === pengganti)
+    ? pengganti
+    : (tersedia[0]?.id ?? '')
+  const bisaTukar = ONGOING_LIFECYCLES.includes(current.lifecycle)
+  const bisaTarik = current.lifecycle === JobLifecycle.DIKONFIRMASI
   const kurang = current.requestedMachineCount - current.machines.length
 
   const run = async (aksi: () => Promise<Job>, pesan: string) => {
@@ -418,8 +426,12 @@ function MesinModal({
 
   const tambah = (event: FormEvent) => {
     event.preventDefault()
-    const body: AssignJobRequest = { machineId: mesinDipilih }
-    void run(() => api.assignJob(accessToken, current.id, body), 'Mesin dipinjamkan')
+    const body: AssignJobRequest = { machineIds: mesinDipilih }
+    void run(async () => {
+      const updated = await api.assignJob(accessToken, current.id, body)
+      setChecked([])
+      return updated
+    }, mesinDipilih.length > 1 ? `${mesinDipilih.length} mesin dipinjamkan` : 'Mesin dipinjamkan')
   }
 
   return (
@@ -455,25 +467,79 @@ function MesinModal({
                   <span className="font-semibold text-slate-900">{m.machineNumber}</span>
                   <span className="ml-2 text-slate-500">{m.tonaseTon} ton</span>
                 </span>
-                <Button
-                  size="sm"
-                  variant="danger"
-                  disabled={isSaving || current.machines.length === 1}
-                  onClick={() =>
-                    void run(
-                      () => api.releaseJobMachine(accessToken, current.id, m.machineId),
-                      `Mesin ${m.machineNumber} ditarik`,
-                    )
-                  }
-                >
-                  <Trash2 className="h-3.5 w-3.5" /> Tarik
-                </Button>
+                <span className="flex shrink-0 gap-2">
+                  {/* Tukar mesin: dipakai saat mesin masuk maintenance. Berbeda dari
+                      Tarik, ini juga boleh saat booking sudah berjalan. */}
+                  {bisaTukar ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={isSaving || !tersedia.length}
+                      title={
+                        tersedia.length
+                          ? 'Tukar dengan mesin lain, mis. mesin ini masuk maintenance'
+                          : 'Tidak ada mesin pengganti yang tersedia'
+                      }
+                      onClick={() => setTukarTarget(m.machineId)}
+                    >
+                      <Repeat className="h-3.5 w-3.5" /> Tukar
+                    </Button>
+                  ) : null}
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    disabled={isSaving || current.machines.length === 1 || !bisaTarik}
+                    onClick={() =>
+                      void run(
+                        () => api.releaseJobMachine(accessToken, current.id, m.machineId),
+                        `Mesin ${m.machineNumber} ditarik`,
+                      )
+                    }
+                  >
+                    <Trash2 className="h-3.5 w-3.5" /> Tarik
+                  </Button>
+                </span>
               </li>
             ))}
           </ul>
         ) : (
           <p className="text-sm text-slate-500">Belum ada mesin dipinjamkan ke booking ini.</p>
         )}
+
+        {tukarTarget ? (
+          <form
+            onSubmit={(event) => {
+              event.preventDefault()
+              const lama = current.machines.find((m) => m.machineId === tukarTarget)
+              void run(async () => {
+                const updated = await api.replaceMachine(accessToken, current.id, tukarTarget, {
+                  replacementId: penggantiDipilih,
+                })
+                setTukarTarget(null)
+                return updated
+              }, `Mesin ${lama?.machineNumber ?? ''} ditukar`)
+            }}
+            className="space-y-2 rounded-lg border border-brand-200 bg-brand-50/60 p-3"
+          >
+            <SelectField
+              label={`Ganti ${current.machines.find((m) => m.machineId === tukarTarget)?.machineNumber ?? 'mesin'} dengan`}
+              value={penggantiDipilih}
+              onChange={setPengganti}
+              options={tersedia.map((m) => ({
+                value: m.id,
+                label: `${m.machineNumber} (${m.tonaseTon} ton)`,
+              }))}
+            />
+            <div className="flex justify-end gap-2">
+              <Button type="button" size="sm" variant="secondary" onClick={() => setTukarTarget(null)}>
+                Batal
+              </Button>
+              <Button type="submit" size="sm" disabled={isSaving || !penggantiDipilih}>
+                {isSaving ? 'Memproses...' : 'Tukar mesin'}
+              </Button>
+            </div>
+          </form>
+        ) : null}
 
         {kurang > 0 ? (
           <p className="text-xs text-amber-700">Masih kurang {kurang} mesin dari permintaan penyewa.</p>
@@ -485,18 +551,38 @@ function MesinModal({
           </p>
         ) : (
           <form onSubmit={tambah} className="space-y-3">
-            <SelectField
-              label="Pinjamkan mesin"
-              value={mesinDipilih}
-              onChange={setMachineId}
-              options={tersedia.map((m) => ({
-                value: m.id,
-                label: `${m.machineNumber} (${m.tonaseTon} ton)`,
-              }))}
-            />
+            <fieldset>
+              <legend className="text-sm font-medium text-slate-700">
+                Pinjamkan mesin (bisa lebih dari satu)
+              </legend>
+              <div className="mt-1.5 max-h-48 space-y-1 overflow-y-auto rounded-lg border border-slate-200/80 p-2">
+                {tersedia.map((m) => (
+                  <label
+                    key={m.id}
+                    className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={mesinDipilih.includes(m.id)}
+                      onChange={(event) =>
+                        setChecked((prev) =>
+                          event.target.checked
+                            ? [...prev, m.id]
+                            : prev.filter((id) => id !== m.id),
+                        )
+                      }
+                      className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                    />
+                    {m.machineNumber} ({m.tonaseTon} ton)
+                  </label>
+                ))}
+              </div>
+            </fieldset>
             <div className="flex justify-end">
-              <Button type="submit" disabled={isSaving || !mesinDipilih}>
-                {isSaving ? 'Memproses...' : 'Pinjamkan mesin'}
+              <Button type="submit" disabled={isSaving || !mesinDipilih.length}>
+                {isSaving
+                  ? 'Memproses...'
+                  : `Pinjamkan ${mesinDipilih.length || ''} mesin`.replace('  ', ' ')}
               </Button>
             </div>
           </form>

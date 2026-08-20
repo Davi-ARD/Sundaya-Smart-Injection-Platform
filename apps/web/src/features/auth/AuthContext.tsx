@@ -16,7 +16,13 @@ import { AuthContext, type AuthContextValue } from './authContextValue'
 
 const SESSION_KEY = 'mold-tracker:auth-session'
 
-const readSession = () => localStorage.getItem(SESSION_KEY)
+// Token bisa ada di localStorage (ingat saya) atau sessionStorage (sesi saja).
+const readSession = () => localStorage.getItem(SESSION_KEY) ?? sessionStorage.getItem(SESSION_KEY)
+
+const clearSession = () => {
+  localStorage.removeItem(SESSION_KEY)
+  sessionStorage.removeItem(SESSION_KEY)
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [accessToken, setAccessToken] = useState<string | null>(() => readSession())
@@ -38,7 +44,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(fetchedUser)
       } catch (error) {
         console.error('Failed to fetch user:', error)
-        localStorage.removeItem(SESSION_KEY)
+        clearSession()
         setAccessToken(null)
         setUser(null)
       } finally {
@@ -49,29 +55,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void fetchUser()
   }, [accessToken])
 
-  const persistSession = useCallback((response: AuthResponse) => {
-    localStorage.setItem(SESSION_KEY, response.accessToken)
+  const persistSession = useCallback((response: AuthResponse, remember: boolean = true) => {
+    clearSession()
+    ;(remember ? localStorage : sessionStorage).setItem(SESSION_KEY, response.accessToken)
     setAccessToken(response.accessToken)
     setUser(response.user)
     return response
   }, [])
 
   const login = useCallback(
-    (request: LoginRequest) => {
-      return api.login(request).then(persistSession)
+    (request: LoginRequest, remember: boolean = true) => {
+      return api.login(request).then((response) => persistSession(response, remember))
     },
     [persistSession],
   )
 
   const register = useCallback(
     (request: RegisterRequest) => {
-      return api.register(request).then(persistSession)
+      return api.register(request).then((response) => persistSession(response))
     },
     [persistSession],
   )
 
   const logout = useCallback(() => {
-    localStorage.removeItem(SESSION_KEY)
+    clearSession()
     setAccessToken(null)
     setUser(null)
   }, [])

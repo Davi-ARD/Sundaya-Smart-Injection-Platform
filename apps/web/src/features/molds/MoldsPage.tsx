@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { Boxes, Eye, PackageCheck, Pencil, Plus } from 'lucide-react'
+import { Boxes, Eye, Pencil, Plus } from 'lucide-react'
 import {
-  MoldTrackingStatus,
   type CreateMoldRequest,
   type Mold,
   type MoldPlanRow,
   type UpdateMoldRequest,
+  MaterialType,
 } from '@mold-tracker/shared'
 import { useAuth } from '../auth/authContextValue'
 import { api } from '../../lib/api'
+import { PageHeader } from '../../components/PageHeader'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { DataTable, type Column } from '../../components/ui/DataTable'
@@ -16,7 +17,7 @@ import { MoldTrackingBadge } from '../../components/ui/Badge'
 import { Modal } from '../../components/ui/Modal'
 import { SidePanel } from '../../components/ui/SidePanel'
 import { TableSkeleton } from '../../components/ui/Skeleton'
-import { TextField, TextAreaField, FieldGroup } from '../../components/ui/FormField'
+import { TextField, TextAreaField, FieldGroup, SelectField } from '../../components/ui/FormField'
 import { useToast } from '../../components/ui/Toast'
 import { errorMessage } from '../../lib/errorMessage'
 import { optionalNumber, optionalText } from '../../lib/form'
@@ -29,7 +30,7 @@ type FormState = {
   cavity: string
   tonaseTon: string
   deskripsi: string
-  planMaterialUtama: string
+  planMaterialUtama: MaterialType | ''
   estimasiKg: string
   targetOutput: string
 }
@@ -69,7 +70,6 @@ export function MoldsPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [panel, setPanel] = useState<{ mode: 'create' } | { mode: 'edit'; mold: Mold } | null>(null)
   const [detailMoldId, setDetailMoldId] = useState<string | null>(null)
-  const [pendingId, setPendingId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setIsLoading(true)
@@ -94,29 +94,8 @@ export function MoldsPage() {
 
   const planByMoldId = useMemo(() => new Map(plan.map((row) => [row.moldId, row])), [plan])
   const detailRow = detailMoldId ? planByMoldId.get(detailMoldId) : undefined
-  const menungguKonfirmasi = molds.filter(
-    (m) => m.trackingStatus === MoldTrackingStatus.SEND_BACK,
-  )
-
-  // Approval pengembalian: penyewa menyatakan cetakan ini benar-benar sudah sampai
-  // kembali. Server yang menutup booking-nya kalau ini cetakan terakhir.
-  const konfirmasiDiterima = async (mold: Mold) => {
-    setPendingId(mold.id)
-    try {
-      await api.updateMoldTracking(accessToken, mold.id, {
-        status: MoldTrackingStatus.COMPLETED,
-      })
-      toast.success(`Cetakan ${mold.kodeMold} dikonfirmasi sudah diterima kembali`)
-      void load()
-    } catch (caught) {
-      toast.error(errorMessage(caught, 'Gagal mengonfirmasi penerimaan cetakan'))
-    } finally {
-      setPendingId(null)
-    }
-  }
-
   const columns: Column<Mold>[] = [
-    { header: 'Kode', cell: (m) => <span className="font-semibold text-slate-900">{m.kodeMold}</span> },
+    { header: 'Kode', cell: (m) => <span className="font-semibold text-slate-800">{m.kodeMold}</span> },
     { header: 'Produk', cell: (m) => m.namaProduk },
     { header: 'Cavity', cell: (m) => m.cavity },
     { header: 'Tonase', cell: (m) => `${m.tonaseTon} ton` },
@@ -144,20 +123,11 @@ export function MoldsPage() {
       className: 'text-right',
       cell: (m) => (
         <div className="flex justify-end gap-2">
-          {m.trackingStatus === MoldTrackingStatus.SEND_BACK ? (
-            <Button
-              size="sm"
-              disabled={pendingId === m.id}
-              onClick={() => void konfirmasiDiterima(m)}
-            >
-              <PackageCheck className="h-3.5 w-3.5" /> Sudah saya terima
-            </Button>
-          ) : null}
           <Button size="sm" variant="secondary" onClick={() => setDetailMoldId(m.id)}>
-            <Eye className="h-3.5 w-3.5" /> Detail
+            <Eye className="h-4 w-4" /> Detail
           </Button>
           <Button size="sm" variant="secondary" onClick={() => setPanel({ mode: 'edit', mold: m })}>
-            <Pencil className="h-3.5 w-3.5" /> Edit
+            <Pencil className="h-4 w-4" /> Edit
           </Button>
         </div>
       ),
@@ -165,37 +135,25 @@ export function MoldsPage() {
   ]
 
   return (
-    <div className="mx-auto max-w-6xl">
-      <div className="mb-6 flex items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Cetakan</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Master cetakan (mold) perusahaan Anda beserta rencana material dan target.
-          </p>
-        </div>
-        <Button onClick={() => setPanel({ mode: 'create' })}>
-          <Plus className="h-4 w-4" /> Tambah cetakan
-        </Button>
-      </div>
-
-      {menungguKonfirmasi.length > 0 ? (
-        <div className="mb-5 flex items-start gap-2 rounded-xl bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900 ring-1 ring-inset ring-amber-600/15">
-          <PackageCheck className="mt-1 h-4 w-4 shrink-0" />
-          <span>
-            {menungguKonfirmasi.map((m) => m.kodeMold).join(', ')} sudah selesai produksi dan
-            dikirim balik oleh Sundaya. Tekan <strong>Sudah saya terima</strong> pada baris cetakan
-            begitu barangnya sampai. Booking baru tertutup setelah semua cetakannya dikonfirmasi.
-          </span>
-        </div>
-      ) : null}
+    <div className="mx-auto max-w-screen-2xl">
+      <PageHeader
+        breadcrumb={[{ label: 'Beranda', to: '/manager' }, { label: 'Cetakan' }]}
+        title="Cetakan"
+        description="Master cetakan (mold) perusahaan Anda beserta rencana material dan target."
+        actions={
+          <Button onClick={() => setPanel({ mode: 'create' })}>
+            <Plus className="h-5 w-5" /> Tambah cetakan
+          </Button>
+        }
+      />
 
       <Card>
         {isLoading ? (
           <TableSkeleton rows={5} columns={6} />
         ) : molds.length === 0 ? (
           <div className="grid place-items-center py-14 text-center">
-            <span className="grid h-12 w-12 place-items-center rounded-xl bg-brand-50 text-brand-700">
-              <Boxes className="h-6 w-6" />
+            <span className="grid h-12 w-12 place-items-center text-brand-700">
+              <Boxes className="h-7 w-7" />
             </span>
             <p className="mt-3 text-sm font-semibold text-slate-800">Belum ada cetakan</p>
             <p className="mt-1 text-sm text-slate-500">Tambahkan cetakan pertama untuk mulai booking.</p>
@@ -235,7 +193,7 @@ export function MoldsPage() {
                 cavity: Number(form.cavity),
                 tonaseTon: Number(form.tonaseTon),
                 deskripsi: optionalText(form.deskripsi),
-                planMaterialUtama: optionalText(form.planMaterialUtama),
+                planMaterialUtama: form.planMaterialUtama || undefined,
                 estimasiKg: optionalNumber(form.estimasiKg),
                 targetOutput: optionalNumber(form.targetOutput),
               }
@@ -247,7 +205,7 @@ export function MoldsPage() {
                 cavity: Number(form.cavity),
                 tonaseTon: Number(form.tonaseTon),
                 deskripsi: optionalText(form.deskripsi),
-                planMaterialUtama: optionalText(form.planMaterialUtama),
+                planMaterialUtama: form.planMaterialUtama || undefined,
                 estimasiKg: optionalNumber(form.estimasiKg),
                 targetOutput: optionalNumber(form.targetOutput),
               }
@@ -312,7 +270,15 @@ function MoldFormPanel({
           <TextField label="Estimasi material (kg)" type="number" min={0} step="0.1" required={false} value={form.estimasiKg} onChange={set('estimasiKg')} />
           <TextField label="Target output" type="number" min={0} required={false} value={form.targetOutput} onChange={set('targetOutput')} />
         </FieldGroup>
-        <TextField label="Material utama (rencana)" required={false} value={form.planMaterialUtama} onChange={set('planMaterialUtama')} />
+        <SelectField
+          label="Material utama (rencana)"
+          value={form.planMaterialUtama}
+          onChange={(value: MaterialType | '') => setForm((f) => ({ ...f, planMaterialUtama: value }))}
+          options={[
+            { value: '', label: '- pilih material -' },
+            ...Object.values(MaterialType).map((m) => ({ value: m, label: m })),
+          ]}
+        />
         <TextAreaField label="Deskripsi" value={form.deskripsi} onChange={set('deskripsi')} />
 
         <div className="flex justify-end gap-2 pt-2">

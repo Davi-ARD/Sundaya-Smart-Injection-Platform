@@ -2,16 +2,12 @@ import { Module } from '@nestjs/common';
 import { MoldsService } from './molds.service';
 import { MoldsController } from './molds.controller';
 import { MoldTrackingService } from './mold-tracking.service';
-import { MoldTrackingController } from './mold-tracking.controller';
-import { NotificationsModule } from '../notifications/notifications.module';
 
 // MoldTrackingService diekspor: modul pengiriman, penerimaan, dan log-produksi
-// memanggil advance() untuk transisi otomatis di dalam transaksi mereka.
-// NotificationsModule dipakai memberi tahu pihak seberang saat cetakan dikirim
-// balik dan saat penyewa mengonfirmasi cetakan itu sudah diterima kembali.
+// memanggil advance() untuk transisi otomatis di dalam transaksi mereka. Tidak ada
+// controller tracking: seluruh status cetakan bergerak otomatis dari event domain.
 @Module({
-  imports: [NotificationsModule],
-  controllers: [MoldsController, MoldTrackingController],
+  controllers: [MoldsController],
   providers: [MoldsService, MoldTrackingService],
   exports: [MoldTrackingService],
 })

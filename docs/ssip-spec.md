@@ -52,18 +52,14 @@ Sinkron di `apps/api/prisma/schema.prisma` dan `packages/shared/src/index.ts`.
 SUPER_ADMIN, ADMIN_SUNDAYA, TEKNISI_SUNDAYA, MANAGER_PENYEWA, ADMIN_PENYEWA
 ```
 
-**MoldTrackingStatus** (6-state linear, tracking fisik mold):
+**MoldTrackingStatus** (5-state linear, status fisik mold; null sebelum booking disetujui):
 ```
-PLANNING, DELIVERY, RECEIVED, PRODUCTION, SEND_BACK, COMPLETED
+PLANNING, DELIVERY, RECEIVED, PRODUCTION, COMPLETED
 ```
-Empat status pertama digerakkan otomatis oleh event domain (bagian 5). Dua status
-penutup ditekan manual, tapi pemiliknya berbeda dan itu disengaja: SEND_BACK milik
-ADMIN_SUNDAYA (produksi selesai, cetakan dikirim balik), COMPLETED milik
-MANAGER_PENYEWA pemilik cetakan sebagai approval bahwa cetakan benar-benar sudah
-sampai kembali. Approval pengembalian karena itu berlaku per cetakan, bukan per job.
-Peta pemilik tombolnya ada di `MOLD_MANUAL_TRANSITIONS` (shared).
+Seluruh status digerakkan otomatis oleh event domain (bagian 5); tidak ada
+transisi manual dan tidak ada tab Mold Tracking.
 
-**ItemPengiriman** (jenis barang di Log Pengiriman dan Log Penerimaan):
+**ItemPengiriman** (jenis barang di Log Pengiriman dan Log Aktivitas):
 ```
 MOLD, MATERIAL
 ```
@@ -91,7 +87,7 @@ itu sendiri. Six big losses tetap tercakup lewat sumber lain (bagian 6a).
 PRODUKSI_HARIAN, PROGRESS_MOLDING
 ```
 Kedatangan material tidak ada di sini: sudah direncanakan Manager di Log Pengiriman
-dan dikonfirmasi Admin Sundaya di Log Penerimaan, jadi satu kejadian fisik tidak
+dan dikonfirmasi Admin Sundaya di Log Aktivitas, jadi satu kejadian fisik tidak
 diinput dua kali oleh dua pihak. Yang tersisa di Layer 2 adalah pemakaian material
 per hari (`materialUsedKg` pada PRODUKSI_HARIAN).
 
@@ -217,7 +213,7 @@ Single-table timeline dengan kolom nullable per jenis event.
 - Produksi harian: `goodProduct Int?`, `rejectCount Int?`, `materialUsedKg Float?`.
 - Progress molding: `progressMolding ProgressMolding?`, `keteranganProgress String?`.
 - Kolom material datang (`materialName`, `jumlahKg`, `noSuratJalan`) dihapus bersama
-  event-nya: kedatangan material hidup di Log Pengiriman dan Log Penerimaan.
+  event-nya: kedatangan material hidup di Log Pengiriman dan Log Aktivitas.
 - Append-only: tanpa update/delete; koreksi lewat event baru.
 - ponytail: satu tabel kolom-nullable lebih ringkas dari 2 tabel event; naikkan
   ke tabel per-tipe hanya jika query jadi kotor.
@@ -277,7 +273,7 @@ ponytail: belum bikin model Material master; tambah bila butuh katalog grade.
 
 **Mold tracking (linear satu arah, sebagian besar otomatis):**
 ```
-PLANNING -> DELIVERY -> RECEIVED -> PRODUCTION -> SEND_BACK -> COMPLETED
+PLANNING -> DELIVERY -> RECEIVED -> PRODUCTION -> COMPLETED
 ```
 Transisi hanya lewat service layer (aturan tim). Peta transisi konstan
 (`MOLD_TRACKING_FLOW` di shared), bukan library state machine.
@@ -290,7 +286,6 @@ Pemicu tiap status:
 | DELIVERY | `POST /pengiriman` item MOLD (Manager) | `MoldTrackingService.advance` |
 | RECEIVED | `POST /penerimaan` item MOLD (Admin Sundaya) | `MoldTrackingService.advance` |
 | PRODUCTION | `POST /jobs/:id/logs` eventType PRODUKSI_HARIAN (Admin Penyewa) | `MoldTrackingService.advance` |
-| SEND_BACK | `PATCH /molds/:id/tracking` (ADMIN_SUNDAYA) | `transition` |
 | COMPLETED | `PATCH /molds/:id/tracking` (MANAGER_PENYEWA pemilik cetakan) | `transition` |
 
 `advance(tx, moldId, target, byId)` dipanggil di dalam transaksi service pemicu,
@@ -378,7 +373,7 @@ semula yang pertama tersimpan tetap yang dipulihkan.
 **Machine rentalStatus (enum lama):** dipertahankan seperti alur rental
 existing.
 
-## 6. Log Pengiriman dan Log Penerimaan
+## 6. Log Pengiriman dan Log Aktivitas
 
 Dua modul terpisah yang saling melengkapi, masing-masing memisahkan item MOLD dan
 MATERIAL lewat enum `ItemPengiriman` (satu tabel, kolom `item`).
@@ -437,7 +432,7 @@ belum jadi master data; naikkan ke field Mold bila tiap produk butuh angka sendi
 | Mold tracking (baca papan) | - | R | R | R | R |
 | Mold tracking (tutup siklus: Send Back, Completed) | - | RW | - | - | - |
 | Log Pengiriman | - | R | - | RW | - |
-| Log Penerimaan | R | RW | - | R (miliknya) | - |
+| Log Aktivitas | R | RW | - | R (miliknya) | - |
 | Machine operationalData (Layer 1) | - | R | RW | - | - |
 | Maintenance | - | R | RW | - | - |
 | Log Produksi (Layer 2) | - | R | - | R | RW |
@@ -474,7 +469,7 @@ Modul yang berubah/baru. Detail request/response ditulis saat implementasi.
   (Teknisi): `POST /machines/:id/operational` (status SETUP/RUNNING + cycle time,
   tanpa reason code). Ditolak 409 bila mesin sedang MAINTENANCE.
 - **Cetakan:** `GET/POST/PATCH /molds` (GET juga untuk staf Sundaya),
-  `PATCH /molds/:id/tracking` hanya untuk SEND_BACK dan COMPLETED (ADMIN_SUNDAYA).
+  Tidak ada endpoint transisi status cetakan: seluruhnya otomatis dari event domain.
 - **Booking/Job (evolve rentals):** `POST /jobs` (Manager, tanpa mesin dan tanpa
   rencanaKirimMold), `PATCH /jobs/:id/assign` (Admin Sundaya), lifecycle transitions,
   `GET /jobs` scoped.
@@ -482,7 +477,7 @@ Modul yang berubah/baru. Detail request/response ditulis saat implementasi.
   (append event, tanpa update/delete). PRODUKSI_HARIAN memicu mold PRODUCTION.
 - **Log Pengiriman (Manager):** `GET /pengiriman`, `POST /pengiriman`. Bukan lagi
   view turunan; item MOLD memicu mold DELIVERY dan menotifikasi Admin Sundaya.
-- **Log Penerimaan (baru, Admin Sundaya):** `GET /penerimaan`, `POST /penerimaan`.
+- **Log Aktivitas (baru, Admin Sundaya):** `GET /penerimaan`, `POST /penerimaan`.
   Item MOLD memicu mold RECEIVED dan menotifikasi Manager pemilik job.
 - **Maintenance (Teknisi):** `GET/POST /maintenance`,
   `PATCH /maintenance/:id/status`. Transisi status ikut menggerakkan

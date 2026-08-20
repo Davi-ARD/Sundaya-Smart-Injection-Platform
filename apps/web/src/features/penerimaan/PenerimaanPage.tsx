@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Boxes, Info, PackageCheck, Plus } from 'lucide-react'
 import {
+  MaterialType,
   ItemPengiriman,
   Role,
   type CreateLogPenerimaanRequest,
@@ -11,6 +12,7 @@ import {
 import { useAuth } from '../auth/authContextValue'
 import { api } from '../../lib/api'
 import { Button } from '../../components/ui/Button'
+import { PageHeader } from '../../components/PageHeader'
 import { Card } from '../../components/ui/Card'
 import { DataTable, type Column } from '../../components/ui/DataTable'
 import { EmptyState } from '../../components/ui/EmptyState'
@@ -24,7 +26,7 @@ import { optionalText } from '../../lib/form'
 import { formatDate, formatDateTime, nowLocalInput } from '../../lib/format'
 
 
-// Log Penerimaan (Admin Sundaya): konfirmasi cetakan dan material tiba di lokasi
+// Log Aktivitas (Admin Sundaya): catatan cetakan dan material tiba di lokasi
 // Sundaya, dipisah jadi dua daftar dalam satu tab. Ini satu-satunya tempat
 // kedatangan barang dicatat; Log Produksi tidak lagi punya event material datang.
 //
@@ -131,13 +133,11 @@ export function PenerimaanPage() {
 
   return (
     <div className="mx-auto max-w-6xl">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900">Log Penerimaan</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Catat cetakan dan material yang tiba di lokasi Sundaya. Manager Penyewa langsung
-          diberi tahu setiap ada penerimaan baru.
-        </p>
-      </div>
+      <PageHeader
+        breadcrumb={[{ label: 'Beranda', to: '/staff' }, { label: 'Log Aktivitas' }]}
+        title="Log Aktivitas"
+        description="Catat cetakan dan material yang tiba di lokasi Sundaya. Manager Penyewa langsung diberi tahu setiap ada catatan baru."
+      />
 
       <Card
         title="Rencana pengiriman dari Penyewa"
@@ -251,7 +251,7 @@ function PenerimaanFormPanel({
 
   const { jobId, moldId, setMoldId, pilihJob, jobOptions, moldOptions } = useMoldPicker(jobs)
   const [diterimaAt, setDiterimaAt] = useState(nowLocalInput())
-  const [materialName, setMaterialName] = useState('')
+  const [materialName, setMaterialName] = useState<MaterialType | ''>('')
   const [jumlahKg, setJumlahKg] = useState('')
   const [noSuratJalan, setNoSuratJalan] = useState('')
   const [kondisi, setKondisi] = useState('')
@@ -274,7 +274,7 @@ function PenerimaanFormPanel({
         ? base
         : {
             ...base,
-            materialName: materialName.trim(),
+            materialName: materialName || undefined,
             jumlahKg: Number(jumlahKg),
             noSuratJalan: optionalText(noSuratJalan),
           }
@@ -318,7 +318,15 @@ function PenerimaanFormPanel({
 
         {!isMold ? (
           <>
-            <TextField label="Nama material" value={materialName} onChange={setMaterialName} />
+            <SelectField
+              label="Nama material"
+              value={materialName}
+              onChange={setMaterialName}
+              options={[
+                { value: '', label: '- pilih material -' },
+                ...Object.values(MaterialType).map((m) => ({ value: m, label: m })),
+              ]}
+            />
             <FieldGroup>
               <TextField
                 label="Jumlah diterima (kg)"

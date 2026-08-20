@@ -25,7 +25,7 @@ const createDto: CreateMachineDto = {
   spesifikasi: 'Injection molding 150 ton',
   tonaseTon: 150,
   warrantyStart: '2025-01-01',
-  warrantyDurationMonths: 24,
+  warrantyEnd: '2030-01-01T00:00:00.000Z',
 };
 
 describe('MachinesService.create', () => {
@@ -47,7 +47,7 @@ describe('MachinesService.create', () => {
     const data = prisma.machine.create.mock.calls[0][0].data;
     expect(data.tonaseTon).toBe(150);
     expect(data.ownerId).toBe('admin-1');
-    expect(data.warrantyEnd.toISOString().slice(0, 10)).toBe('2027-01-01');
+    expect(data.warrantyEnd.toISOString().slice(0, 10)).toBe('2030-01-01');
     expect(data.warrantyStatus).toBe(WarrantyStatus.AKTIF);
     expect(result.tonaseTon).toBe(150);
     expect(result.operationalStatus).toBe('STANDBY');

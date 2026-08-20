@@ -3,6 +3,7 @@ import { Ban, Pencil, Trash2, UserPlus, Users as UsersIcon } from 'lucide-react'
 import { Role, type CreateStaffRequest, type UpdateUserRequest, type User } from '@mold-tracker/shared'
 import { useAuth } from '../auth/authContextValue'
 import { api } from '../../lib/api'
+import { PageHeader } from '../../components/PageHeader'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
@@ -81,16 +82,16 @@ export function UsersPage() {
         return (
           <div className="flex justify-end gap-2">
             <Button size="sm" variant="secondary" onClick={() => setPanel({ mode: 'edit', target: u })}>
-              <Pencil className="h-3.5 w-3.5" /> Edit
+              <Pencil className="h-4 w-4" /> Edit
             </Button>
             {u.isActive && !isSelf ? (
               <Button size="sm" variant="secondary" onClick={() => setPending({ action: 'deactivate', target: u })}>
-                <Ban className="h-3.5 w-3.5" /> Nonaktifkan
+                <Ban className="h-4 w-4" /> Nonaktifkan
               </Button>
             ) : null}
             {!isSelf ? (
               <Button size="sm" variant="danger" onClick={() => setPending({ action: 'delete', target: u })}>
-                <Trash2 className="h-3.5 w-3.5" /> Hapus
+                <Trash2 className="h-4 w-4" /> Hapus
               </Button>
             ) : null}
           </div>
@@ -100,24 +101,25 @@ export function UsersPage() {
   ]
 
   return (
-    <div className="mx-auto max-w-6xl">
-      <div className="mb-6 flex items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Pengguna</h1>
-          <p className="mt-1 text-sm text-slate-500">Kelola akun staf Sundaya: Super Admin, Admin Sundaya, Teknisi.</p>
-        </div>
-        <Button onClick={() => setPanel({ mode: 'create' })}>
-          <UserPlus className="h-4 w-4" /> Tambah akun
-        </Button>
-      </div>
+    <div className="mx-auto max-w-screen-2xl">
+      <PageHeader
+        breadcrumb={[{ label: 'Beranda', to: '/staff' }, { label: 'Pengguna' }]}
+        title="Pengguna"
+        description="Kelola akun staf Sundaya: Super Admin, Admin Sundaya, Teknisi."
+        actions={
+          <Button onClick={() => setPanel({ mode: 'create' })}>
+            <UserPlus className="h-5 w-5" /> Tambah akun
+          </Button>
+        }
+      />
 
       <Card>
         {isLoading ? (
           <TableSkeleton rows={4} columns={6} />
         ) : users.length === 0 ? (
           <div className="grid place-items-center py-14 text-center">
-            <span className="grid h-12 w-12 place-items-center rounded-xl bg-brand-50 text-brand-700">
-              <UsersIcon className="h-6 w-6" />
+            <span className="grid h-12 w-12 place-items-center text-brand-700">
+              <UsersIcon className="h-7 w-7" />
             </span>
             <p className="mt-3 text-sm font-semibold text-slate-800">Belum ada akun staf</p>
           </div>

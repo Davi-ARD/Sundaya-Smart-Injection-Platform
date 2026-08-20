@@ -10,6 +10,7 @@ import {
 import { useAuth } from '../auth/authContextValue'
 import { api } from '../../lib/api'
 import { Button } from '../../components/ui/Button'
+import { PageHeader } from '../../components/PageHeader'
 import { Card } from '../../components/ui/Card'
 import { DataTable, type Column } from '../../components/ui/DataTable'
 import { EmptyState } from '../../components/ui/EmptyState'
@@ -134,18 +135,16 @@ export function BookingPage() {
 
   return (
     <div className="mx-auto max-w-6xl">
-      <div className="mb-6 flex items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Booking Mesin</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Ajukan booking untuk satu atau beberapa cetakan sekaligus, plus jumlah mesin yang
-            ingin dipinjam.
-          </p>
-        </div>
-        <Button onClick={() => setIsPanelOpen(true)} disabled={isLoading}>
-          <CalendarPlus className="h-4 w-4" /> Ajukan booking
-        </Button>
-      </div>
+      <PageHeader
+        breadcrumb={[{ label: 'Beranda', to: '/manager' }, { label: 'Booking Mesin' }]}
+        title="Booking Mesin"
+        description="Ajukan booking untuk satu atau beberapa cetakan sekaligus, plus jumlah mesin yang ingin dipinjam."
+        actions={
+          <Button onClick={() => setIsPanelOpen(true)} disabled={isLoading}>
+            <CalendarPlus className="h-5 w-5" /> Ajukan booking
+          </Button>
+        }
+      />
 
       <Card>
         {isLoading ? (

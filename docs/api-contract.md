@@ -116,14 +116,13 @@ Role: ADMIN_SUNDAYA atau MANAGER_PENYEWA, **hanya untuk dua transisi penutup sik
 
 | Transisi | Ditekan oleh | Arti |
 |---|---|---|
-| PRODUCTION -> SEND_BACK | ADMIN_SUNDAYA | produksi selesai, cetakan dikirim balik ke penyewa |
-| SEND_BACK -> COMPLETED | MANAGER_PENYEWA pemilik cetakan | **approval bahwa cetakan sudah sampai kembali**, per cetakan bukan per job |
+| PRODUCTION -> COMPLETED | otomatis | progress molding Sudah diproduksi di Log Produksi; cetakan terakhir menutup booking |
 
 Empat status sebelumnya (PLANNING, DELIVERY, RECEIVED, PRODUCTION) digerakkan otomatis oleh event domain, bukan endpoint ini. Dalam satu transaksi: update `Mold.trackingStatus` + append `MoldTrackingEvent` (byId, at); khusus COMPLETED, bila itu cetakan terakhir booking maka job ikut ditutup (lihat "Transisi otomatis lifecycle job").
 - Status yang seharusnya otomatis ditolak 409 (`Status RECEIVED disetel otomatis dari event domain, tidak lewat tombol`).
 - Transisi tidak sah menurut urutan ditolak 409 (mis. PRODUCTION langsung ke COMPLETED).
 - Role yang bukan pemilik transisi itu ditolak 403 (Admin Sundaya tidak boleh menyatakan cetakan sudah diterima penyewa, dan sebaliknya). Manager yang bukan pemilik cetakan dibalas 404, tidak dibocorkan.
-- Setelah transaksi sukses, SEND_BACK memberi notifikasi ke Manager pemilik (link `/molds`) karena hanya di sisi itu ada tindakan yang harus menyusul. COMPLETED tidak menotifikasi siapa pun: Sundaya sudah membacanya di papan tracking dan booking menutup dirinya sendiri.
+- Seluruh status cetakan bergerak otomatis dari event domain; tidak ada endpoint transisi manual.
 - Request: `UpdateMoldTrackingRequest` { status (MoldTrackingStatus) }
 - Response 200: `Mold`
 
@@ -194,6 +193,8 @@ Evolusi dari modul Sewa lama. Satu booking menghasilkan satu Production Job yang
 
 **Lifecycle hanya empat langkah dan cuma satu yang berupa tombol**: `DIAJUKAN -> DIKONFIRMASI -> AKTIF -> SELESAI` (plus `DIAJUKAN -> DITOLAK`). Admin Sundaya menyetujui booking dengan meminjamkan mesin pertama atau menolaknya; dua perpindahan sisanya otomatis dari event domain (lihat "Transisi otomatis lifecycle job"). Tidak ada langkah pengiriman mesin: mesin tidak pernah keluar dari Sundaya, penyewa yang mengirim cetakannya ke sini. `jobStatus` (ON_SCHEDULE/WARNING/CRITICAL/COMPLETED) dihitung saat baca dari sisa sewa, bukan disimpan. Scoping tenant di server: staf Sundaya lihat semua; Manager lihat miliknya; Admin Penyewa lihat tenant induknya.
 
+`Job.mold` (opsional) menyertakan ringkasan `{ id, kodeMold, namaProduk, trackingStatus, tonaseTon }` di setiap response Job. Staf Sundaya tidak punya akses ke `GET /molds` (khusus Manager Penyewa), jadi field ini adalah sumber info mold mereka untuk assign (cocokkan tonase) dan tracking (tanpa endpoint list mold terpisah).
+
 ### GET /jobs
 Semua terautentikasi, disaring per tenant di server.
 - Query opsional: `lifecycle` (JobLifecycle)
@@ -256,7 +257,7 @@ Role: ADMIN_SUNDAYA. Memutuskan perpanjangan. Hanya pengajuan berstatus DIAJUKAN
 
 ## Modul Log Produksi (SSIP, Layer 2)
 
-Timeline event produksi **per cetakan** (Layer 2), diinput Admin Penyewa di lokasi Sundaya. Satu booking bisa memuat beberapa cetakan, jadi tiap event menyebut `moldId`; cetakan harus benar-benar bagian dari booking itu (404 bila bukan). **Append-only**: tidak ada PATCH/DELETE; koreksi lewat event baru. **Dua jenis event** (`LogProduksiEventType`) berbagi satu timeline: `PRODUKSI_HARIAN` dan `PROGRESS_MOLDING`; tiap event hanya menyimpan field milik tipenya. Kedatangan material tidak dicatat di sini: sudah direncanakan Manager di Log Pengiriman dan dikonfirmasi Admin Sundaya di Log Penerimaan, jadi satu kejadian fisik tidak diinput dua kali. Yang tersisa di Layer 2 adalah pemakaian material per hari (`materialUsedKg` pada `PRODUKSI_HARIAN`). Scoping tenant di server: job harus milik tenant pengakses (Admin Penyewa lewat `parentId`, Manager lewat dirinya); job tenant lain dibalas 404.
+Timeline event produksi **per cetakan** (Layer 2), diinput Admin Penyewa di lokasi Sundaya. Satu booking bisa memuat beberapa cetakan, jadi tiap event menyebut `moldId`; cetakan harus benar-benar bagian dari booking itu (404 bila bukan). **Append-only**: tidak ada PATCH/DELETE; koreksi lewat event baru. **Dua jenis event** (`LogProduksiEventType`) berbagi satu timeline: `PRODUKSI_HARIAN` dan `PROGRESS_MOLDING`; tiap event hanya menyimpan field milik tipenya. Kedatangan material tidak dicatat di sini: sudah direncanakan Manager di Log Pengiriman dan dikonfirmasi Admin Sundaya di Log Aktivitas, jadi satu kejadian fisik tidak diinput dua kali. Yang tersisa di Layer 2 adalah pemakaian material per hari (`materialUsedKg` pada `PRODUKSI_HARIAN`). Scoping tenant di server: job harus milik tenant pengakses (Admin Penyewa lewat `parentId`, Manager lewat dirinya); job tenant lain dibalas 404.
 
 ### GET /jobs/:jobId/logs
 Role: ADMIN_PENYEWA, MANAGER_PENYEWA, ADMIN_SUNDAYA, SUPER_ADMIN. Timeline event job (urut `occurredAt` menaik).
@@ -300,11 +301,11 @@ Role: MANAGER_PENYEWA. Mencatat rencana pengiriman. `byId` di-set dari token. Jo
 
 ---
 
-## Modul Log Penerimaan (SSIP, Admin Sundaya)
+## Modul Log Aktivitas (SSIP, Admin Sundaya)
 
 Konfirmasi bahwa mold atau material tiba di lokasi Sundaya. Pemisahan item sama seperti Log Pengiriman. Ini satu-satunya tempat kedatangan barang dicatat: Log Produksi (Layer 2) tidak lagi punya event material datang, jadi satu kejadian fisik tidak diinput dua kali oleh dua pihak.
 
-Tab Log Penerimaan di web juga menampilkan `GET /pengiriman` sebagai kartu rencana baca-saja. Kolom yang ditampilkan harus sepadan dengan tabel Log Pengiriman milik Manager (cetakan/material, jumlah, nomor surat jalan, rencana kirim, catatan): satu data yang sama tidak boleh tampil dengan bentuk berbeda di dua peran.
+Tab Log Aktivitas di web juga menampilkan `GET /pengiriman` sebagai kartu rencana baca-saja. Kolom yang ditampilkan harus sepadan dengan tabel Log Pengiriman milik Manager (cetakan/material, jumlah, nomor surat jalan, rencana kirim, catatan): satu data yang sama tidak boleh tampil dengan bentuk berbeda di dua peran.
 
 ### GET /penerimaan
 Role: ADMIN_SUNDAYA, SUPER_ADMIN, MANAGER_PENYEWA (job miliknya). Urut `diterimaAt` menurun.

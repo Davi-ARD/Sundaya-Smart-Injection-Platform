@@ -39,13 +39,14 @@ export class AuthService {
     return this.buildAuth(user);
   }
 
-  // Semua role login memakai email. Staf Sundaya dan penyewa lewat backend auth
-  // yang sama; pemisahan halaman masuk/route ada di frontend.
+  // Satu form login untuk semua role; role akun dideteksi dari database, tidak
+  // diminta di form (frontend hanya mengelompokkan tab Penyewa/Internal untuk
+  // tampilan, tidak dikirim ke backend).
   async login(dto: LoginDto): Promise<AuthResponse> {
     const user = await this.prisma.user.findUnique({ where: { email: dto.identifier } });
-    if (!user || !user.isActive) throw new UnauthorizedException('Kredensial salah');
+    if (!user || !user.isActive) throw new UnauthorizedException('Email Salah');
     const ok = await bcrypt.compare(dto.password, user.passwordHash);
-    if (!ok) throw new UnauthorizedException('Kredensial salah');
+    if (!ok) throw new UnauthorizedException('Password Salah');
     return this.buildAuth(user);
   }
 

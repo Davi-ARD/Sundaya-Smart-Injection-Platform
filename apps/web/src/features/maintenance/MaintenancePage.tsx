@@ -11,6 +11,7 @@ import {
 import { useAuth } from '../auth/authContextValue'
 import { api } from '../../lib/api'
 import { Button } from '../../components/ui/Button'
+import { PageHeader } from '../../components/PageHeader'
 import { Card } from '../../components/ui/Card'
 import { DataTable, type Column } from '../../components/ui/DataTable'
 import { EmptyState } from '../../components/ui/EmptyState'
@@ -109,17 +110,18 @@ export function MaintenancePage() {
 
   return (
     <div className="mx-auto max-w-6xl">
-      <div className="mb-6 flex items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Maintenance</h1>
-          <p className="mt-1 text-sm text-slate-500">Jadwalkan dan eksekusi maintenance mesin.</p>
-        </div>
-        {canWrite ? (
-          <Button onClick={() => setIsPanelOpen(true)}>
-            <Plus className="h-4 w-4" /> Jadwalkan maintenance
-          </Button>
-        ) : null}
-      </div>
+      <PageHeader
+        breadcrumb={[{ label: 'Beranda', to: '/staff' }, { label: 'Maintenance' }]}
+        title="Maintenance"
+        description="Jadwalkan dan eksekusi maintenance mesin."
+        actions={
+          canWrite ? (
+            <Button onClick={() => setIsPanelOpen(true)}>
+              <Plus className="h-5 w-5" /> Jadwalkan maintenance
+            </Button>
+          ) : null
+        }
+      />
 
       <Card>
         {isLoading ? (

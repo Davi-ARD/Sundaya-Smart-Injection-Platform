@@ -5,6 +5,7 @@ import { LogProduksiEventType, type JobDashboard, type JobLogEntry } from '@mold
 import { useAuth } from '../auth/authContextValue'
 import { api } from '../../lib/api'
 import { JobLifecycleBadge, ProgressMoldingBadge, progressMoldingLabel } from '../../components/ui/Badge'
+import { PageHeader } from '../../components/PageHeader'
 import { Card, StatCard } from '../../components/ui/Card'
 import { CardSkeleton } from '../../components/ui/Skeleton'
 import { EmptyState } from '../../components/ui/EmptyState'
@@ -145,21 +146,19 @@ export function JobDashboardPage() {
 
   return (
     <div className="mx-auto max-w-5xl">
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Dashboard Job</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Pemantauan booking aktif perusahaan Anda di lokasi Sundaya: mesin yang dipinjam, sisa
-            masa sewanya, capaian produksi, dan kuota material tiap cetakan.
-          </p>
-        </div>
-        <Link
-          to="/logs"
-          className="inline-flex items-center gap-1.5 rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-800"
-        >
-          Catat log produksi <ArrowRight className="h-4 w-4" />
-        </Link>
-      </div>
+      <PageHeader
+        breadcrumb={[{ label: 'Beranda', to: '/job' }, { label: 'Dashboard Job' }]}
+        title="Dashboard Job"
+        description="Pemantauan booking aktif perusahaan Anda di lokasi Sundaya: mesin yang dipinjam, sisa masa sewanya, capaian produksi, dan kuota material tiap cetakan."
+        actions={
+          <Link
+            to="/logs"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-800"
+          >
+            Catat log produksi <ArrowRight className="h-5 w-5" />
+          </Link>
+        }
+      />
 
       {isLoading ? (
         <Card>

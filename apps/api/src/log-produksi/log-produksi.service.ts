@@ -4,10 +4,12 @@ import {
   LogProduksi,
   LogProduksiEventType,
   MoldTrackingStatus,
+  ProgressMolding,
   Role,
 } from '@mold-tracker/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { MoldTrackingService } from '../molds/mold-tracking.service';
+import { activateJobOnProduksi, completeJobIfAllMoldsReturned } from '../jobs/job-transitions';
 import { assertNotFuture } from '../common/time';
 import { machineForMold, moldInJob } from '../common/log-refs';
 import { CreateLogProduksiDto } from './dto';
@@ -49,8 +51,11 @@ export class LogProduksiService {
   // cetakan, dan booking meminjamkan beberapa mesin tanpa memasangkannya ke cetakan,
   // jadi log inilah satu-satunya tempat yang tahu cetakan mana berjalan di mesin mana.
   // Event PRODUKSI_HARIAN menandai cetakan itu benar-benar dipakai di mesin, jadi
-  // tracking-nya ikut maju ke PRODUCTION (idempoten: event kedua dan seterusnya tidak
-  // mengubah apa pun karena advance() hanya bergerak maju).
+  // statusnya ikut maju ke PRODUCTION dan booking-nya berpindah ke AKTIF: mengisi
+  // produksi harian sekaligus jadi bukti job sudah berjalan (idempoten, karena
+  // advance() hanya bergerak maju dan aktivasi mensyaratkan lifecycle DIKONFIRMASI).
+  // Progress molding SUDAH_DIPRODUKSI menutup siklus cetakan langsung ke COMPLETED
+  // tanpa langkah kirim balik terpisah; cetakan terakhir menutup booking-nya.
   async append(user: PrismaUser, jobId: string, dto: CreateLogProduksiDto): Promise<LogProduksi> {
     // Event Layer 2 mencatat kejadian yang sudah terjadi, bukan rencana.
     assertNotFuture(dto.occurredAt, 'Waktu kejadian');
@@ -79,6 +84,11 @@ export class LogProduksiService {
       });
       if (dto.eventType === LogProduksiEventType.PRODUKSI_HARIAN) {
         await this.moldTracking.advance(tx, dto.moldId, MoldTrackingStatus.PRODUCTION, user.id);
+        await activateJobOnProduksi(tx, jobId);
+      }
+      if (dto.progressMolding === ProgressMolding.SUDAH_DIPRODUKSI) {
+        await this.moldTracking.advance(tx, dto.moldId, MoldTrackingStatus.COMPLETED, user.id);
+        await completeJobIfAllMoldsReturned(tx, jobId);
       }
       return toLogProduksi(log, mold.kodeMold, machine.machineNumber);
     });
