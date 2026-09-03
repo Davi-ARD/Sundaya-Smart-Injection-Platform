@@ -17,6 +17,7 @@ import {
   CreateJobRequest,
   DecideExtensionRequest,
   ExtensionStatus,
+  AddMoldsRequest,
   RejectJobRequest,
   ReplaceMachineRequest,
 } from '@mold-tracker/shared';
@@ -63,6 +64,16 @@ export class ReplaceMachineDto implements ReplaceMachineRequest {
   @IsString()
   @MinLength(1)
   replacementId: string;
+}
+
+// Menambah cetakan ke booking berjalan. Hanya daftar cetakan: mesin dan durasi
+// booking tidak ikut berubah.
+export class AddMoldsDto implements AddMoldsRequest {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayUnique()
+  @IsString({ each: true })
+  moldIds: string[];
 }
 
 export class RejectJobDto implements RejectJobRequest {

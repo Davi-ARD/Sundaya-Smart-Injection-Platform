@@ -45,6 +45,7 @@ const penyewaItems: MenuItem[] = [
   { label: 'Log Pengiriman', to: '/pengiriman', icon: Truck, roles: [Role.MANAGER_PENYEWA] },
   { label: 'Dashboard Job', to: '/job', icon: Gauge, roles: [Role.ADMIN_PENYEWA] },
   { label: 'Log Produksi', to: '/logs', icon: ClipboardList, roles: [Role.ADMIN_PENYEWA] },
+  { label: 'Log Aktivitas', to: '/penerimaan', icon: Inbox, roles: [Role.ADMIN_PENYEWA] },
 ]
 
 // Teknisi Sundaya dan Admin Sundaya memakai menu yang sama persis; perbedaan
@@ -62,12 +63,6 @@ const sundayaItems: MenuItem[] = [
     to: '/staff/booking',
     icon: ClipboardCheck,
     roles: [Role.SUPER_ADMIN, Role.ADMIN_SUNDAYA, Role.TEKNISI_SUNDAYA],
-  },
-  {
-    label: 'Log Aktivitas',
-    to: '/penerimaan',
-    icon: Inbox,
-    roles: [Role.SUPER_ADMIN, Role.ADMIN_SUNDAYA],
   },
   {
     label: 'Mesin',

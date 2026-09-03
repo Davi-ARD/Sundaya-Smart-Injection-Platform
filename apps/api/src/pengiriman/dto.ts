@@ -10,7 +10,6 @@ import {
 import {
   CreateLogPengirimanRequest,
   ItemPengiriman,
-  MaterialType,
 } from '@mold-tracker/shared';
 
 // Log Pengiriman dibuat Manager Penyewa. Field material hanya wajib untuk item
@@ -35,7 +34,7 @@ export class CreateLogPengirimanDto implements CreateLogPengirimanRequest {
   @IsOptional()
   @IsString()
   @MinLength(1)
-  materialName?: MaterialType;
+  materialName?: string;
 
   @IsOptional()
   @IsNumber()

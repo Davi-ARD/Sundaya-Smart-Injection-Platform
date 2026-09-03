@@ -8,6 +8,7 @@ import {
   MoldTrackingStatus,
   ProgressMolding,
   WarrantyStatus,
+  KondisiBarang,
 } from '@mold-tracker/shared'
 
 export type BadgeTone = 'emerald' | 'amber' | 'rose' | 'slate' | 'brand' | 'sky'
@@ -164,6 +165,24 @@ export const moldTrackingLabel: Record<MoldTrackingStatus, string> = {
 export function MoldTrackingBadge({ status }: { status: MoldTrackingStatus | null }) {
   if (!status) return <Badge tone="slate">Belum dibooking</Badge>
   return <Badge tone={moldTrackingTone[status]}>{moldTrackingLabel[status]}</Badge>
+}
+
+// --- Kondisi barang saat diterima (Log Aktivitas) ---
+const kondisiBarangTone: Record<KondisiBarang, BadgeTone> = {
+  [KondisiBarang.BAIK]: 'emerald',
+  [KondisiBarang.CUKUP_BAIK]: 'amber',
+  [KondisiBarang.TIDAK_BAIK]: 'rose',
+}
+
+export const kondisiBarangLabel: Record<KondisiBarang, string> = {
+  [KondisiBarang.BAIK]: 'Baik',
+  [KondisiBarang.CUKUP_BAIK]: 'Cukup Baik',
+  [KondisiBarang.TIDAK_BAIK]: 'Tidak Baik',
+}
+
+export function KondisiBarangBadge({ status }: { status: KondisiBarang | null }) {
+  if (!status) return <span className="text-slate-400">-</span>
+  return <Badge tone={kondisiBarangTone[status]}>{kondisiBarangLabel[status]}</Badge>
 }
 
 // --- Progress molding (Layer 2) ---

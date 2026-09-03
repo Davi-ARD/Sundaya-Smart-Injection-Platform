@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Boxes, Info, PackagePlus, Plus } from 'lucide-react'
 import {
-  MaterialType,
   ItemPengiriman,
   type CreateLogPengirimanRequest,
   type Job,
@@ -14,6 +13,7 @@ import { PageHeader } from '../../components/PageHeader'
 import { Card } from '../../components/ui/Card'
 import { DataTable, type Column } from '../../components/ui/DataTable'
 import { EmptyState } from '../../components/ui/EmptyState'
+import { MaterialCombobox } from '../../components/ui/MaterialCombobox'
 import { SidePanel } from '../../components/ui/SidePanel'
 import { TableSkeleton } from '../../components/ui/Skeleton'
 import { FieldGroup, SelectField, TextAreaField, TextField } from '../../components/ui/FormField'
@@ -203,7 +203,7 @@ function PengirimanFormPanel({
 
   const { jobId, moldId, setMoldId, pilihJob, jobOptions, moldOptions } = useMoldPicker(jobs)
   const [rencanaKirim, setRencanaKirim] = useState(todayInput())
-  const [materialName, setMaterialName] = useState<MaterialType | ''>('')
+  const [materialName, setMaterialName] = useState('')
   const [jumlahKg, setJumlahKg] = useState('')
   const [noSuratJalan, setNoSuratJalan] = useState('')
   const [catatan, setCatatan] = useState('')
@@ -267,14 +267,10 @@ function PengirimanFormPanel({
 
         {!isMold ? (
           <>
-            <SelectField
+            <MaterialCombobox
               label="Nama material"
               value={materialName}
               onChange={setMaterialName}
-              options={[
-                { value: '', label: '- pilih material -' },
-                ...Object.values(MaterialType).map((m) => ({ value: m, label: m })),
-              ]}
             />
             <FieldGroup>
               <TextField

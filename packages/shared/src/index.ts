@@ -44,9 +44,10 @@ export const TEKNISI_INPUT_STATUS: MachineOperationalStatus[] = [
   MachineOperationalStatus.RUNNING,
 ];
 
-// Jenis material plastik untuk injection molding. Dipakai sebagai pilihan
-// (dropdown) di plan cetakan, Log Pengiriman, dan Log Aktivitas supaya penamaan
-// material seragam lintas peran, bukan teks bebas.
+// Daftar kurasi jenis material plastik untuk injection molding. Ini SARAN yang
+// ditawarkan combobox di plan cetakan, Log Pengiriman, dan Log Aktivitas supaya
+// penamaan seragam; kolom aslinya bertipe teks bebas karena pengguna boleh
+// memasukkan material di luar daftar lewat opsi "Lainnya".
 export enum MaterialType {
   PP = "PP",
   PE = "PE",
@@ -59,6 +60,21 @@ export enum MaterialType {
   PET = "PET",
   SAN = "SAN",
 }
+
+// Kondisi barang saat diterima di lokasi Sundaya. Tiga tingkat: BAIK aman dipakai,
+// CUKUP_BAIK ada cacat ringan, TIDAK_BAIK tidak layak pakai. Dua tingkat terakhir
+// mewajibkan catatan supaya engineering dan purchasing tahu penyebabnya.
+export enum KondisiBarang {
+  BAIK = "BAIK",
+  CUKUP_BAIK = "CUKUP_BAIK",
+  TIDAK_BAIK = "TIDAK_BAIK",
+}
+
+// Kondisi yang menuntut penjelasan tertulis pada Log Aktivitas.
+export const KONDISI_WAJIB_CATATAN: KondisiBarang[] = [
+  KondisiBarang.CUKUP_BAIK,
+  KondisiBarang.TIDAK_BAIK,
+];
 
 export enum WarrantyStatus {
   AKTIF = "AKTIF",
@@ -181,7 +197,7 @@ export interface Mold {
   managerId: string;
   jobId: string | null; // null berarti belum dibooking
   trackingStatus: MoldTrackingStatus | null;
-  planMaterialUtama: MaterialType | null;
+  planMaterialUtama: string | null;
   estimasiKg: number | null;
   targetOutput: number | null;
   createdAt: ISODateString;
@@ -204,9 +220,13 @@ export interface JobMold {
   cavity: number;
   tonaseTon: number;
   trackingStatus: MoldTrackingStatus | null;
-  planMaterialUtama: MaterialType | null;
+  planMaterialUtama: string | null;
   estimasiKg: number | null;
+  // Target dan capaian SESI produksi yang sedang berjalan, bukan akumulasi umur
+  // cetakan: cetakan yang dipakai lagi punya target barunya sendiri.
   targetOutput: number | null;
+  goodProduct: number;
+  selesai: boolean; // sesi berjalan sudah menyentuh targetnya
 }
 
 // Mesin yang dipinjamkan ke satu booking. Mesin tidak dipasangkan ke cetakan
@@ -320,7 +340,7 @@ export interface LogPengiriman {
   item: ItemPengiriman;
   rencanaKirim: ISODateString;
   // Khusus item MATERIAL.
-  materialName: MaterialType | null;
+  materialName: string | null;
   jumlahKg: number | null;
   noSuratJalan: string | null;
   catatan: string | null;
@@ -339,10 +359,10 @@ export interface LogPenerimaan {
   item: ItemPengiriman;
   diterimaAt: ISODateString;
   // Khusus item MATERIAL.
-  materialName: MaterialType | null;
+  materialName: string | null;
   jumlahKg: number | null;
   noSuratJalan: string | null;
-  kondisi: string | null;
+  kondisi: KondisiBarang | null;
   catatan: string | null;
   byId: string;
   createdAt: ISODateString;
@@ -440,7 +460,7 @@ export interface CreateMoldRequest {
   cavity: number;
   tonaseTon: number;
   deskripsi?: string;
-  planMaterialUtama?: MaterialType;
+  planMaterialUtama?: string;
   estimasiKg?: number;
   targetOutput?: number;
 }
@@ -450,7 +470,7 @@ export interface UpdateMoldRequest {
   cavity?: number;
   tonaseTon?: number;
   deskripsi?: string;
-  planMaterialUtama?: MaterialType;
+  planMaterialUtama?: string;
   estimasiKg?: number;
   targetOutput?: number;
 }
@@ -481,6 +501,12 @@ export interface ReplaceMachineRequest {
   replacementId: string;
 }
 
+// Menambah cetakan ke booking yang sedang berjalan (Manager Penyewa). Tidak
+// mengubah mesin maupun durasi, jadi tidak melewati approval Sundaya lagi.
+export interface AddMoldsRequest {
+  moldIds: string[];
+}
+
 export interface RejectJobRequest {
   reason: string;
 }
@@ -494,21 +520,19 @@ export interface DecideExtensionRequest {
 }
 
 // Log Produksi (Layer 2, Admin Penyewa). Append-only.
+// Hanya satu jenis event yang diinput: produksi harian. Progress molding tidak
+// lagi dipilih manual melainkan dihitung server dari capaian terhadap target
+// output cetakan, jadi tidak ada field-nya di sini.
 export interface CreateLogProduksiRequest {
   moldId: string;
   // Wajib: log harus menyebut cetakan itu dipakai di mesin mana. Mesin harus salah
   // satu mesin pinjaman booking dan tonasenya harus sanggup menahan cetakan itu.
   machineId: string;
-  eventType: LogProduksiEventType;
   occurredAt: ISODateString;
-  catatan?: string;
-  // PRODUKSI_HARIAN
-  goodProduct?: number;
-  rejectCount?: number;
+  goodProduct: number;
+  rejectCount: number;
   materialUsedKg?: number;
-  // PROGRESS_MOLDING
-  progressMolding?: ProgressMolding;
-  keteranganProgress?: string;
+  catatan?: string;
 }
 
 // Log Pengiriman (Manager Penyewa). Item MOLD memindahkan tracking ke DELIVERY.
@@ -518,7 +542,7 @@ export interface CreateLogPengirimanRequest {
   moldId?: string; // wajib untuk item MOLD
   item: ItemPengiriman;
   rencanaKirim: ISODateString;
-  materialName?: MaterialType;
+  materialName?: string;
   jumlahKg?: number;
   noSuratJalan?: string;
   catatan?: string;
@@ -530,10 +554,10 @@ export interface CreateLogPenerimaanRequest {
   moldId?: string; // wajib untuk item MOLD
   item: ItemPengiriman;
   diterimaAt: ISODateString;
-  materialName?: MaterialType;
+  materialName?: string;
   jumlahKg?: number;
   noSuratJalan?: string;
-  kondisi?: string;
+  kondisi?: KondisiBarang;
   catatan?: string;
 }
 
@@ -666,7 +690,7 @@ export interface MoldPlanRow {
   rejectRate: number; // persen dari total output
   sisaHariSewa: number | null;
   etaHari: number | null; // perkiraan hari sampai target tercapai
-  planMaterialUtama: MaterialType | null;
+  planMaterialUtama: string | null;
   // Kuota material: plan (estimasiKg) adalah batas keras, terpakai adalah akumulasi
   // materialUsedKg dari Log Produksi, sisa adalah selisihnya.
   estimasiKg: number | null;
@@ -674,6 +698,12 @@ export interface MoldPlanRow {
   materialRemainingKg: number | null;
   materialUsagePercent: number | null; // terpakai terhadap plan
   endDate: ISODateString | null;
+  // Rincian produksi per hari (terbaru dulu), dipakai grafik dan tabel di panel
+  // detail cetakan. Tersedia untuk cetakan mana pun, termasuk yang booking-nya
+  // sudah selesai, supaya riwayatnya tetap bisa ditelusuri.
+  harian: DailyCycleEntry[];
+  // Riwayat target output cetakan ini, terbaru dulu.
+  runs: MoldRunEntry[];
 }
 
 // Cycle production per cetakan (Manager Penyewa): capaian produksi terhadap target
@@ -689,12 +719,26 @@ export interface MoldCycleProduction {
   achievement: number; // persen good terhadap target
   rejectRate: number; // persen reject terhadap total output
   remainingTarget: number | null; // target minus good
-  planMaterialUtama: MaterialType | null;
+  planMaterialUtama: string | null;
   planMaterialKg: number | null;
   materialUsedKg: number;
   materialRemainingKg: number | null;
   materialUsagePercent: number | null;
   harian: DailyCycleEntry[]; // terbaru dulu
+}
+
+// Riwayat sesi produksi satu cetakan (terbaru dulu). Tiap kali Manager mengganti
+// target output, sesi baru dibuka dan sesi lama tetap tercatat lengkap dengan
+// hasilnya, supaya target lama tidak hilang setelah diganti target baru.
+export interface MoldRunEntry {
+  id: string;
+  targetOutput: number;
+  estimasiKg: number | null;
+  goodProduct: number; // produk baik yang dihasilkan SESI ini
+  materialUsedKg: number; // material terpakai SESI ini
+  tercapai: boolean;
+  mulai: ISODateString;
+  selesai: ISODateString | null; // sesi berjalan belum punya penutup
 }
 
 export interface DailyCycleEntry {

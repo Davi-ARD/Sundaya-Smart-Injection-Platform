@@ -58,7 +58,7 @@ export class PengirimanService {
       return created;
     });
 
-    await this.notifySundaya(user, job.jobNumber, dto, kodeMold);
+    await this.notifikasiRencanaKirim(user, job, dto, kodeMold);
     return toLogPengiriman(row, job.jobNumber, kodeMold);
   }
 
@@ -69,7 +69,9 @@ export class PengirimanService {
     const rows = await this.prisma.logPengiriman.findMany({
       where: {
         jobId,
-        job: STAF_SUNDAYA.includes(user.role as Role) ? undefined : { managerId: user.id },
+        job: STAF_SUNDAYA.includes(user.role as Role)
+          ? undefined
+          : { managerId: (user.role === Role.ADMIN_PENYEWA ? user.parentId : user.id) ?? '__none__' },
       },
       orderBy: { rencanaKirim: 'desc' },
       include: { job: { select: { jobNumber: true } }, mold: { select: { kodeMold: true } } },
@@ -77,16 +79,18 @@ export class PengirimanService {
     return rows.map((r) => toLogPengiriman(r, r.job.jobNumber, r.mold?.kodeMold));
   }
 
-  private async notifySundaya(
+  // Dua pihak diberi tahu saat Manager menjadwalkan pengiriman:
+  //
+  // - Admin Penyewa tenant itu: dialah yang mencatat penerimaan barang di Log
+  //   Aktivitas, jadi notifikasinya menaut langsung ke halaman itu.
+  // - Staf Sundaya: barangnya masuk ke lokasi mereka, jadi perlu tahu untuk
+  //   bersiap. Tanpa tautan karena pencatatan bukan lagi wewenang mereka.
+  private async notifikasiRencanaKirim(
     user: PrismaUser,
-    jobNumber: string,
+    job: { jobNumber: string; managerId: string },
     dto: CreateLogPengirimanDto,
     kodeMold?: string,
   ) {
-    const staf = await this.prisma.user.findMany({
-      where: { role: $Enums.Role.ADMIN_SUNDAYA, isActive: true },
-      select: { id: true },
-    });
     const barang =
       dto.item === ItemPengiriman.MOLD
         ? `Cetakan ${kodeMold ?? ''}`.trim()
@@ -96,11 +100,33 @@ export class PengirimanService {
       month: 'short',
       year: 'numeric',
     });
+    const pesan = `${user.nama} menjadwalkan ${barang} untuk job ${job.jobNumber} dikirim ${tanggal}.`;
+
+    const [adminPenyewa, stafSundaya] = await Promise.all([
+      this.prisma.user.findMany({
+        where: {
+          role: $Enums.Role.ADMIN_PENYEWA,
+          parentId: job.managerId,
+          isActive: true,
+        },
+        select: { id: true },
+      }),
+      this.prisma.user.findMany({
+        where: { role: $Enums.Role.ADMIN_SUNDAYA, isActive: true },
+        select: { id: true },
+      }),
+    ]);
+
     await this.notifications.createMany(
-      staf.map((s) => s.id),
-      'Rencana pengiriman baru',
-      `${user.nama} menjadwalkan ${barang} untuk job ${jobNumber} dikirim ${tanggal}.`,
+      adminPenyewa.map((u) => u.id),
+      'Barang dalam perjalanan',
+      `${pesan} Catat penerimaannya di Log Aktivitas begitu barang tiba.`,
       '/penerimaan',
+    );
+    await this.notifications.createMany(
+      stafSundaya.map((u) => u.id),
+      'Rencana pengiriman baru',
+      pesan,
     );
   }
 }

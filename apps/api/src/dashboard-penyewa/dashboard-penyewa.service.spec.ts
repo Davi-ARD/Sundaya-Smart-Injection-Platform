@@ -313,6 +313,35 @@ describe('DashboardPenyewaService.cycleProduction', () => {
   });
 });
 
+describe('DashboardPenyewaService.moldPlan progress per sesi', () => {
+  it('sesi baru bertarget lebih kecil belum selesai walau produksi lama sudah banyak', async () => {
+    const prisma = prismaMock();
+    prisma.mold.findMany.mockResolvedValue([
+      {
+        id: 'md-1',
+        kodeMold: 'MD-1',
+        namaProduk: 'Panel',
+        cavity: 1,
+        tonaseTon: 50,
+        trackingStatus: MoldTrackingStatus.PRODUCTION,
+        planMaterialUtama: 'PP',
+        estimasiKg: 1000,
+        targetOutput: 100,
+        // Sesi baru bertarget 100 dimulai setelah 240 produk baik: sesi ini belum
+        // menghasilkan apa pun, jadi progressnya harus null, bukan sudah selesai.
+        runs: [{ id: 'r2', targetOutput: 100, estimasiKg: 1000, goodAwal: 240, materialAwal: 0, at: new Date('2026-08-20') }],
+        logProduksi: [produksi(new Date('2026-08-10'), { goodProduct: 240, rejectCount: 0, materialUsedKg: 100 })],
+        job: null,
+      },
+    ]);
+
+    const [row] = await svc(prisma).moldPlan(manager);
+
+    expect(row.totalGoodProduct).toBe(240);
+    expect(row.progressMolding).toBeNull();
+  });
+});
+
 describe('DashboardPenyewaService.moldPlan', () => {
   it('menggabung tracking, booking, capaian produksi, dan kuota material', async () => {
     const prisma = prismaMock();
@@ -327,6 +356,11 @@ describe('DashboardPenyewaService.moldPlan', () => {
         planMaterialUtama: 'ABS Resin',
         estimasiKg: 800,
         targetOutput: 1000,
+        // Dua sesi: sesi 1 mulai dari nol, sesi 2 mulai setelah 400 produk baik.
+        runs: [
+          { id: 'run-2', targetOutput: 600, estimasiKg: 300, goodAwal: 400, materialAwal: 250, at: new Date('2026-08-12') },
+          { id: 'run-1', targetOutput: 400, estimasiKg: 500, goodAwal: 0, materialAwal: 0, at: new Date('2026-07-01') },
+        ],
         logProduksi: [
           produksi(new Date('2026-08-12'), {
             goodProduct: 400,
@@ -376,6 +410,27 @@ describe('DashboardPenyewaService.moldPlan', () => {
     expect(aktif.materialUsedKg).toBe(580);
     expect(aktif.materialRemainingKg).toBe(220);
     expect(aktif.materialUsagePercent).toBe(72.5);
+
+    // Riwayat target output: capaian tiap sesi adalah SELISIH terhadap sesi
+    // berikutnya, bukan akumulasi cetakan. Tanpa ini target lama akan terlihat
+    // seolah menghasilkan seluruh produksi cetakan sejak awal.
+    expect(aktif.runs).toEqual([
+      expect.objectContaining({
+        id: 'run-2',
+        targetOutput: 600,
+        goodProduct: 200, // 600 total - 400 titik awal sesi ini
+        materialUsedKg: 330, // 580 - 250
+        tercapai: false,
+        selesai: null, // sesi terbaru masih berjalan
+      }),
+      expect.objectContaining({
+        id: 'run-1',
+        targetOutput: 400,
+        goodProduct: 400, // 400 titik awal sesi berikutnya - 0
+        materialUsedKg: 250,
+        tercapai: true,
+      }),
+    ]);
 
     expect(planning.jobNumber).toBeNull();
     expect(planning.machineNumbers).toEqual([]);

@@ -10,11 +10,12 @@ import {
 import {
   CreateLogPenerimaanRequest,
   ItemPengiriman,
-  MaterialType,
+  KondisiBarang,
 } from '@mold-tracker/shared';
 
-// Log Penerimaan dibuat Admin Sundaya saat barang tiba di lokasi Sundaya. Field
-// material hanya wajib untuk item MATERIAL (ditegakkan di service).
+// Log Aktivitas dibuat Admin Penyewa saat barang tiba di lokasi Sundaya. Field
+// material hanya wajib untuk item MATERIAL, dan catatan wajib bila kondisinya
+// bukan BAIK (keduanya ditegakkan di service).
 export class CreateLogPenerimaanDto implements CreateLogPenerimaanRequest {
   @IsString()
   @MinLength(1)
@@ -35,7 +36,7 @@ export class CreateLogPenerimaanDto implements CreateLogPenerimaanRequest {
   @IsOptional()
   @IsString()
   @MinLength(1)
-  materialName?: MaterialType;
+  materialName?: string;
 
   @IsOptional()
   @IsNumber()
@@ -47,8 +48,8 @@ export class CreateLogPenerimaanDto implements CreateLogPenerimaanRequest {
   noSuratJalan?: string;
 
   @IsOptional()
-  @IsString()
-  kondisi?: string;
+  @IsEnum(KondisiBarang)
+  kondisi?: KondisiBarang;
 
   @IsOptional()
   @IsString()

@@ -1,5 +1,4 @@
 import {
-  MaterialType,
   Mold,
 } from '@mold-tracker/shared';
 import { Mold as PrismaMold } from '@prisma/client';
@@ -18,7 +17,7 @@ export function toMold(m: PrismaMold): Mold {
     managerId: m.managerId,
     jobId: m.jobId,
     trackingStatus: m.trackingStatus as unknown as Mold['trackingStatus'],
-    planMaterialUtama: m.planMaterialUtama as unknown as MaterialType | null,
+    planMaterialUtama: m.planMaterialUtama,
     estimasiKg: m.estimasiKg,
     targetOutput: m.targetOutput,
     createdAt: m.createdAt.toISOString(),

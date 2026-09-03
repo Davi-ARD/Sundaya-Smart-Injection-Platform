@@ -12,7 +12,7 @@ import { CreateLogPengirimanDto } from './dto';
 export class PengirimanController {
   constructor(private pengiriman: PengirimanService) {}
 
-  @Roles(Role.MANAGER_PENYEWA, Role.ADMIN_SUNDAYA, Role.SUPER_ADMIN)
+  @Roles(Role.MANAGER_PENYEWA, Role.ADMIN_PENYEWA, Role.ADMIN_SUNDAYA, Role.SUPER_ADMIN)
   @Get()
   list(@CurrentUser() user: PrismaUser, @Query('jobId') jobId?: string): Promise<LogPengiriman[]> {
     return this.pengiriman.list(user, jobId);

@@ -10,6 +10,7 @@ import {
 import { CurrentUser, Roles } from '../auth/decorators';
 import { JobsService } from './jobs.service';
 import {
+  AddMoldsDto,
   AssignJobDto,
   CreateExtensionDto,
   CreateJobDto,
@@ -107,6 +108,25 @@ export class JobsController {
     @Body() dto: ReplaceMachineDto,
   ): Promise<Job> {
     return this.jobs.replaceMachine(id, machineId, dto);
+  }
+
+  // Tambah cetakan ke booking berjalan: mesin dan durasi tidak berubah, jadi
+  // tidak butuh approval ulang Sundaya.
+  @Roles(Role.MANAGER_PENYEWA)
+  @Post(':id/molds')
+  addMolds(
+    @CurrentUser() user: PrismaUser,
+    @Param('id') id: string,
+    @Body() dto: AddMoldsDto,
+  ): Promise<Job> {
+    return this.jobs.addMolds(user, id, dto.moldIds);
+  }
+
+  // Akhiri sewa lebih awal: hak Manager Penyewa atas booking-nya sendiri.
+  @Roles(Role.MANAGER_PENYEWA)
+  @Patch(':id/end-rental')
+  endRental(@CurrentUser() user: PrismaUser, @Param('id') id: string): Promise<Job> {
+    return this.jobs.endRental(user, id);
   }
 
   @Roles(Role.ADMIN_SUNDAYA)

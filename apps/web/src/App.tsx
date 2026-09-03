@@ -54,13 +54,13 @@ export default function App() {
           <Route element={<ProtectedRoute allowedRoles={ADMIN_PENYEWA} />}>
             <Route path="/job" element={<JobDashboardPage />} />
             <Route path="/logs" element={<LogProduksiPage />} />
+            <Route path="/penerimaan" element={<PenerimaanPage />} />
           </Route>
 
           {/* Staf Sundaya */}
           <Route element={<ProtectedRoute allowedRoles={STAF} />}>
             <Route path="/staff" element={<SundayaDashboardPage />} />
             <Route path="/staff/booking" element={<SundayaBookingPage />} />
-            <Route path="/penerimaan" element={<PenerimaanPage />} />
             <Route path="/machines" element={<MachinesPage />} />
             <Route path="/maintenance" element={<MaintenancePage />} />
           </Route>

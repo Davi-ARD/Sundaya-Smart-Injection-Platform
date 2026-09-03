@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { CalendarPlus, Info, TimerReset } from 'lucide-react'
+import { Boxes, CalendarPlus, CircleCheck, Info, TimerReset } from 'lucide-react'
 import {
   ExtensionStatus,
   JobLifecycle,
@@ -12,6 +12,7 @@ import { api } from '../../lib/api'
 import { Button } from '../../components/ui/Button'
 import { PageHeader } from '../../components/PageHeader'
 import { Card } from '../../components/ui/Card'
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { DataTable, type Column } from '../../components/ui/DataTable'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { ExtensionStatusBadge, JobLifecycleBadge } from '../../components/ui/Badge'
@@ -31,6 +32,14 @@ const toIso = (date: string) => new Date(`${date}T00:00:00`).toISOString()
 // TIDAK memilih mesin: mesin di-assign Admin Sundaya untuk seluruh booking.
 // Plan material dan target output tidak ditanyakan di sini karena sudah diisi saat
 // merancang cetakan.
+// Sisa hari sewa dari endDate, dipakai teks konfirmasi supaya penyewa sadar
+// persis berapa hari yang direlakan saat mengakhiri lebih awal.
+function sisaHariText(endDate: string | null): string {
+  if (!endDate) return 'beberapa hari'
+  const sisa = Math.ceil((new Date(endDate).getTime() - Date.now()) / 86_400_000)
+  return sisa > 0 ? `${sisa} hari` : 'kurang dari sehari'
+}
+
 export function BookingPage() {
   const { accessToken } = useAuth()
   const toast = useToast()
@@ -40,6 +49,8 @@ export function BookingPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isPanelOpen, setIsPanelOpen] = useState(false)
   const [extendTarget, setExtendTarget] = useState<Job | null>(null)
+  const [endTarget, setEndTarget] = useState<Job | null>(null)
+  const [addMoldTarget, setAddMoldTarget] = useState<Job | null>(null)
 
   const load = useCallback(async () => {
     setIsLoading(true)
@@ -121,14 +132,24 @@ export function BookingPage() {
       cell: (j) =>
         // Perpanjangan hanya relevan saat mesin sedang dipakai.
         j.lifecycle === JobLifecycle.AKTIF ? (
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={j.extensions.some((e) => e.status === ExtensionStatus.DIAJUKAN)}
-            onClick={() => setExtendTarget(j)}
-          >
-            <TimerReset className="h-3.5 w-3.5" /> Ajukan perpanjangan
-          </Button>
+          <span className="flex flex-wrap justify-end gap-2">
+            <Button size="sm" variant="secondary" onClick={() => setAddMoldTarget(j)}>
+              <Boxes className="h-3.5 w-3.5" /> Tambah cetakan
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={j.extensions.some((e) => e.status === ExtensionStatus.DIAJUKAN)}
+              onClick={() => setExtendTarget(j)}
+            >
+              <TimerReset className="h-3.5 w-3.5" /> Ajukan perpanjangan
+            </Button>
+            {/* Mengakhiri lebih awal selalu pilihan penyewa: tanpa tombol ini
+                booking tetap berjalan sampai masa sewanya habis. */}
+            <Button size="sm" variant="secondary" onClick={() => setEndTarget(j)}>
+              <CircleCheck className="h-3.5 w-3.5" /> Akhiri sewa
+            </Button>
+          </span>
         ) : null,
     },
   ]
@@ -170,6 +191,39 @@ export function BookingPage() {
           onClose={() => setExtendTarget(null)}
           onSaved={() => {
             setExtendTarget(null)
+            void load()
+          }}
+        />
+      ) : null}
+
+      {/* Mengakhiri sewa melepas mesin ke penyewa lain dan tidak bisa dibatalkan,
+          jadi dikonfirmasi dulu dengan menyebut sisa harinya. */}
+      {endTarget ? (
+        <ConfirmDialog
+          title="Akhiri sewa lebih awal?"
+          tone="warning"
+          message={`Booking ${endTarget.jobNumber} ditutup sekarang, maka masa sewa yang masih tersisa ${sisaHariText(endTarget.endDate)} tidak bisa dipakai lagi dan tindakan ini tidak bisa dibatalkan.`}
+          confirmLabel="Ya, akhiri sewa"
+          onCancel={() => setEndTarget(null)}
+          onConfirm={async () => {
+            try {
+              await api.endRental(accessToken, endTarget.id)
+              toast.success(`Sewa ${endTarget.jobNumber} diakhiri, mesin sudah dikembalikan`)
+              setEndTarget(null)
+              void load()
+            } catch (caught) {
+              toast.error(errorMessage(caught, 'Gagal mengakhiri sewa'))
+            }
+          }}
+        />
+      ) : null}
+
+      {addMoldTarget ? (
+        <AddMoldPanel
+          job={addMoldTarget}
+          onClose={() => setAddMoldTarget(null)}
+          onSaved={() => {
+            setAddMoldTarget(null)
             void load()
           }}
         />
@@ -422,5 +476,95 @@ function ExtensionModal({
         </div>
       </form>
     </Modal>
+  )
+}
+
+// Menambah cetakan ke booking yang sedang berjalan. Mesin dan durasi tidak
+// berubah, jadi tidak melewati approval Sundaya lagi; yang dipilih hanya cetakan
+// yang belum terpakai booking mana pun.
+function AddMoldPanel({
+  job,
+  onClose,
+  onSaved,
+}: {
+  job: Job
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const { accessToken } = useAuth()
+  const toast = useToast()
+  const [molds, setMolds] = useState<Mold[]>([])
+  const [dipilih, setDipilih] = useState<string[]>([])
+  const [isSaving, setIsSaving] = useState(false)
+
+  useEffect(() => {
+    void api
+      .listMolds(accessToken)
+      .then((all) => setMolds(all.filter((m) => !m.jobId)))
+      .catch((caught) => toast.error(errorMessage(caught, 'Gagal memuat cetakan')))
+  }, [accessToken, toast])
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault()
+    setIsSaving(true)
+    try {
+      await api.addMoldsToJob(accessToken, job.id, { moldIds: dipilih })
+      toast.success('Cetakan ditambahkan ke booking')
+      onSaved()
+    } catch (caught) {
+      toast.error(errorMessage(caught, 'Gagal menambahkan cetakan'))
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <SidePanel
+      title={`Tambah cetakan ke ${job.jobNumber}`}
+      subtitle="Mesin dan durasi sewa tidak berubah, jadi tidak perlu approval ulang Sundaya."
+      onClose={onClose}
+    >
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {molds.length === 0 ? (
+          <p className="text-sm text-slate-500">
+            Tidak ada cetakan bebas. Daftarkan cetakan baru di tab Cetakan terlebih dahulu.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {molds.map((m) => (
+              <label
+                key={m.id}
+                className="flex cursor-pointer items-center gap-3 rounded-lg border border-slate-200 px-3 py-2.5 text-sm hover:bg-slate-50"
+              >
+                <input
+                  type="checkbox"
+                  checked={dipilih.includes(m.id)}
+                  onChange={(e) =>
+                    setDipilih((prev) =>
+                      e.target.checked ? [...prev, m.id] : prev.filter((id) => id !== m.id),
+                    )
+                  }
+                />
+                <span className="flex flex-col">
+                  <span className="font-semibold text-slate-900">{m.kodeMold}</span>
+                  <span className="text-xs text-slate-500">
+                    {m.namaProduk} - {m.tonaseTon} ton
+                  </span>
+                </span>
+              </label>
+            ))}
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2 pt-2">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Batal
+          </Button>
+          <Button type="submit" disabled={isSaving || dipilih.length === 0}>
+            {isSaving ? 'Menyimpan...' : 'Tambahkan'}
+          </Button>
+        </div>
+      </form>
+    </SidePanel>
   )
 }

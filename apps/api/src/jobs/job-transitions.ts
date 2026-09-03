@@ -1,12 +1,12 @@
-import { $Enums, Prisma } from '@prisma/client';
-import { JobLifecycle, MachineStatus, MoldTrackingStatus } from '@mold-tracker/shared';
+import { $Enums, Prisma, PrismaClient } from '@prisma/client';
+import { JobLifecycle, MachineStatus } from '@mold-tracker/shared';
 import { machineWalk } from '../machines/machine-state';
 
 // Dua perpindahan lifecycle job yang tidak ditekan tombol melainkan menyusul
 // kenyataan fisik, sejajar dengan cara status cetakan bergerak:
 //
 //   DIKONFIRMASI -> AKTIF   produksi harian pertama dicatat (bukti job berjalan)
-//   AKTIF        -> SELESAI seluruh cetakan booking sudah selesai diproduksi
+//   AKTIF        -> SELESAI masa sewa yang dibooking penyewa sudah habis
 //
 // Keduanya dipanggil dari dalam transaksi service pemicunya (Log Penerimaan dan
 // Mold Tracking) supaya job, mesin, dan cetakan tidak pernah tercatat setengah
@@ -54,43 +54,55 @@ export async function activateJobOnProduksi(tx: Tx, jobId: string): Promise<void
   });
 }
 
-// Cetakan terakhir booking sudah selesai diproduksi: booking ditutup dan mesinnya
-// masuk PENGECEKAN lalu TERSEDIA untuk booking berikutnya. Selama masih ada satu
-// cetakan yang belum selesai, booking tetap AKTIF.
-export async function completeJobIfAllMoldsReturned(tx: Tx, jobId: string): Promise<void> {
-  const job = await tx.job.findUnique({
-    where: { id: jobId },
-    select: {
-      lifecycle: true,
-      molds: { select: { trackingStatus: true } },
-      machines: { select: { id: true, status: true } },
-    },
+// Booking ditutup mengikuti MASA SEWA, bukan selesainya produksi. Selama sewa
+// masih berjalan penyewa tetap memegang mesinnya: boleh mengirim cetakan baru,
+// atau memakai lagi cetakan lama yang sudah Completed dengan menaikkan target
+// output lalu mengirim material lagi. Begitu endDate lewat, booking ditutup dan
+// mesin masuk PENGECEKAN lalu TERSEDIA untuk booking berikutnya.
+//
+// Cetakan yang masih ada di Sundaya tidak menahan penutupan: pengembaliannya
+// dicatat terpisah lewat konfirmasi cetakan diterima oleh Manager.
+//
+// Idempoten dan aman dipanggil sesering apa pun: hanya menyentuh job AKTIF yang
+// endDate-nya benar-benar sudah lewat.
+export async function closeExpiredJobs(prisma: PrismaLike, now: Date = new Date()): Promise<number> {
+  const kedaluwarsa = await prisma.job.findMany({
+    where: { lifecycle: asLifecycle(JobLifecycle.AKTIF), endDate: { lt: now } },
+    select: { id: true, machines: { select: { id: true, status: true } } },
   });
-  if (!job || job.lifecycle !== asLifecycle(JobLifecycle.AKTIF)) return;
 
-  const semuaKembali = job.molds.every(
-    (m) => m.trackingStatus === (MoldTrackingStatus.COMPLETED as unknown as $Enums.MoldTrackingStatus),
-  );
-  if (!job.molds.length || !semuaKembali) return;
-
-  const mesinBaru = job.machines.map((m) => ({
-    id: m.id,
-    status: asMachineStatus(
-      machineWalk(
-        m.status as unknown as MachineStatus,
-        MachineStatus.PENGECEKAN,
-        MachineStatus.TERSEDIA,
-      ),
-    ),
-  }));
-
-  for (const m of mesinBaru) {
-    await tx.machine.update({ where: { id: m.id }, data: { status: m.status } });
+  for (const job of kedaluwarsa) {
+    await prisma.$transaction((tx) => tutupBooking(tx, job.id, job.machines));
   }
-  // Waktu penutupan sudah terekam sebagai MoldTrackingEvent COMPLETED cetakan
-  // terakhir, jadi tidak disalin lagi ke kolom Job.
+
+  return kedaluwarsa.length;
+}
+
+// Menutup satu booking: mesinnya dikembalikan ke kolam Sundaya lalu lifecycle-nya
+// jadi SELESAI. Dipakai bersama oleh penutupan otomatis saat masa sewa habis dan
+// tombol "akhiri sewa" milik Manager, supaya kedua jalan itu tidak pernah berbeda
+// perlakuan terhadap mesin.
+export async function tutupBooking(
+  tx: Tx,
+  jobId: string,
+  machines: { id: string; status: string }[],
+): Promise<void> {
+  // Status mesin divalidasi lewat machineWalk dulu supaya mesin yang sedang
+  // maintenance tidak dipaksa balik ke TERSEDIA.
+  for (const m of machines) {
+    const status = machineWalk(
+      m.status as unknown as MachineStatus,
+      MachineStatus.PENGECEKAN,
+      MachineStatus.TERSEDIA,
+    );
+    await tx.machine.update({ where: { id: m.id }, data: { status: asMachineStatus(status) } });
+  }
   await tx.job.update({
     where: { id: jobId },
     data: { lifecycle: asLifecycle(JobLifecycle.SELESAI) },
   });
 }
+
+// Cukup bagian PrismaClient yang dipakai fungsi di atas, supaya PrismaService
+// diterima apa adanya tanpa menyeret seluruh permukaan client.
+type PrismaLike = Pick<PrismaClient, 'job' | '$transaction'>;

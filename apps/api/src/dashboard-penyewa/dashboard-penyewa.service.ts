@@ -8,9 +8,9 @@ import {
   JobLogEntry,
   LogProduksiEventType,
   ManagerDashboard,
-  MaterialType,
   MoldCycleProduction,
   MoldPlanRow,
+  MoldRunEntry,
   MoldTrackingStatus,
   ProgressMolding,
 } from '@mold-tracker/shared';
@@ -125,7 +125,7 @@ export class DashboardPenyewaService {
       kodeMold: string;
       namaProduk: string;
       targetOutput: number | null;
-      planMaterialUtama: $Enums.MaterialType | null;
+      planMaterialUtama: string | null;
       estimasiKg: number | null;
     },
     logs: LogRow[],
@@ -134,15 +134,7 @@ export class DashboardPenyewaService {
     const totalOutput = stats.totalGoodProduct + stats.totalReject;
     const material = materialQuota(mold.estimasiKg, stats.materialUsedKg);
 
-    const harian: DailyCycleEntry[] = logs
-      .filter((l) => l.eventType === LogProduksiEventType.PRODUKSI_HARIAN)
-      .map((l) => ({
-        occurredAt: l.occurredAt.toISOString(),
-        goodProduct: l.goodProduct ?? 0,
-        rejectCount: l.rejectCount ?? 0,
-        materialUsedKg: l.materialUsedKg,
-        catatan: l.catatan,
-      }));
+    const harian = toHarian(logs);
 
     return {
       moldId: mold.id,
@@ -156,7 +148,7 @@ export class DashboardPenyewaService {
       rejectRate: totalOutput ? round((stats.totalReject / totalOutput) * 100) : 0,
       remainingTarget:
         mold.targetOutput == null ? null : Math.max(mold.targetOutput - stats.totalGoodProduct, 0),
-      planMaterialUtama: mold.planMaterialUtama as unknown as MaterialType | null,
+      planMaterialUtama: mold.planMaterialUtama,
       planMaterialKg: mold.estimasiKg,
       materialUsedKg: stats.materialUsedKg,
       materialRemainingKg: material.remaining,
@@ -177,7 +169,10 @@ export class DashboardPenyewaService {
         machines: { select: { machineNumber: true }, orderBy: { machineNumber: 'asc' } },
         molds: {
           orderBy: { kodeMold: 'asc' },
-          include: { logProduksi: { orderBy: { occurredAt: 'desc' } } },
+          include: {
+            logProduksi: { orderBy: { occurredAt: 'desc' } },
+            runs: { orderBy: { at: 'desc' }, take: 1 },
+          },
         },
       },
     });
@@ -198,7 +193,11 @@ export class DashboardPenyewaService {
           moldProduk: mold.namaProduk,
           moldCavity: mold.cavity,
           moldTonaseTon: mold.tonaseTon,
-          progressMolding: stats.progressMolding,
+          progressMolding: progressFor(
+            stats.totalGoodProduct,
+            mold.targetOutput,
+            mold.runs?.[0],
+          ),
           targetOutput: mold.targetOutput,
           achievement: achievementPercent(stats.totalGoodProduct, mold.targetOutput),
           totalGoodProduct: stats.totalGoodProduct,
@@ -251,6 +250,7 @@ export class DashboardPenyewaService {
       orderBy: { createdAt: 'desc' },
       include: {
         logProduksi: { orderBy: { occurredAt: 'desc' } },
+        runs: { orderBy: { at: 'desc' } },
         job: {
           include: {
             machines: { select: { machineNumber: true }, orderBy: { machineNumber: 'asc' } },
@@ -277,7 +277,7 @@ export class DashboardPenyewaService {
         jobNumber: job?.jobNumber ?? null,
         lifecycle: (job?.lifecycle as unknown as JobLifecycle | undefined) ?? null,
         machineNumbers: job?.machines.map((m) => m.machineNumber) ?? [],
-        progressMolding: stats.progressMolding,
+        progressMolding: progressFor(stats.totalGoodProduct, mold.targetOutput, mold.runs?.[0]),
         targetOutput: mold.targetOutput,
         totalGoodProduct: stats.totalGoodProduct,
         totalReject: stats.totalReject,
@@ -285,16 +285,72 @@ export class DashboardPenyewaService {
         rejectRate: totalOutput ? round((stats.totalReject / totalOutput) * 100) : 0,
         sisaHariSewa: remainingDays(job?.endDate ?? null, now),
         etaHari: etaDays(stats.totalGoodProduct, mold.targetOutput, stats.produksiHari),
-        planMaterialUtama: mold.planMaterialUtama as unknown as MaterialType | null,
+        planMaterialUtama: mold.planMaterialUtama,
         estimasiKg: mold.estimasiKg,
         materialUsedKg: stats.materialUsedKg,
         materialRemainingKg: material.remaining,
         materialUsagePercent: material.percent,
         endDate: job?.endDate?.toISOString() ?? null,
+        harian: toHarian(mold.logProduksi),
+        runs: toRuns(mold.runs ?? [], stats.totalGoodProduct, stats.materialUsedKg),
       };
     });
   }
 }
+
+// Rincian per hari dari Log Produksi, terbaru dulu (mengikuti urutan query).
+// Dipakai bersama oleh moldPlan dan cycleProduction supaya keduanya menampilkan
+// angka harian yang sama persis.
+// Riwayat sesi produksi cetakan. Capaian tiap sesi dihitung sebagai selisih
+// antara titik awal sesi itu dan titik awal sesi berikutnya; sesi terbaru diukur
+// terhadap akumulasi berjalan karena belum ada penutupnya.
+//
+// runs datang terbaru dulu, jadi "sesi berikutnya" adalah tetangga di indeks
+// sebelumnya.
+function toRuns(
+  runs: RunRow[],
+  totalGood: number,
+  totalMaterial: number,
+): MoldRunEntry[] {
+  return runs.map((run, i) => {
+    const berikutnya = i === 0 ? null : runs[i - 1];
+    const goodAkhir = berikutnya ? berikutnya.goodAwal : totalGood;
+    const materialAkhir = berikutnya ? berikutnya.materialAwal : totalMaterial;
+    const goodProduct = round(Math.max(goodAkhir - run.goodAwal, 0));
+
+    return {
+      id: run.id,
+      targetOutput: run.targetOutput,
+      estimasiKg: run.estimasiKg,
+      goodProduct,
+      materialUsedKg: round(Math.max(materialAkhir - run.materialAwal, 0)),
+      tercapai: goodProduct >= run.targetOutput,
+      mulai: run.at.toISOString(),
+      selesai: berikutnya ? berikutnya.at.toISOString() : null,
+    };
+  });
+}
+
+function toHarian(logs: LogRow[]): DailyCycleEntry[] {
+  return logs
+    .filter((l) => l.eventType === LogProduksiEventType.PRODUKSI_HARIAN)
+    .map((l) => ({
+      occurredAt: l.occurredAt.toISOString(),
+      goodProduct: l.goodProduct ?? 0,
+      rejectCount: l.rejectCount ?? 0,
+      materialUsedKg: l.materialUsedKg,
+      catatan: l.catatan,
+    }));
+}
+
+type RunRow = {
+  id: string;
+  targetOutput: number;
+  estimasiKg: number | null;
+  goodAwal: number;
+  materialAwal: number;
+  at: Date;
+};
 
 type LogRow = {
   eventType: string;
@@ -308,6 +364,23 @@ type LogRow = {
 
 // Ringkasan satu set LogProduksi (urut terbaru dulu). Satu tempat supaya angka di
 // dashboard job, plan mold, cycle production, dan detail cetakan tidak saling beda.
+// Progress cetakan diturunkan dari SESI produksi yang sedang berjalan, bukan dari
+// akumulasi umur cetakan. Cetakan yang dipakai lagi punya target barunya sendiri,
+// jadi hasil sesi lama tidak boleh membuatnya langsung terlihat selesai.
+//
+// Belum ada produksi di sesi ini berarti belum punya progress.
+function progressFor(
+  totalGood: number,
+  target: number | null,
+  sesi: { targetOutput: number; goodAwal: number } | undefined,
+) {
+  const targetSesi = sesi?.targetOutput ?? target;
+  const goodSesi = Math.max(totalGood - (sesi?.goodAwal ?? 0), 0);
+  if (goodSesi <= 0) return null;
+  if (targetSesi != null && goodSesi >= targetSesi) return ProgressMolding.SUDAH_DIPRODUKSI;
+  return ProgressMolding.ONGOING;
+}
+
 function summarizeLogs(logs: LogRow[]) {
   const produksiHari = new Set(
     logs
@@ -321,10 +394,6 @@ function summarizeLogs(logs: LogRow[]) {
     // Material terpakai adalah akumulasi, bukan angka terakhir: plan berlaku sebagai
     // kuota untuk seluruh siklus produksi cetakan itu.
     materialUsedKg: round(logs.reduce((a, l) => a + (l.materialUsedKg ?? 0), 0)),
-    progressMolding:
-      (logs.find((l) => l.progressMolding != null)?.progressMolding as unknown as
-        | ProgressMolding
-        | undefined) ?? null,
     latestLogAt: logs[0]?.occurredAt.toISOString() ?? null,
     produksiHari,
   };

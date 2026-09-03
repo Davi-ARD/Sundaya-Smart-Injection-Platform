@@ -353,37 +353,32 @@ function MoldCycleBlock({ cycle }: { cycle: MoldCycleProduction }) {
         </div>
 
         <div className="rounded-lg border border-slate-200/70 bg-white p-3.5">
-          <p className="text-sm font-semibold text-slate-950">Ringkasan cycle harian</p>
-          {cycle.harian.length === 0 ? (
-            <p className="mt-3 text-sm text-slate-500">Belum ada produksi harian tercatat.</p>
-          ) : (
-            <div className="mt-2 overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-200/70 text-sm">
-                <thead>
-                  <tr className="text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
-                    <th className="py-2 pr-4">Tanggal</th>
-                    <th className="py-2 pr-4">Good</th>
-                    <th className="py-2 pr-4">Reject</th>
-                    <th className="py-2 pr-4">Material</th>
-                    <th className="py-2">Catatan</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {cycle.harian.map((hari) => (
-                    <tr key={hari.occurredAt}>
-                      <td className="py-2 pr-4 whitespace-nowrap">{formatDate(hari.occurredAt)}</td>
-                      <td className="py-2 pr-4">{formatNumber(hari.goodProduct)}</td>
-                      <td className="py-2 pr-4">{formatNumber(hari.rejectCount)}</td>
-                      <td className="py-2 pr-4">
-                        {hari.materialUsedKg != null ? `${formatNumber(hari.materialUsedKg)} kg` : '-'}
-                      </td>
-                      <td className="py-2 text-slate-500">{hari.catatan ?? '-'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <p className="text-sm font-semibold text-slate-950">Ringkasan produksi</p>
+          <dl className="mt-2 divide-y divide-slate-100">
+            <MiniRow
+              label="Hari produksi tercatat"
+              value={`${formatNumber(cycle.harian.length)} hari`}
+            />
+            <MiniRow
+              label="Produksi terakhir"
+              value={cycle.harian.length ? formatDate(cycle.harian[0].occurredAt) : 'Belum ada'}
+            />
+            <MiniRow
+              label="Output hari terakhir"
+              value={
+                cycle.harian.length
+                  ? `${formatNumber(cycle.harian[0].goodProduct)} baik, ${formatNumber(cycle.harian[0].rejectCount)} reject`
+                  : '-'
+              }
+            />
+          </dl>
+          {/* Grafik dan rincian per hari ada di panel Detail cetakan (tab Cetakan):
+              dashboard cukup memantau booking berjalan, sedangkan riwayat harian
+              tetap bisa ditelusuri di sana walau booking-nya sudah selesai. */}
+          <p className="mt-3 text-xs leading-5 text-slate-500">
+            Grafik dan rincian produksi per hari ada di tab Cetakan, tombol Detail pada cetakan
+            ini. Riwayatnya tetap terbaca walau booking sudah selesai.
+          </p>
         </div>
       </div>
     </section>

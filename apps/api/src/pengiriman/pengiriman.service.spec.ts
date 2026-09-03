@@ -144,10 +144,14 @@ describe('PengirimanService.create', () => {
     expect(prisma.logPengiriman.create).not.toHaveBeenCalled();
   });
 
-  it('memberi notifikasi ke Admin Sundaya setelah log tersimpan', async () => {
+  it('memberi tahu Admin Penyewa tenant itu, menaut ke Log Aktivitas', async () => {
     const prisma = prismaMock();
     prisma.job.findUnique.mockResolvedValue(jobRow);
     prisma.logPengiriman.create.mockResolvedValue(row());
+    // Panggilan pertama: Admin Penyewa (anak Manager). Kedua: staf Sundaya.
+    prisma.user.findMany
+      .mockResolvedValueOnce([{ id: 'ap-1' }])
+      .mockResolvedValueOnce([{ id: 'adm-1' }]);
     const createMany = jest.fn();
 
     await svc(prisma, jest.fn(), createMany).create(manager, {
@@ -157,11 +161,42 @@ describe('PengirimanService.create', () => {
       rencanaKirim: '2026-08-05T00:00:00.000Z',
     });
 
-    expect(createMany).toHaveBeenCalledWith(
-      ['adm-1'],
-      expect.any(String),
+    // Admin Penyewa disaring lewat parentId = managerId job, bukan seluruh tenant.
+    expect(prisma.user.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ parentId: 'mgr-1', isActive: true }),
+      }),
+    );
+    expect(createMany).toHaveBeenNthCalledWith(
+      1,
+      ['ap-1'],
+      'Barang dalam perjalanan',
       expect.stringContaining('SSIP-1'),
       '/penerimaan',
+    );
+  });
+
+  it('staf Sundaya ikut diberi tahu, tanpa tautan ke halaman milik penyewa', async () => {
+    const prisma = prismaMock();
+    prisma.job.findUnique.mockResolvedValue(jobRow);
+    prisma.logPengiriman.create.mockResolvedValue(row());
+    prisma.user.findMany
+      .mockResolvedValueOnce([{ id: 'ap-1' }])
+      .mockResolvedValueOnce([{ id: 'adm-1' }]);
+    const createMany = jest.fn();
+
+    await svc(prisma, jest.fn(), createMany).create(manager, {
+      jobId: 'job-1',
+      item: ItemPengiriman.MOLD,
+      moldId: 'mold-1',
+      rencanaKirim: '2026-08-05T00:00:00.000Z',
+    });
+
+    expect(createMany).toHaveBeenNthCalledWith(
+      2,
+      ['adm-1'],
+      'Rencana pengiriman baru',
+      expect.stringContaining('SSIP-1'),
     );
   });
 
