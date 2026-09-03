@@ -1,15 +1,14 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { $Enums, Prisma, User as PrismaUser } from '@prisma/client';
+import { $Enums, User as PrismaUser } from '@prisma/client';
 import {
   LogProduksi,
-  LogProduksiEventType,
   MoldTrackingStatus,
   ProgressMolding,
   Role,
 } from '@mold-tracker/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { MoldTrackingService } from '../molds/mold-tracking.service';
-import { activateJobOnProduksi, completeJobIfAllMoldsReturned } from '../jobs/job-transitions';
+import { activateJobOnProduksi } from '../jobs/job-transitions';
 import { assertNotFuture } from '../common/time';
 import { machineForMold, moldInJob } from '../common/log-refs';
 import { CreateLogProduksiDto } from './dto';
@@ -59,15 +58,38 @@ export class LogProduksiService {
   async append(user: PrismaUser, jobId: string, dto: CreateLogProduksiDto): Promise<LogProduksi> {
     // Event Layer 2 mencatat kejadian yang sudah terjadi, bukan rencana.
     assertNotFuture(dto.occurredAt, 'Waktu kejadian');
-    await this.getJobInTenant(user, jobId);
+    const job = await this.getJobInTenant(user, jobId);
+    this.assertSewaMasihBerjalan(job);
     const mold = await moldInJob(this.prisma, jobId, dto.moldId);
-    // Kedua jenis event berjalan di atas mesin: mesin harus salah satu mesin
-    // pinjaman booking dan tonasenya harus sanggup menahan cetakan itu.
+    // Event terjadi di atas mesin: mesin harus salah satu mesin pinjaman booking
+    // dan tonasenya harus sanggup menahan cetakan itu.
     const machine = await machineForMold(this.prisma, jobId, dto.machineId, mold);
-    const eventData = this.buildEventData(dto);
-    if (dto.eventType === LogProduksiEventType.PRODUKSI_HARIAN) {
-      await this.assertWithinPlan(mold, dto);
-    }
+
+    // Batas produksi dibaca dari SESI berjalan, bukan akumulasi seumur hidup
+    // cetakan. Cetakan yang dipakai lagi punya sesi baru dengan targetnya
+    // sendiri, jadi hasil sesi lama tidak ikut membebani sesi sekarang.
+    const akum = await this.akumulasi(dto.moldId);
+    const sesi = await this.sesiBerjalan(dto.moldId);
+    const sebelumnya = {
+      goodProduct: akum.goodProduct - (sesi?.goodAwal ?? 0),
+      materialUsedKg: akum.materialUsedKg - (sesi?.materialAwal ?? 0),
+    };
+    // Tanpa sesi (cetakan lama yang belum pernah diberi target) batasnya jatuh
+    // kembali ke plan cetakan itu sendiri, jadi perilakunya sama seperti sebelum
+    // sesi produksi diperkenalkan.
+    const batas = {
+      kodeMold: mold.kodeMold,
+      targetOutput: sesi?.targetOutput ?? mold.targetOutput,
+      estimasiKg: sesi?.estimasiKg ?? mold.estimasiKg,
+    };
+    this.assertMasihBolehProduksi(batas, sebelumnya.goodProduct);
+    this.assertWithinPlan(batas, dto, sebelumnya);
+
+    // Progress dihitung server, bukan dipilih Admin Penyewa: begitu produk baik
+    // sesi ini menyentuh targetnya, sesi itu dinyatakan selesai.
+    const totalGood = sebelumnya.goodProduct + dto.goodProduct;
+    const targetTercapai = batas.targetOutput != null && totalGood >= batas.targetOutput;
+    const progress = targetTercapai ? ProgressMolding.SUDAH_DIPRODUKSI : ProgressMolding.ONGOING;
 
     return this.prisma.$transaction(async (tx) => {
       const log = await tx.logProduksi.create({
@@ -76,40 +98,79 @@ export class LogProduksiService {
           moldId: dto.moldId,
           machineId: machine.id,
           byId: user.id,
-          eventType: dto.eventType as unknown as $Enums.LogProduksiEventType,
+          eventType: $Enums.LogProduksiEventType.PRODUKSI_HARIAN,
           occurredAt: new Date(dto.occurredAt),
           catatan: dto.catatan,
-          ...eventData,
+          goodProduct: dto.goodProduct,
+          rejectCount: dto.rejectCount,
+          materialUsedKg: dto.materialUsedKg,
+          progressMolding: progress as unknown as $Enums.ProgressMolding,
         },
       });
-      if (dto.eventType === LogProduksiEventType.PRODUKSI_HARIAN) {
-        await this.moldTracking.advance(tx, dto.moldId, MoldTrackingStatus.PRODUCTION, user.id);
-        await activateJobOnProduksi(tx, jobId);
-      }
-      if (dto.progressMolding === ProgressMolding.SUDAH_DIPRODUKSI) {
+      await this.moldTracking.advance(tx, dto.moldId, MoldTrackingStatus.PRODUCTION, user.id);
+      await activateJobOnProduksi(tx, jobId);
+      // Cetakan yang menyentuh target dinyatakan selesai, tapi booking-nya TIDAK
+      // ikut ditutup: selama masa sewa berjalan penyewa masih boleh memakai mesin
+      // untuk cetakan lain, atau cetakan ini lagi setelah Manager menaikkan target.
+      if (targetTercapai) {
         await this.moldTracking.advance(tx, dto.moldId, MoldTrackingStatus.COMPLETED, user.id);
-        await completeJobIfAllMoldsReturned(tx, jobId);
       }
       return toLogProduksi(log, mold.kodeMold, machine.machineNumber);
     });
   }
 
-  // Plan cetakan adalah batas keras, bukan sekadar pembanding: akumulasi produk baik
-  // tidak boleh melewati targetOutput, dan akumulasi material terpakai tidak boleh
-  // melewati estimasiKg. Plan yang kosong berarti tidak dibatasi.
-  private async assertWithinPlan(
-    mold: { kodeMold: string; targetOutput: number | null; estimasiKg: number | null },
-    dto: CreateLogProduksiDto,
-  ) {
-    const terpakai = await this.prisma.logProduksi.aggregate({
-      where: { moldId: dto.moldId, eventType: $Enums.LogProduksiEventType.PRODUKSI_HARIAN },
+  // Sesi produksi yang sedang berjalan: baris MoldProductionRun terbaru cetakan
+  // itu. Cetakan tanpa sesi (target output belum pernah diisi) berarti tidak
+  // dibatasi, sama seperti perilaku lama.
+  private async sesiBerjalan(moldId: string) {
+    return this.prisma.moldProductionRun.findFirst({
+      where: { moldId },
+      orderBy: { at: 'desc' },
+      select: { targetOutput: true, estimasiKg: true, goodAwal: true, materialAwal: true },
+    });
+  }
+
+  // Akumulasi produksi cetakan sejauh ini, dipakai validasi batas sekaligus
+  // penentuan progress. Satu query, dipakai bersama supaya angkanya konsisten.
+  private async akumulasi(moldId: string) {
+    const agg = await this.prisma.logProduksi.aggregate({
+      where: { moldId, eventType: $Enums.LogProduksiEventType.PRODUKSI_HARIAN },
       _sum: { goodProduct: true, materialUsedKg: true },
     });
+    return {
+      goodProduct: agg._sum.goodProduct ?? 0,
+      materialUsedKg: agg._sum.materialUsedKg ?? 0,
+    };
+  }
 
+  // Cetakan yang sudah menyentuh target output dianggap selesai: produksi harian
+  // berikutnya ditolak, bukan sekadar dibatasi sisanya. Ini yang menghentikan
+  // Admin Penyewa melanjutkan progres pada cetakan yang sudah tuntas.
+  private assertMasihBolehProduksi(
+    mold: { kodeMold: string; targetOutput: number | null },
+    goodSebelumnya: number,
+  ) {
+    if (mold.targetOutput == null) return;
+    if (goodSebelumnya >= mold.targetOutput) {
+      throw new BadRequestException(
+        `Cetakan ${mold.kodeMold} sudah mencapai target output ${mold.targetOutput} produk baik, produksinya dinyatakan selesai dan tidak bisa ditambah lagi`,
+      );
+    }
+  }
+
+  // Plan cetakan adalah batas keras: akumulasi produk baik tidak boleh melewati
+  // targetOutput, dan material terpakai tidak boleh melewati estimasiKg. Plan yang
+  // kosong berarti tidak dibatasi. Akumulasi diterima sebagai argumen supaya tidak
+  // menghitung ulang query yang sama.
+  private assertWithinPlan(
+    mold: { kodeMold: string; targetOutput: number | null; estimasiKg: number | null },
+    dto: CreateLogProduksiDto,
+    sebelumnya: { goodProduct: number; materialUsedKg: number },
+  ) {
     if (mold.targetOutput != null) {
-      const totalGood = (terpakai._sum.goodProduct ?? 0) + (dto.goodProduct ?? 0);
+      const totalGood = sebelumnya.goodProduct + dto.goodProduct;
       if (totalGood > mold.targetOutput) {
-        const sisa = mold.targetOutput - (terpakai._sum.goodProduct ?? 0);
+        const sisa = mold.targetOutput - sebelumnya.goodProduct;
         throw new BadRequestException(
           `Produk baik melewati target cetakan ${mold.kodeMold}: target ${mold.targetOutput}, sisa ${sisa}`,
         );
@@ -117,9 +178,9 @@ export class LogProduksiService {
     }
 
     if (mold.estimasiKg != null && dto.materialUsedKg != null) {
-      const totalMaterial = (terpakai._sum.materialUsedKg ?? 0) + dto.materialUsedKg;
+      const totalMaterial = sebelumnya.materialUsedKg + dto.materialUsedKg;
       if (totalMaterial > mold.estimasiKg) {
-        const sisa = mold.estimasiKg - (terpakai._sum.materialUsedKg ?? 0);
+        const sisa = mold.estimasiKg - sebelumnya.materialUsedKg;
         throw new BadRequestException(
           `Material terpakai melewati plan cetakan ${mold.kodeMold}: plan ${mold.estimasiKg} kg, sisa ${sisa} kg`,
         );
@@ -127,40 +188,24 @@ export class LogProduksiService {
     }
   }
 
-  // Field wajib per eventType ditegakkan di sini; hanya field milik tipe yang lolos
-  // (field lintas-tipe diabaikan agar timeline tidak tercampur).
-  private buildEventData(
-    dto: CreateLogProduksiDto,
-  ): Partial<Prisma.LogProduksiUncheckedCreateInput> {
-    switch (dto.eventType) {
-      case LogProduksiEventType.PRODUKSI_HARIAN:
-        if (dto.goodProduct == null || dto.rejectCount == null) {
-          throw new BadRequestException('PRODUKSI_HARIAN wajib goodProduct dan rejectCount');
-        }
-        return {
-          goodProduct: dto.goodProduct,
-          rejectCount: dto.rejectCount,
-          materialUsedKg: dto.materialUsedKg,
-        };
-      case LogProduksiEventType.PROGRESS_MOLDING:
-        if (!dto.progressMolding) {
-          throw new BadRequestException('PROGRESS_MOLDING wajib progressMolding');
-        }
-        return {
-          progressMolding: dto.progressMolding as unknown as $Enums.ProgressMolding,
-          keteranganProgress: dto.keteranganProgress,
-        };
-      default:
-        throw new BadRequestException('eventType tidak dikenal');
+  // Produksi hanya boleh dicatat selama masa sewa berjalan. Setelah booking
+  // ditutup mesinnya sudah kembali ke kolam Sundaya dan bisa dipinjamkan ke
+  // penyewa lain, jadi pencatatan susulan akan mengklaim mesin yang bukan lagi
+  // milik penyewa ini.
+  private assertSewaMasihBerjalan(job: { lifecycle: string; endDate: Date | null }) {
+    const selesai = job.lifecycle === ($Enums.JobLifecycle.SELESAI as string);
+    const lewatMasaSewa = job.endDate != null && job.endDate.getTime() < Date.now();
+    if (selesai || lewatMasaSewa) {
+      throw new BadRequestException(
+        'Masa sewa booking ini sudah berakhir, produksi tidak bisa dicatat lagi. Ajukan booking baru untuk melanjutkan produksi.',
+      );
     }
   }
 
-  // Job harus milik tenant pengakses; job tenant lain / tidak ada -> 404 (tidak
-  // dibocorkan keberadaannya). Staf Sundaya lihat semua.
   private async getJobInTenant(user: PrismaUser, jobId: string) {
     const job = await this.prisma.job.findUnique({
       where: { id: jobId },
-      select: { id: true, managerId: true },
+      select: { id: true, managerId: true, lifecycle: true, endDate: true },
     });
     if (!job) throw new NotFoundException('Job tidak ditemukan');
     if (STAF_SUNDAYA.includes(user.role as Role)) return job;

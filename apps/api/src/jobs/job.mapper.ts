@@ -2,7 +2,6 @@ import {
   Job,
   JobMachine,
   JobMold,
-  MaterialType,
   RentalExtension,
 } from '@mold-tracker/shared';
 import {
@@ -30,7 +29,20 @@ export const toJobMachine = (m: MachineRow): JobMachine => ({
 
 // Cetakan di dalam booking. Plan dan tonase dibaca dari Mold, tidak diduplikasi
 // di Job, jadi tidak ada dua sumber angka rencana yang bisa berbeda.
-export function toJobMold(m: PrismaMold): JobMold {
+export type MoldWithProgress = PrismaMold & {
+  runs?: { targetOutput: number; goodAwal: number }[];
+  logProduksi?: { goodProduct: number | null }[];
+};
+
+export function toJobMold(m: MoldWithProgress): JobMold {
+  // Capaian dihitung terhadap SESI berjalan, bukan seluruh umur cetakan: cetakan
+  // yang dipakai lagi punya target barunya sendiri, jadi hasil sesi lama tidak
+  // boleh membuatnya langsung terlihat selesai.
+  const sesi = m.runs?.[0];
+  const akumulasi = (m.logProduksi ?? []).reduce((a, l) => a + (l.goodProduct ?? 0), 0);
+  const targetSesi = sesi?.targetOutput ?? m.targetOutput;
+  const goodSesi = Math.max(akumulasi - (sesi?.goodAwal ?? 0), 0);
+
   return {
     moldId: m.id,
     kodeMold: m.kodeMold,
@@ -38,9 +50,13 @@ export function toJobMold(m: PrismaMold): JobMold {
     cavity: m.cavity,
     tonaseTon: m.tonaseTon,
     trackingStatus: m.trackingStatus as unknown as JobMold['trackingStatus'],
-    planMaterialUtama: m.planMaterialUtama as unknown as MaterialType | null,
+    planMaterialUtama: m.planMaterialUtama,
     estimasiKg: m.estimasiKg,
-    targetOutput: m.targetOutput,
+    targetOutput: targetSesi,
+    goodProduct: goodSesi,
+    // Cetakan tanpa target tidak pernah dinyatakan selesai sendiri: batasnya
+    // memang tidak ada, jadi produksinya tetap terbuka.
+    selesai: targetSesi != null && goodSesi >= targetSesi,
   };
 }
 
@@ -49,7 +65,7 @@ export function toJobMold(m: PrismaMold): JobMold {
 // ponytail: enum shared dan Prisma nominal berbeda meski nilainya sama, cast di sini saja.
 export function toJob(
   j: PrismaJob & { manager?: { companyName: string | null } },
-  molds: PrismaMold[] = [],
+  molds: MoldWithProgress[] = [],
   machines: MachineRow[] = [],
   extensions: PrismaRentalExtension[] = [],
   now: Date = new Date(),

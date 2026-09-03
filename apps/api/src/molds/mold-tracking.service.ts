@@ -36,4 +36,24 @@ export class MoldTrackingService {
     await tx.mold.update({ where: { id: moldId }, data: { trackingStatus: asTracking(target) } });
     await tx.moldTrackingEvent.create({ data: { moldId, status: asTracking(target), byId } });
   }
+
+  // Satu-satunya langkah mundur yang diizinkan: cetakan yang sudah COMPLETED
+  // dipakai lagi untuk mencetak produk yang sama. Dipicu saat Manager menaikkan
+  // target output, jadi cetakan kembali ke PRODUCTION tanpa perlu dikirim ulang
+  // (fisiknya masih di Sundaya). Selain dari COMPLETED, panggilan ini diabaikan
+  // supaya tidak ada jalan mundur lain yang ikut terbuka.
+  async reopen(tx: Prisma.TransactionClient, moldId: string, byId: string): Promise<void> {
+    const mold = await tx.mold.findUnique({
+      where: { id: moldId },
+      select: { trackingStatus: true },
+    });
+    if (!mold) throw new NotFoundException('Cetakan tidak ditemukan');
+    if ((mold.trackingStatus as unknown as MoldTrackingStatus | null) !== MoldTrackingStatus.COMPLETED) {
+      return;
+    }
+
+    const target = asTracking(MoldTrackingStatus.PRODUCTION);
+    await tx.mold.update({ where: { id: moldId }, data: { trackingStatus: target } });
+    await tx.moldTrackingEvent.create({ data: { moldId, status: target, byId } });
+  }
 }

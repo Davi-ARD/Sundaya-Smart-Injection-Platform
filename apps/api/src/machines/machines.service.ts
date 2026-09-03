@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { $Enums, Prisma, User as PrismaUser } from '@prisma/client';
 import { Machine, MachineStatus, WarrantyStatus } from '@mold-tracker/shared';
 import { PrismaService } from '../prisma/prisma.service';
+import { closeExpiredJobs } from '../jobs/job-transitions';
 import { CreateMachineDto, UpdateMachineDto } from './dto';
 import { toMachine } from './machine.mapper';
 import { computeWarranty } from './warranty';
@@ -20,6 +21,9 @@ export class MachinesService {
   // Single-provider: semua mesin milik Sundaya, jadi staf melihat semua.
   // Mesin yang diarsipkan disembunyikan dari daftar aktif kecuali archived=true diminta eksplisit.
   async findAll(status?: MachineStatus, archived?: boolean): Promise<Machine[]> {
+    // Mesin dari booking yang masa sewanya habis dibebaskan dulu, supaya daftar
+    // mesin tersedia untuk approval booking berikutnya benar-benar mutakhir.
+    await closeExpiredJobs(this.prisma);
     const isArchived = archived ?? false;
     const where: Prisma.MachineWhereInput = {
       status: status ? asMachineStatus(status) : undefined,

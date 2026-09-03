@@ -88,22 +88,15 @@ enum MoldTrackingStatus {
   COMPLETED
 }
 
-// Jenis material plastik. Dipakai sebagai pilihan tetap supaya penamaan material
-// seragam lintas peran (plan cetakan, Log Pengiriman, Log Aktivitas).
-enum MaterialType {
-  PP
-  PE
-  PS
-  ABS
-  PVC
-  PC
-  POM
-  PA
-  PET
-  SAN
+// Jenis barang pada Log Pengiriman (Manager) dan Log Penerimaan (Admin Sundaya).
+// Kondisi barang saat diterima. CUKUP_BAIK dan TIDAK_BAIK wajib disertai catatan
+// (ditegakkan di service, bukan di database).
+enum KondisiBarang {
+  BAIK
+  CUKUP_BAIK
+  TIDAK_BAIK
 }
 
-// Jenis barang pada Log Pengiriman (Manager) dan Log Penerimaan (Admin Sundaya).
 enum ItemPengiriman {
   MOLD
   MATERIAL
@@ -229,7 +222,7 @@ model Mold {
   managerId         String
   jobId             String?
   trackingStatus    MoldTrackingStatus?
-  planMaterialUtama MaterialType?
+  planMaterialUtama String?
   estimasiKg        Float?
   targetOutput      Float?
   createdAt         DateTime           @default(now())
@@ -240,8 +233,35 @@ model Mold {
   logProduksi    LogProduksi[]
   logPengiriman  LogPengiriman[]
   logPenerimaan  LogPenerimaan[]
+  runs           MoldProductionRun[]
 
   @@index([jobId])
+}
+
+// Satu sesi produksi cetakan. Cetakan yang sudah selesai boleh dipakai lagi
+// selama masa sewa berjalan: Manager menetapkan target output baru (boleh lebih
+// besar maupun lebih kecil dari sesi sebelumnya) lalu mengirim material lagi.
+//
+// Barisnya append-only sehingga sekaligus menjadi riwayat: target lama tetap
+// terbaca setelah diganti target baru, lengkap dengan hasil sesi itu.
+//
+// goodAwal dan materialAwal adalah akumulasi cetakan SEBELUM sesi ini dimulai.
+// Dengan begitu capaian satu sesi dihitung sebagai selisih terhadap akumulasi
+// berjalan, tanpa perlu menyalin angka produksi ke sini.
+model MoldProductionRun {
+  id           String   @id @default(cuid())
+  moldId       String
+  jobId        String?
+  targetOutput Float
+  estimasiKg   Float?
+  goodAwal     Float    @default(0)
+  materialAwal Float    @default(0)
+  byId         String
+  at           DateTime @default(now())
+
+  mold Mold @relation(fields: [moldId], references: [id], onDelete: Cascade)
+
+  @@index([moldId, at])
 }
 
 // Histori pergerakan mold (append-only). Timestamp RECEIVED dipakai sebagai
@@ -268,7 +288,10 @@ model MoldTrackingEvent {
 // lokasi Sundaya.
 model Job {
   id                    String       @id @default(cuid())
-  jobNumber             String       @unique
+  // Nomor job unik per perusahaan penyewa, bukan global: tiap tenant punya
+  // antrean sekuensnya sendiri supaya jumlah booking tenant lain tidak terbaca
+  // dari nomor job sendiri.
+  jobNumber             String
   managerId             String
   assignedById          String?
   lifecycle             JobLifecycle @default(DIAJUKAN)
@@ -296,6 +319,8 @@ model Job {
   logProduksi   LogProduksi[]
   logPengiriman LogPengiriman[]
   logPenerimaan LogPenerimaan[]
+
+  @@unique([managerId, jobNumber])
 }
 
 // Log Pengiriman (milik Manager Penyewa). Log informasi kapan mold atau material
@@ -310,7 +335,7 @@ model LogPengiriman {
   item         ItemPengiriman
   rencanaKirim DateTime
   // Khusus item MATERIAL.
-  materialName MaterialType?
+  materialName String?
   jumlahKg     Float?
   noSuratJalan String?
   catatan      String?
@@ -336,10 +361,10 @@ model LogPenerimaan {
   item         ItemPengiriman
   diterimaAt   DateTime
   // Khusus item MATERIAL.
-  materialName MaterialType?
+  materialName String?
   jumlahKg     Float?
   noSuratJalan String?
-  kondisi      String?
+  kondisi      KondisiBarang?
   catatan      String?
   byId         String
   createdAt    DateTime       @default(now())

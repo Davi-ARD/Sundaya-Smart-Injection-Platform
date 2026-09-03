@@ -16,8 +16,10 @@ import {
   Role,
 } from '@mold-tracker/shared';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { machineWalk } from '../machines/machine-state';
 import { nextJobLifecycle } from './job-state';
+import { closeExpiredJobs, tutupBooking } from './job-transitions';
 import { remainingDays } from './job-status';
 import { buildJobNumber } from './job-number';
 import { toJob, toRentalExtension } from './job.mapper';
@@ -48,7 +50,16 @@ const machineSelect = {
 
 const withDetails = {
   include: {
-    molds: { orderBy: { kodeMold: 'asc' as const } },
+    molds: {
+      orderBy: { kodeMold: 'asc' as const },
+      // Sesi produksi terbaru dan akumulasi produksinya dipakai menentukan apakah
+      // cetakan itu masih boleh diproduksi. Tanpa ini Log Produksi tidak punya
+      // cara tahu cetakan mana yang sudah tuntas.
+      include: {
+        runs: { orderBy: { at: 'desc' as const }, take: 1 },
+        logProduksi: { select: { goodProduct: true } },
+      },
+    },
     machines: machineSelect,
     manager: { select: { companyName: true } },
     extensions: { orderBy: { requestedAt: 'desc' as const } },
@@ -65,7 +76,10 @@ const detailJob = (j: JobWithDetails) => toJob(j, j.molds, j.machines, j.extensi
 
 @Injectable()
 export class JobsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notifications: NotificationsService,
+  ) {}
 
   // Booking (MANAGER_PENYEWA): pilih satu atau lebih cetakan miliknya, jumlah mesin
   // yang ingin dipinjam, plus rencana waktu. Plan material dan target output tidak
@@ -91,12 +105,18 @@ export class JobsService {
     }
 
     // Nomor job menyebut kode cetakannya supaya penyewa tahu job itu tugas untuk apa.
-    // Sekuens diambil di dalam transaksi agar dua booking berbarengan tidak bernomor sama.
+    // Sekuensnya dihitung PER PERUSAHAAN, bukan global: tiap tenant punya antrean
+    // sendiri mulai dari 001, sehingga jumlah booking tenant lain tidak terbaca dari
+    // nomor job sendiri. Diambil di dalam transaksi supaya dua booking berbarengan
+    // dari tenant yang sama tidak bernomor sama.
     const kodeMolds = molds.map((m) => m.kodeMold).sort();
     const job = await this.prisma.$transaction(async (tx) => {
       const created = await tx.job.create({
         data: {
-          jobNumber: buildJobNumber(kodeMolds, (await tx.job.count()) + 1),
+          jobNumber: buildJobNumber(
+            kodeMolds,
+            (await tx.job.count({ where: { managerId: user.id } })) + 1,
+          ),
           managerId: user.id,
           requestedMachineCount: dto.requestedMachineCount,
           requestedDurationDays: dto.requestedDurationDays,
@@ -113,12 +133,20 @@ export class JobsService {
       });
       return tx.job.findUniqueOrThrow({ where: { id: created.id }, ...withDetails });
     });
+    await this.notifyStaf(
+      'Booking baru menunggu approval',
+      `${user.nama} mengajukan booking ${job.jobNumber} untuk ${kodeMolds.length} cetakan.`,
+      '/staff/booking',
+    );
     return detailJob(job);
   }
 
   // Scoping tenant di service: staf Sundaya lihat semua; Manager lihat miliknya;
   // Admin Penyewa lihat tenant induknya (lewat parentId). Single-provider.
   async findAll(user: PrismaUser, lifecycle?: JobLifecycle): Promise<Job[]> {
+    // Booking yang masa sewanya sudah lewat ditutup dulu supaya daftar ini dan
+    // status mesinnya tidak menampilkan sewa yang sebenarnya sudah berakhir.
+    await closeExpiredJobs(this.prisma);
     const scope = this.tenantScope(user);
     const jobs = await this.prisma.job.findMany({
       where: { ...scope, lifecycle: lifecycle ? asLifecycle(lifecycle) : undefined },
@@ -166,6 +194,19 @@ export class JobsService {
     const sudahAda = diminta.filter((mid) => job.machines.some((m) => m.id === mid));
     if (sudahAda.length) {
       throw new ConflictException('Sebagian mesin sudah dipinjamkan ke booking ini');
+    }
+
+    // Jumlah mesin yang dipinjamkan tidak boleh melebihi yang dipesan penyewa:
+    // itu yang mereka setujui dan bayar. Kelebihan mesin juga menahan armada yang
+    // seharusnya bisa dipakai booking lain.
+    const totalSetelahnya = job.machines.length + diminta.length;
+    if (totalSetelahnya > job.requestedMachineCount) {
+      const sisa = job.requestedMachineCount - job.machines.length;
+      throw new BadRequestException(
+        sisa <= 0
+          ? `Booking ini sudah dipenuhi ${job.machines.length} mesin sesuai permintaan penyewa (${job.requestedMachineCount} mesin), tidak bisa ditambah lagi`
+          : `Penyewa memesan ${job.requestedMachineCount} mesin dan ${job.machines.length} sudah dipinjamkan, jadi hanya bisa menambah ${sisa} mesin lagi`,
+      );
     }
 
     const machines = await this.prisma.machine.findMany({ where: { id: { in: diminta } } });
@@ -221,7 +262,16 @@ export class JobsService {
         ...withDetails,
       }),
     ]);
-    return detailJob(updated as JobWithDetails);
+    const detail = detailJob(updated as JobWithDetails);
+    if (konfirmasiPertama) {
+      await this.notifications.create(
+        job.managerId,
+        'Booking disetujui',
+        `Booking ${detail.jobNumber} disetujui dan mulai dipinjami mesin.`,
+        '/booking',
+      );
+    }
+    return detail;
   }
 
   // ADMIN_SUNDAYA menarik satu mesin dari booking yang belum berjalan, mis. salah pilih
@@ -341,6 +391,90 @@ export class JobsService {
   }
 
   // ADMIN_SUNDAYA menolak: DIAJUKAN -> DITOLAK. Belum ada mesin ter-assign di DIAJUKAN.
+  // Menambah cetakan ke booking yang sedang berjalan. Yang disetujui Sundaya saat
+  // approval adalah MESIN dan DURASI, dan keduanya tidak berubah di sini, jadi
+  // langkah ini tidak butuh approval ulang: penyewa hanya menentukan apa yang
+  // dicetak di atas mesin yang sudah sah dipinjamnya.
+  //
+  // Syaratnya tetap dijaga: booking masih dalam masa sewa, cetakan milik Manager
+  // itu sendiri dan belum terpakai booking lain, serta ada mesin pinjaman yang
+  // tonasenya sanggup menahan cetakan itu.
+  async addMolds(user: PrismaUser, id: string, moldIds: string[]): Promise<Job> {
+    const job = await this.prisma.job.findUnique({ where: { id }, ...withDetails });
+    if (!job) throw new NotFoundException('Job tidak ditemukan');
+    if (job.managerId !== user.id) throw new NotFoundException('Job tidak ditemukan');
+    this.assertLifecycle(job.lifecycle, JobLifecycle.AKTIF);
+    if (job.endDate != null && job.endDate.getTime() < Date.now()) {
+      throw new BadRequestException(
+        'Masa sewa booking ini sudah berakhir, cetakan baru tidak bisa ditambahkan.',
+      );
+    }
+
+    const molds = await this.prisma.mold.findMany({
+      where: { id: { in: moldIds }, managerId: user.id },
+      select: { id: true, kodeMold: true, tonaseTon: true, jobId: true },
+    });
+    if (molds.length !== moldIds.length) {
+      throw new NotFoundException('Sebagian cetakan tidak ditemukan');
+    }
+    const sudahDipakai = molds.find((m) => m.jobId != null);
+    if (sudahDipakai) {
+      throw new ConflictException(`Cetakan ${sudahDipakai.kodeMold} sudah dipakai booking lain`);
+    }
+
+    // Mesin yang dipinjamkan tidak bertambah, jadi cetakan baru harus muat di
+    // salah satu mesin yang sudah ada. Tanpa cek ini penyewa bisa menambahkan
+    // cetakan yang tidak mungkin dijalankan mesin pinjamannya.
+    const terbesar = job.machines.reduce((a, b) => (b.tonaseTon > a.tonaseTon ? b : a));
+    const kelebihan = molds.find((m) => m.tonaseTon > terbesar.tonaseTon);
+    if (kelebihan) {
+      throw new BadRequestException(
+        `Cetakan ${kelebihan.kodeMold} butuh ${kelebihan.tonaseTon} ton, melebihi mesin terbesar yang dipinjamkan (${terbesar.machineNumber}, ${terbesar.tonaseTon} ton)`,
+      );
+    }
+
+    await this.prisma.mold.updateMany({
+      where: { id: { in: moldIds } },
+      data: { jobId: job.id, trackingStatus: asMoldTracking(MoldTrackingStatus.PLANNING) },
+    });
+
+    await this.notifyStaf(
+      'Cetakan baru pada booking berjalan',
+      `${user.nama} menambahkan ${molds.map((m) => m.kodeMold).join(', ')} ke booking ${job.jobNumber}.`,
+      '/staff/booking',
+    );
+
+    return this.findOne(user, id);
+  }
+
+  // Manager mengakhiri sewa lebih awal. Cetakan yang direncanakan sudah beres dan
+  // sisa harinya tidak akan dipakai, jadi mesin dikembalikan ke Sundaya sekarang
+  // supaya bisa dipinjamkan ke penyewa lain. Tanpa tombol ini booking tetap
+  // berjalan sampai endDate seperti biasa: mengakhiri lebih awal selalu pilihan
+  // penyewa, tidak pernah otomatis.
+  async endRental(user: PrismaUser, id: string): Promise<Job> {
+    const job = await this.prisma.job.findUnique({ where: { id }, ...withDetails });
+    if (!job) throw new NotFoundException('Job tidak ditemukan');
+    if (job.managerId !== user.id) throw new NotFoundException('Job tidak ditemukan');
+    this.assertLifecycle(job.lifecycle, JobLifecycle.AKTIF);
+
+    await this.prisma.$transaction((tx) =>
+      tutupBooking(
+        tx,
+        job.id,
+        job.machines.map((m) => ({ id: m.id, status: m.status as string })),
+      ),
+    );
+
+    await this.notifyStaf(
+      'Sewa diakhiri lebih awal',
+      `${user.nama} mengakhiri sewa booking ${job.jobNumber} lebih awal. Mesinnya sudah kembali tersedia.`,
+      '/staff/booking',
+    );
+
+    return this.findOne(user, id);
+  }
+
   async reject(user: PrismaUser, id: string, dto: RejectJobDto): Promise<Job> {
     const job = await this.prisma.job.findUnique({ where: { id }, ...withDetails });
     if (!job) throw new NotFoundException('Job tidak ditemukan');
@@ -359,6 +493,12 @@ export class JobsService {
       await tx.mold.updateMany({ where: { jobId: job.id }, data: { jobId: null } });
       return result;
     });
+    await this.notifications.create(
+      job.managerId,
+      'Booking ditolak',
+      `Booking ${job.jobNumber} ditolak: ${dto.reason}`,
+      '/booking',
+    );
     return detailJob(updated);
   }
 
@@ -386,6 +526,11 @@ export class JobsService {
     const created = await this.prisma.rentalExtension.create({
       data: { jobId, additionalDays: dto.additionalDays },
     });
+    await this.notifyStaf(
+      'Permintaan perpanjangan sewa',
+      `${user.nama} mengajukan tambahan ${dto.additionalDays} hari untuk booking ${job.jobNumber}.`,
+      '/staff/booking',
+    );
     return toRentalExtension(created);
   }
 
@@ -394,7 +539,9 @@ export class JobsService {
   async decideExtension(extensionId: string, dto: DecideExtensionDto) {
     const extension = await this.prisma.rentalExtension.findUnique({
       where: { id: extensionId },
-      include: { job: { select: { id: true, endDate: true, requestedDurationDays: true } } },
+      include: {
+        job: { select: { id: true, endDate: true, requestedDurationDays: true, managerId: true, jobNumber: true } },
+      },
     });
     if (!extension) throw new NotFoundException('Pengajuan perpanjangan tidak ditemukan');
     if (extension.status !== asExtensionStatus(ExtensionStatus.DIAJUKAN)) {
@@ -405,7 +552,16 @@ export class JobsService {
       where: { id: extensionId },
       data: { status: asExtensionStatus(dto.decision), decidedAt: new Date() },
     });
-    if (dto.decision === ExtensionStatus.DITOLAK) return toRentalExtension(await decided);
+    if (dto.decision === ExtensionStatus.DITOLAK) {
+      const result = await decided;
+      await this.notifications.create(
+        extension.job.managerId,
+        'Perpanjangan sewa ditolak',
+        `Permintaan tambahan ${extension.additionalDays} hari untuk booking ${extension.job.jobNumber} ditolak.`,
+        '/booking',
+      );
+      return toRentalExtension(result);
+    }
 
     const [updated] = await this.prisma.$transaction([
       decided,
@@ -421,6 +577,12 @@ export class JobsService {
         },
       }),
     ]);
+    await this.notifications.create(
+      extension.job.managerId,
+      'Perpanjangan sewa disetujui',
+      `Booking ${extension.job.jobNumber} bertambah ${extension.additionalDays} hari.`,
+      '/booking',
+    );
     return toRentalExtension(updated);
   }
 
@@ -478,5 +640,16 @@ export class JobsService {
         `Lifecycle job ${current} tidak bisa diproses (butuh ${expected})`,
       );
     }
+  }
+
+  // Broadcast ke seluruh staf Sundaya aktif (Admin + Super Admin), dipakai untuk
+  // kejadian yang butuh perhatian mereka bersama: booking baru dan pengajuan
+  // perpanjangan. Sejalan dengan pola yang sama di modul Log Pengiriman.
+  private async notifyStaf(title: string, message: string, link: string) {
+    const staf = await this.prisma.user.findMany({
+      where: { role: { in: [$Enums.Role.ADMIN_SUNDAYA, $Enums.Role.SUPER_ADMIN] }, isActive: true },
+      select: { id: true },
+    });
+    await this.notifications.createMany(staf.map((s) => s.id), title, message, link);
   }
 }

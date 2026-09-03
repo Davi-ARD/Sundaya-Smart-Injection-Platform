@@ -6,7 +6,37 @@ import {
   ProgressMoldingBadge,
   moldTrackingLabel,
 } from '../../components/ui/Badge'
-import { formatNumber, formatSisaHari } from '../../lib/format'
+import { DailyProductionChart } from '../../components/ui/DailyProductionChart'
+import { formatDate, formatNumber, formatSisaHari } from '../../lib/format'
+
+// Status sesi produksi cetakan dalam satu kalimat. Dibaca dari sesi terbaru di
+// riwayat (bukan akumulasi umur cetakan), supaya cetakan yang dipakai lagi dengan
+// target baru tidak terlihat selesai hanya karena produksi lamanya banyak.
+function statusSesi(row: MoldPlanRow): { teks: string; kelas: string } {
+  const sesi = row.runs[0]
+  if (!sesi) {
+    return {
+      teks: 'Belum ada target output. Produksi cetakan ini tidak dibatasi target.',
+      kelas: 'bg-slate-50 text-slate-600',
+    }
+  }
+  if (sesi.goodProduct >= sesi.targetOutput) {
+    return {
+      teks: `Selesai. Target ${formatNumber(sesi.targetOutput)} pcs sudah tercapai, produksi tidak bisa ditambah lagi. Ubah target output bila ingin mencetak lagi.`,
+      kelas: 'bg-emerald-50 text-emerald-800',
+    }
+  }
+  if (sesi.goodProduct === 0) {
+    return {
+      teks: `Belum mulai. Target sesi ini ${formatNumber(sesi.targetOutput)} pcs.`,
+      kelas: 'bg-slate-50 text-slate-600',
+    }
+  }
+  return {
+    teks: `Sedang berjalan. ${formatNumber(sesi.goodProduct)} dari ${formatNumber(sesi.targetOutput)} pcs, sisa ${formatNumber(sesi.targetOutput - sesi.goodProduct)} pcs.`,
+    kelas: 'bg-brand-50 text-brand-800',
+  }
+}
 
 // Jalur tracking fisik mold, linear tanpa cabang.
 const MAIN_FLOW = [
@@ -93,6 +123,13 @@ export function MoldPlanDetail({ row }: { row: MoldPlanRow }) {
 
       <section className="rounded-xl border border-slate-200/70 bg-white p-4">
         <h3 className="text-sm font-semibold text-slate-950">Hasil produksi</h3>
+
+        {/* Status sesi berjalan ditegaskan di depan supaya langsung terbaca:
+            sudah selesai, sedang berjalan, belum mulai, atau memang tanpa batas. */}
+        <div className={`mt-3 rounded-lg px-3 py-2.5 text-sm ${statusSesi(row).kelas}`}>
+          {statusSesi(row).teks}
+        </div>
+
         <dl className="mt-3 divide-y divide-slate-100 border-t border-slate-100">
           <Row
             label="Progress molding"
@@ -156,6 +193,116 @@ export function MoldPlanDetail({ row }: { row: MoldPlanRow }) {
             </tbody>
           </table>
         </div>
+      </section>
+
+      {/* Riwayat target output: tiap kali Manager mengganti target, sesi lama
+          tetap tercatat lengkap dengan hasilnya supaya target sebelumnya tidak
+          hilang begitu diganti target baru. */}
+      {row.runs.length ? (
+        <section className="rounded-xl border border-slate-200/70 bg-white p-4 lg:col-span-2">
+          <h3 className="text-sm font-semibold text-slate-950">Riwayat target output</h3>
+          <p className="mt-1 text-xs text-slate-500">
+            Satu baris per sesi produksi. Sesi baru terbuka setiap target output cetakan diganti,
+            dan hasil sesi lama tetap tersimpan sebagai riwayat.
+          </p>
+          <div className="mt-3 overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-200/70 text-sm">
+              <thead>
+                <tr className="text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  <th className="py-2 pr-4">Sesi</th>
+                  <th className="py-2 pr-4">Target</th>
+                  <th className="py-2 pr-4">Hasil</th>
+                  <th className="py-2 pr-4">Material</th>
+                  <th className="py-2 pr-4">Periode</th>
+                  <th className="py-2">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {row.runs.map((run, i) => {
+                  const berjalan = run.selesai == null
+                  return (
+                    <tr key={run.id} className={berjalan ? 'bg-brand-50/40' : undefined}>
+                      <td className="py-2.5 pr-4 font-medium text-slate-900">
+                        {row.runs.length - i}
+                      </td>
+                      <td className="py-2.5 pr-4">{formatNumber(run.targetOutput)} pcs</td>
+                      <td className="py-2.5 pr-4 font-semibold text-slate-900">
+                        {formatNumber(run.goodProduct)} pcs
+                      </td>
+                      <td className="py-2.5 pr-4">{formatNumber(run.materialUsedKg)} kg</td>
+                      <td className="whitespace-nowrap py-2.5 pr-4 text-slate-500">
+                        {formatDate(run.mulai)}
+                        {run.selesai ? ` - ${formatDate(run.selesai)}` : ''}
+                      </td>
+                      <td className="py-2.5">
+                        {berjalan ? (
+                          <span className="rounded-full bg-brand-100 px-2 py-0.5 text-xs font-medium text-brand-700">
+                            Sesi berjalan
+                          </span>
+                        ) : run.tercapai ? (
+                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                            Tercapai
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                            Tidak tercapai
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
+
+      {/* Rincian harian ditempatkan di sini, bukan di dashboard: dashboard hanya
+          memantau booking berjalan, sedangkan riwayat produksi tetap perlu bisa
+          ditelusuri lewat detail cetakan walau booking-nya sudah selesai. */}
+      <section className="rounded-xl border border-slate-200/70 bg-white p-4 lg:col-span-2">
+        {row.harian.length === 0 ? (
+          <>
+            <h3 className="text-sm font-semibold text-slate-950">Produksi harian</h3>
+            <p className="mt-1 text-xs text-slate-500">
+              Belum ada produksi harian tercatat untuk cetakan ini.
+            </p>
+          </>
+        ) : (
+          <>
+            <DailyProductionChart harian={row.harian} />
+
+            <div className="mt-4 overflow-x-auto border-t border-slate-100 pt-4">
+              <table className="min-w-full divide-y divide-slate-200/70 text-sm">
+                <thead>
+                  <tr className="text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    <th className="py-2 pr-4">Tanggal</th>
+                    <th className="py-2 pr-4">Good</th>
+                    <th className="py-2 pr-4">Reject</th>
+                    <th className="py-2 pr-4">Material</th>
+                    <th className="py-2">Catatan</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {row.harian.map((hari) => (
+                    <tr key={hari.occurredAt}>
+                      <td className="whitespace-nowrap py-2 pr-4">{formatDate(hari.occurredAt)}</td>
+                      <td className="py-2 pr-4">{formatNumber(hari.goodProduct)}</td>
+                      <td className="py-2 pr-4">{formatNumber(hari.rejectCount)}</td>
+                      <td className="py-2 pr-4">
+                        {hari.materialUsedKg != null
+                          ? `${formatNumber(hari.materialUsedKg)} kg`
+                          : '-'}
+                      </td>
+                      <td className="py-2 text-slate-500">{hari.catatan ?? '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </section>
     </div>
   )

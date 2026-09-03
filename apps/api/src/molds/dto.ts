@@ -1,7 +1,6 @@
 import { IsInt, IsNumber, IsOptional, IsPositive, IsString, MinLength } from 'class-validator';
 import {
   CreateMoldRequest,
-  MaterialType,
   UpdateMoldRequest,
 } from '@mold-tracker/shared';
 
@@ -30,7 +29,7 @@ export class CreateMoldDto implements CreateMoldRequest {
 
   @IsOptional()
   @IsString()
-  planMaterialUtama?: MaterialType;
+  planMaterialUtama?: string;
 
   @IsOptional()
   @IsNumber()
@@ -65,7 +64,7 @@ export class UpdateMoldDto implements UpdateMoldRequest {
 
   @IsOptional()
   @IsString()
-  planMaterialUtama?: MaterialType;
+  planMaterialUtama?: string;
 
   @IsOptional()
   @IsNumber()

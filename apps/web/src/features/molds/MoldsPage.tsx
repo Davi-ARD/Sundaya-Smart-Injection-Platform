@@ -5,7 +5,6 @@ import {
   type Mold,
   type MoldPlanRow,
   type UpdateMoldRequest,
-  MaterialType,
 } from '@mold-tracker/shared'
 import { useAuth } from '../auth/authContextValue'
 import { api } from '../../lib/api'
@@ -14,10 +13,11 @@ import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { DataTable, type Column } from '../../components/ui/DataTable'
 import { MoldTrackingBadge } from '../../components/ui/Badge'
+import { MaterialCombobox } from '../../components/ui/MaterialCombobox'
 import { Modal } from '../../components/ui/Modal'
 import { SidePanel } from '../../components/ui/SidePanel'
 import { TableSkeleton } from '../../components/ui/Skeleton'
-import { TextField, TextAreaField, FieldGroup, SelectField } from '../../components/ui/FormField'
+import { TextField, TextAreaField, FieldGroup } from '../../components/ui/FormField'
 import { useToast } from '../../components/ui/Toast'
 import { errorMessage } from '../../lib/errorMessage'
 import { optionalNumber, optionalText } from '../../lib/form'
@@ -30,7 +30,7 @@ type FormState = {
   cavity: string
   tonaseTon: string
   deskripsi: string
-  planMaterialUtama: MaterialType | ''
+  planMaterialUtama: string
   estimasiKg: string
   targetOutput: string
 }
@@ -270,14 +270,10 @@ function MoldFormPanel({
           <TextField label="Estimasi material (kg)" type="number" min={0} step="0.1" required={false} value={form.estimasiKg} onChange={set('estimasiKg')} />
           <TextField label="Target output" type="number" min={0} required={false} value={form.targetOutput} onChange={set('targetOutput')} />
         </FieldGroup>
-        <SelectField
+        <MaterialCombobox
           label="Material utama (rencana)"
           value={form.planMaterialUtama}
-          onChange={(value: MaterialType | '') => setForm((f) => ({ ...f, planMaterialUtama: value }))}
-          options={[
-            { value: '', label: '- pilih material -' },
-            ...Object.values(MaterialType).map((m) => ({ value: m, label: m })),
-          ]}
+          onChange={(value) => setForm((f) => ({ ...f, planMaterialUtama: value }))}
         />
         <TextAreaField label="Deskripsi" value={form.deskripsi} onChange={set('deskripsi')} />
 

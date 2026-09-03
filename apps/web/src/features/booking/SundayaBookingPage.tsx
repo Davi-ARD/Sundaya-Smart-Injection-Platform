@@ -426,6 +426,13 @@ function MesinModal({
 
   const tambah = (event: FormEvent) => {
     event.preventDefault()
+    // Cermin aturan server: jangan kirim lebih dari sisa kuota permintaan penyewa.
+    if (mesinDipilih.length > kurang) {
+      toast.error(
+        `Penyewa memesan ${current.requestedMachineCount} mesin, jadi hanya bisa menambah ${kurang} mesin lagi`,
+      )
+      return
+    }
     const body: AssignJobRequest = { machineIds: mesinDipilih }
     void run(async () => {
       const updated = await api.assignJob(accessToken, current.id, body)
@@ -545,7 +552,15 @@ function MesinModal({
           <p className="text-xs text-amber-700">Masih kurang {kurang} mesin dari permintaan penyewa.</p>
         ) : null}
 
-        {tersedia.length === 0 ? (
+        {/* Kuota mesin sudah penuh: pemilih disembunyikan sekalian, bukan sekadar
+            mengandalkan penolakan server, supaya Admin Sundaya tidak sempat
+            memilih mesin yang pasti ditolak. */}
+        {kurang <= 0 ? (
+          <p className="rounded-lg bg-emerald-50 px-3 py-2.5 text-sm text-emerald-800">
+            Permintaan penyewa sudah terpenuhi: {current.requestedMachineCount} mesin. Tidak bisa
+            menambah mesin lagi. Untuk mengganti mesin, pakai tombol Tukar.
+          </p>
+        ) : tersedia.length === 0 ? (
           <p className="text-sm text-rose-600">
             Tidak ada mesin tersedia lain dengan tonase minimal {tonaseTerkecil} ton.
           </p>

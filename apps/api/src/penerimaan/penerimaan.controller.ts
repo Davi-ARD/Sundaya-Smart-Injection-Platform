@@ -5,20 +5,21 @@ import { CurrentUser, Roles } from '../auth/decorators';
 import { PenerimaanService } from './penerimaan.service';
 import { CreateLogPenerimaanDto } from './dto';
 
-// Log Penerimaan: milik Admin Sundaya, mencatat mold dan material yang tiba di
-// lokasi Sundaya. Manager Penyewa boleh membaca log job miliknya (dan menerima
-// notifikasi tiap penerimaan baru).
+// Log Aktivitas: milik Admin Penyewa, yang bertugas di lokasi Sundaya dan
+// menyaksikan langsung mold serta material datang. Manager Penyewa membaca log
+// job miliknya dan menerima notifikasi tiap ada penerimaan baru; staf Sundaya
+// boleh membaca semuanya karena barangnya masuk ke lokasi mereka.
 @Controller('penerimaan')
 export class PenerimaanController {
   constructor(private penerimaan: PenerimaanService) {}
 
-  @Roles(Role.ADMIN_SUNDAYA, Role.SUPER_ADMIN, Role.MANAGER_PENYEWA)
+  @Roles(Role.ADMIN_PENYEWA, Role.MANAGER_PENYEWA, Role.ADMIN_SUNDAYA, Role.SUPER_ADMIN)
   @Get()
   list(@CurrentUser() user: PrismaUser, @Query('jobId') jobId?: string): Promise<LogPenerimaan[]> {
     return this.penerimaan.list(user, jobId);
   }
 
-  @Roles(Role.ADMIN_SUNDAYA)
+  @Roles(Role.ADMIN_PENYEWA)
   @Post()
   create(
     @CurrentUser() user: PrismaUser,

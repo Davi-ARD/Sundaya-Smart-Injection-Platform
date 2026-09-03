@@ -1,7 +1,6 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import {
   ItemPengiriman,
-  MaterialType,
 } from '@mold-tracker/shared';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -14,7 +13,7 @@ import { PrismaService } from '../prisma/prisma.service';
 // supaya barisnya tidak setengah terisi.
 export function assertMaterialFields(
   item: ItemPengiriman,
-  materialName?: MaterialType,
+  materialName?: string,
   jumlahKg?: number,
 ): void {
   if (item !== ItemPengiriman.MATERIAL) return;

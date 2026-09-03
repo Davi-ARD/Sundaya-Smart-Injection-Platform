@@ -32,6 +32,7 @@ import type {
   MaintenanceStatus,
   ManagerDashboard,
   Mold,
+  AddMoldsRequest,
   RejectJobRequest,
   ReplaceMachineRequest,
   Role,
@@ -231,6 +232,16 @@ export const api = {
 
   async rejectJob(token: string | null, id: string, body: RejectJobRequest): Promise<Job> {
     return request<Job>('PATCH', `/jobs/${id}/reject`, token, body)
+  },
+
+  // Manager mengakhiri sewa lebih awal: mesin langsung kembali ke Sundaya.
+  async endRental(token: string | null, id: string): Promise<Job> {
+    return request<Job>('PATCH', `/jobs/${id}/end-rental`, token)
+  },
+
+  // Menambah cetakan ke booking berjalan, tanpa approval ulang Sundaya.
+  async addMoldsToJob(token: string | null, id: string, body: AddMoldsRequest): Promise<Job> {
+    return request<Job>('POST', `/jobs/${id}/molds`, token, body)
   },
 
   // Tidak ada endpoint kirim/aktifkan/selesaikan job: mesin tidak pernah keluar

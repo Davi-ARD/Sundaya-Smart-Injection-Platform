@@ -33,6 +33,9 @@ function prismaMock() {
         tonaseTon: 150,
       }),
     },
+    // Cetakan pada mock belum punya sesi produksi, jadi batasnya jatuh ke plan
+    // cetakan itu sendiri persis seperti perilaku sebelum sesi diperkenalkan.
+    moldProductionRun: { findFirst: jest.fn().mockResolvedValue(null) },
     logProduksi: {
       findMany: jest.fn(),
       create: jest.fn(),
@@ -99,51 +102,93 @@ describe('LogProduksiService.append', () => {
     expect(data.machineId).toBe('mesin-1');
     expect(data.goodProduct).toBe(120);
     expect(data.occurredAt).toBeInstanceOf(Date);
-    // Field lintas-tipe tidak ikut.
-    expect(data.progressMolding).toBeUndefined();
+    // Hanya satu jenis event yang ditulis, dan progress-nya dihitung server.
+    expect(data.eventType).toBe(LogProduksiEventType.PRODUKSI_HARIAN);
+    expect(data.progressMolding).toBe(ProgressMolding.ONGOING);
   });
 
-  it('PRODUKSI_HARIAN tanpa goodProduct -> 400', async () => {
+  it('menyentuh target output: progress jadi SUDAH_DIPRODUKSI dan mold ditutup', async () => {
     const prisma = prismaMock();
     prisma.job.findUnique.mockResolvedValue({ id: 'job-1', managerId: 'mgr-1', moldId: 'mold-1' });
-    await expect(
-      svc(prisma).append(adminPenyewa, 'job-1', {
-        moldId: 'mold-1',
-        machineId: 'mesin-1',
-        eventType: LogProduksiEventType.PRODUKSI_HARIAN,
-        occurredAt: PAST_ISO,
-        rejectCount: 2,
-      } as never),
-    ).rejects.toBeInstanceOf(BadRequestException);
-  });
+    prisma.mold.findFirst.mockResolvedValue({
+      id: 'mold-1',
+      kodeMold: 'MLD-1',
+      tonaseTon: 100,
+      targetOutput: 500,
+      estimasiKg: null,
+    });
+    prisma.logProduksi.aggregate.mockResolvedValue({
+      _sum: { goodProduct: 400, materialUsedKg: 0 },
+    });
+    prisma.logProduksi.create.mockResolvedValue(logRow({ goodProduct: 100 }));
+    const advance = jest.fn();
 
-  it('PROGRESS_MOLDING tanpa progressMolding -> 400', async () => {
-    const prisma = prismaMock();
-    prisma.job.findUnique.mockResolvedValue({ id: 'job-1', managerId: 'mgr-1', moldId: 'mold-1' });
-    await expect(
-      svc(prisma).append(adminPenyewa, 'job-1', {
-        moldId: 'mold-1',
-      eventType: LogProduksiEventType.PROGRESS_MOLDING,
-        machineId: 'mesin-1',
-        occurredAt: PAST_ISO,
-      } as never),
-    ).rejects.toBeInstanceOf(BadRequestException);
-  });
-
-  it('PROGRESS_MOLDING sukses simpan enum', async () => {
-    const prisma = prismaMock();
-    prisma.job.findUnique.mockResolvedValue({ id: 'job-1', managerId: 'mgr-1', moldId: 'mold-1' });
-    prisma.logProduksi.create.mockResolvedValue(
-      logRow({ eventType: LogProduksiEventType.PROGRESS_MOLDING, progressMolding: ProgressMolding.ONGOING }),
-    );
-    await svc(prisma).append(adminPenyewa, 'job-1', {
+    await svc(prisma, advance).append(adminPenyewa, 'job-1', {
       moldId: 'mold-1',
-      eventType: LogProduksiEventType.PROGRESS_MOLDING,
       machineId: 'mesin-1',
       occurredAt: PAST_ISO,
-      progressMolding: ProgressMolding.ONGOING,
+      goodProduct: 100,
+      rejectCount: 0,
     } as never);
-    expect(prisma.logProduksi.create.mock.calls[0][0].data.progressMolding).toBe(ProgressMolding.ONGOING);
+
+    expect(prisma.logProduksi.create.mock.calls[0][0].data.progressMolding).toBe(
+      ProgressMolding.SUDAH_DIPRODUKSI,
+    );
+    expect(advance).toHaveBeenCalledWith(expect.anything(), 'mold-1', 'COMPLETED', 'ap-1');
+  });
+
+  it('target sudah tercapai sebelumnya: produksi berikutnya ditolak', async () => {
+    const prisma = prismaMock();
+    prisma.job.findUnique.mockResolvedValue({ id: 'job-1', managerId: 'mgr-1', moldId: 'mold-1' });
+    prisma.mold.findFirst.mockResolvedValue({
+      id: 'mold-1',
+      kodeMold: 'MLD-1',
+      tonaseTon: 100,
+      targetOutput: 500,
+      estimasiKg: null,
+    });
+    prisma.logProduksi.aggregate.mockResolvedValue({
+      _sum: { goodProduct: 500, materialUsedKg: 0 },
+    });
+
+    await expect(
+      svc(prisma).append(adminPenyewa, 'job-1', {
+        moldId: 'mold-1',
+        machineId: 'mesin-1',
+        occurredAt: PAST_ISO,
+        goodProduct: 1,
+        rejectCount: 0,
+      } as never),
+    ).rejects.toThrow(/sudah mencapai target output/);
+    expect(prisma.logProduksi.create).not.toHaveBeenCalled();
+  });
+
+  it('cetakan tanpa target output tidak pernah diblokir', async () => {
+    const prisma = prismaMock();
+    prisma.job.findUnique.mockResolvedValue({ id: 'job-1', managerId: 'mgr-1', moldId: 'mold-1' });
+    prisma.mold.findFirst.mockResolvedValue({
+      id: 'mold-1',
+      kodeMold: 'MLD-1',
+      tonaseTon: 100,
+      targetOutput: null,
+      estimasiKg: null,
+    });
+    prisma.logProduksi.aggregate.mockResolvedValue({
+      _sum: { goodProduct: 99999, materialUsedKg: 0 },
+    });
+    prisma.logProduksi.create.mockResolvedValue(logRow({}));
+
+    await svc(prisma).append(adminPenyewa, 'job-1', {
+      moldId: 'mold-1',
+      machineId: 'mesin-1',
+      occurredAt: PAST_ISO,
+      goodProduct: 10,
+      rejectCount: 0,
+    } as never);
+
+    expect(prisma.logProduksi.create.mock.calls[0][0].data.progressMolding).toBe(
+      ProgressMolding.ONGOING,
+    );
   });
 
   it('PRODUKSI_HARIAN memajukan tracking mold ke PRODUCTION', async () => {
@@ -164,25 +209,6 @@ describe('LogProduksiService.append', () => {
     } as never);
 
     expect(advance).toHaveBeenCalledWith(expect.anything(), 'mold-1', 'PRODUCTION', 'ap-1');
-  });
-
-  it('PROGRESS_MOLDING tidak menyentuh tracking mold', async () => {
-    const prisma = prismaMock();
-    prisma.job.findUnique.mockResolvedValue({ id: 'job-1', managerId: 'mgr-1', moldId: 'mold-1' });
-    prisma.logProduksi.create.mockResolvedValue(
-      logRow({ eventType: LogProduksiEventType.PROGRESS_MOLDING }),
-    );
-    const advance = jest.fn();
-
-    await svc(prisma, advance).append(adminPenyewa, 'job-1', {
-      moldId: 'mold-1',
-      machineId: 'mesin-1',
-      eventType: LogProduksiEventType.PROGRESS_MOLDING,
-      occurredAt: PAST_ISO,
-      progressMolding: ProgressMolding.ONGOING,
-    } as never);
-
-    expect(advance).not.toHaveBeenCalled();
   });
 
   it('produk baik melewati target cetakan -> 400, tidak menulis', async () => {
