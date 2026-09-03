@@ -25,6 +25,12 @@ export const STAF_SUNDAYA_ROLES: Role[] = [
 
 export const isStafSundaya = (role: Role) => STAF_SUNDAYA_ROLES.includes(role)
 
+// Super Admin punya seluruh wewenang Admin Sundaya; bedanya hanya Super Admin
+// yang bisa mengelola pengguna. Dipakai untuk mengunci aksi kelola di halaman
+// staf, supaya Super Admin tidak lagi tertinggal saat aksi baru ditambahkan.
+export const bisaKelolaSundaya = (role: Role | undefined) =>
+  role === Role.ADMIN_SUNDAYA || role === Role.SUPER_ADMIN
+
 // Tujuan redirect setelah login, berdasarkan role.
 export const homePathForRole = (role: Role): string => {
   switch (role) {
