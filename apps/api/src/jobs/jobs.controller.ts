@@ -22,6 +22,11 @@ import {
 // Modul jobs dipakai berdua (koordinasi Dev A/Dev B). Pemilik file = Dev A
 // (assign + lifecycle). Endpoint booking `POST /jobs` (MANAGER_PENYEWA, tanpa
 // mesin) ditambahkan Dev B; taruh di controller ini agar satu resource satu file.
+// Super Admin punya seluruh wewenang Admin Sundaya; bedanya hanya Super Admin
+// yang bisa mengelola pengguna. Dipakai satu konstanta supaya Super Admin tidak
+// lagi tertinggal diam-diam saat aksi baru ditambahkan.
+const ADMIN_DAN_SUPER = [Role.ADMIN_SUNDAYA, Role.SUPER_ADMIN] as const;
+
 @Controller('jobs')
 export class JobsController {
   constructor(private jobs: JobsService) {}
@@ -51,7 +56,7 @@ export class JobsController {
     return this.jobs.listExtensions();
   }
 
-  @Roles(Role.ADMIN_SUNDAYA)
+  @Roles(...ADMIN_DAN_SUPER)
   @Patch('extensions/:extensionId/decide')
   decideExtension(
     @Param('extensionId') extensionId: string,
@@ -78,7 +83,7 @@ export class JobsController {
 
   // Meminjamkan satu mesin ke booking. Dipanggil berulang: mesin pertama sekaligus
   // menyetujui booking, mesin berikutnya menambah jumlah pinjaman.
-  @Roles(Role.ADMIN_SUNDAYA)
+  @Roles(...ADMIN_DAN_SUPER)
   @Patch(':id/assign')
   assign(
     @CurrentUser() user: PrismaUser,
@@ -89,7 +94,7 @@ export class JobsController {
   }
 
   // Menarik satu mesin dari booking yang belum berjalan.
-  @Roles(Role.ADMIN_SUNDAYA)
+  @Roles(...ADMIN_DAN_SUPER)
   @Delete(':id/machines/:machineId')
   releaseMachine(
     @Param('id') id: string,
@@ -100,7 +105,7 @@ export class JobsController {
 
   // Menukar satu mesin booking dengan mesin lain, mis. mesin masuk maintenance.
   // Berbeda dari releaseMachine, ini juga berlaku saat booking sudah berjalan.
-  @Roles(Role.ADMIN_SUNDAYA)
+  @Roles(...ADMIN_DAN_SUPER)
   @Patch(':id/machines/:machineId/replace')
   replaceMachine(
     @Param('id') id: string,
@@ -129,7 +134,7 @@ export class JobsController {
     return this.jobs.endRental(user, id);
   }
 
-  @Roles(Role.ADMIN_SUNDAYA)
+  @Roles(...ADMIN_DAN_SUPER)
   @Patch(':id/reject')
   reject(
     @CurrentUser() user: PrismaUser,

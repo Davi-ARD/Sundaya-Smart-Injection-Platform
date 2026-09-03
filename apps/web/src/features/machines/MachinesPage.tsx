@@ -11,6 +11,7 @@ import {
   type UpdateMachineRequest,
 } from '@mold-tracker/shared'
 import { useAuth } from '../auth/authContextValue'
+import { bisaKelolaSundaya } from '../auth/roleLabels'
 import { api } from '../../lib/api'
 import { Button } from '../../components/ui/Button'
 import { PageHeader } from '../../components/PageHeader'
@@ -58,7 +59,7 @@ const formFromMachine = (machine: Machine): MachineForm => ({
 export function MachinesPage() {
   const { accessToken, user } = useAuth()
   const toast = useToast()
-  const canManage = user?.role === Role.ADMIN_SUNDAYA
+  const canManage = bisaKelolaSundaya(user?.role)
   const canInputOperational = user?.role === Role.TEKNISI_SUNDAYA
 
   const [machines, setMachines] = useState<Machine[]>([])

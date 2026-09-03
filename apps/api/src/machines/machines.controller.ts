@@ -25,6 +25,10 @@ import { CreateOperationalDataDto } from './operational.dto';
 // tidak pernah mengakses katalog mesin (booking lewat mold, bukan pilih mesin).
 const STAF_SUNDAYA = [Role.SUPER_ADMIN, Role.ADMIN_SUNDAYA, Role.TEKNISI_SUNDAYA] as const;
 
+// Super Admin punya seluruh wewenang Admin Sundaya; bedanya hanya Super Admin
+// yang bisa mengelola pengguna.
+const ADMIN_DAN_SUPER = [Role.ADMIN_SUNDAYA, Role.SUPER_ADMIN] as const;
+
 @Controller('machines')
 export class MachinesController {
   constructor(
@@ -47,7 +51,7 @@ export class MachinesController {
 
   // Dideklarasikan sebelum GET :id agar route statis 'operational' tidak
   // tertangkap oleh parameter :id.
-  @Roles(Role.TEKNISI_SUNDAYA, Role.ADMIN_SUNDAYA)
+  @Roles(Role.TEKNISI_SUNDAYA, ...ADMIN_DAN_SUPER)
   @Get('operational')
   operationalSummary(): Promise<MachineStatusCount[]> {
     return this.operational.summary();
@@ -70,25 +74,25 @@ export class MachinesController {
     return this.operational.append(user, id, dto);
   }
 
-  @Roles(Role.ADMIN_SUNDAYA)
+  @Roles(...ADMIN_DAN_SUPER)
   @Post()
   create(@CurrentUser() user: PrismaUser, @Body() dto: CreateMachineDto): Promise<Machine> {
     return this.machines.create(user, dto);
   }
 
-  @Roles(Role.ADMIN_SUNDAYA)
+  @Roles(...ADMIN_DAN_SUPER)
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: UpdateMachineDto): Promise<Machine> {
     return this.machines.update(id, dto);
   }
 
-  @Roles(Role.ADMIN_SUNDAYA)
+  @Roles(...ADMIN_DAN_SUPER)
   @Patch(':id/archive')
   archive(@Param('id') id: string): Promise<Machine> {
     return this.machines.archive(id);
   }
 
-  @Roles(Role.ADMIN_SUNDAYA)
+  @Roles(...ADMIN_DAN_SUPER)
   @Patch(':id/unarchive')
   unarchive(@Param('id') id: string): Promise<Machine> {
     return this.machines.unarchive(id);
