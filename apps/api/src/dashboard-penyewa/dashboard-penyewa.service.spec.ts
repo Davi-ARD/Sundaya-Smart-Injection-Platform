@@ -33,8 +33,12 @@ function svc(prisma: ReturnType<typeof prismaMock>) {
 
 // Event produksi harian. materialUsedKg = material yang dipakai hari itu; plan
 // cetakan berlaku sebagai kuota, jadi pemakaian diakumulasi bukan diambil terakhir.
+// jobId ikut dicatat karena baris rencana cetakan kini per pemakaian: log
+// disaring ke booking yang bersangkutan supaya angka satu booking tidak
+// bercampur booking lain.
 const produksi = (occurredAt: Date, extra: Record<string, unknown> = {}) => ({
   eventType: LogProduksiEventType.PRODUKSI_HARIAN,
+  jobId: 'j1',
   occurredAt,
   goodProduct: null,
   rejectCount: null,
@@ -331,7 +335,7 @@ describe('DashboardPenyewaService.moldPlan progress per sesi', () => {
         // menghasilkan apa pun, jadi progressnya harus null, bukan sudah selesai.
         runs: [{ id: 'r2', targetOutput: 100, estimasiKg: 1000, goodAwal: 240, materialAwal: 0, at: new Date('2026-08-20') }],
         logProduksi: [produksi(new Date('2026-08-10'), { goodProduct: 240, rejectCount: 0, materialUsedKg: 100 })],
-        job: null,
+        usages: [],
       },
     ]);
 
@@ -358,8 +362,8 @@ describe('DashboardPenyewaService.moldPlan', () => {
         targetOutput: 1000,
         // Dua sesi: sesi 1 mulai dari nol, sesi 2 mulai setelah 400 produk baik.
         runs: [
-          { id: 'run-2', targetOutput: 600, estimasiKg: 300, goodAwal: 400, materialAwal: 250, at: new Date('2026-08-12') },
-          { id: 'run-1', targetOutput: 400, estimasiKg: 500, goodAwal: 0, materialAwal: 0, at: new Date('2026-07-01') },
+          { id: 'run-2', jobId: 'j1', targetOutput: 600, estimasiKg: 300, goodAwal: 400, materialAwal: 250, at: new Date('2026-08-12') },
+          { id: 'run-1', jobId: 'j1', targetOutput: 400, estimasiKg: 500, goodAwal: 0, materialAwal: 0, at: new Date('2026-07-01') },
         ],
         logProduksi: [
           produksi(new Date('2026-08-12'), {
@@ -374,13 +378,20 @@ describe('DashboardPenyewaService.moldPlan', () => {
             materialUsedKg: 200,
           }),
         ],
-        job: {
-          id: 'j1',
-          jobNumber: 'SSIP-0231',
-          lifecycle: JobLifecycle.AKTIF,
-          endDate: inDays(4),
-          machines: [{ machineNumber: 'IM-03' }],
-        },
+        // Satu baris per pemakaian: cetakan ini dipakai di satu booking.
+        usages: [
+          {
+            jobId: 'j1',
+            at: new Date('2026-07-01'),
+            job: {
+              id: 'j1',
+              jobNumber: 'SSIP-0231',
+              lifecycle: JobLifecycle.AKTIF,
+              endDate: inDays(4),
+              machines: [{ machineNumber: 'IM-03' }],
+            },
+          },
+        ],
       },
       // Cetakan yang belum dibooking: tanpa job, angka produksi nol.
       {
@@ -394,7 +405,8 @@ describe('DashboardPenyewaService.moldPlan', () => {
         estimasiKg: null,
         targetOutput: null,
         logProduksi: [],
-        job: null,
+        runs: [],
+        usages: [],
       },
     ]);
 

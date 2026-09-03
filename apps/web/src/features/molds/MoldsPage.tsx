@@ -105,15 +105,6 @@ export function MoldsPage() {
       cell: (m) => (m.estimasiKg != null ? `${formatNumber(m.estimasiKg)} kg` : <span className="text-slate-400">-</span>),
     },
     {
-      header: 'Sisa material',
-      cell: (m) => {
-        const row = planByMoldId.get(m.id)
-        if (!row) return <span className="text-slate-400">-</span>
-        const sisa = row.materialRemainingKg ?? row.estimasiKg
-        return sisa != null ? `${formatNumber(sisa)} kg` : <span className="text-slate-400">-</span>
-      },
-    },
-    {
       header: 'Target output',
       cell: (m) => (m.targetOutput != null ? formatNumber(m.targetOutput) : <span className="text-slate-400">-</span>),
     },

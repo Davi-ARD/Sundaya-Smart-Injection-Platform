@@ -43,6 +43,46 @@ const addDays = (d: Date, days: number) => new Date(d.getTime() + days * DAY_MS)
 
 const STAF_SUNDAYA: Role[] = [Role.SUPER_ADMIN, Role.ADMIN_SUNDAYA, Role.TEKNISI_SUNDAYA];
 
+// Cetakan yang masuk ke sebuah booking memulai SESI produksi baru untuk booking
+// itu. Titik awalnya adalah akumulasi produksi cetakan sejauh ini, sehingga
+// capaian sesi ini mulai dari nol dan hasil booking sebelumnya tidak membuatnya
+// langsung terlihat selesai. Tanpa ini cetakan yang dibooking ulang terkunci
+// sejak awal karena target lamanya sudah tercapai.
+//
+// Cetakan tanpa target output tidak membuka sesi: produksinya memang tidak
+// dibatasi, sama seperti sebelum sesi diperkenalkan.
+async function bukaSesiBooking(
+  tx: Prisma.TransactionClient,
+  molds: { id: string; targetOutput: number | null; estimasiKg: number | null }[],
+  jobId: string,
+  byId: string,
+): Promise<void> {
+  const bertarget = molds.filter((m) => m.targetOutput != null);
+  if (!bertarget.length) return;
+
+  const akumulasi = await tx.logProduksi.groupBy({
+    by: ['moldId'],
+    where: {
+      moldId: { in: bertarget.map((m) => m.id) },
+      eventType: $Enums.LogProduksiEventType.PRODUKSI_HARIAN,
+    },
+    _sum: { goodProduct: true, materialUsedKg: true },
+  });
+  const sejauhIni = new Map(akumulasi.map((a) => [a.moldId, a._sum]));
+
+  await tx.moldProductionRun.createMany({
+    data: bertarget.map((m) => ({
+      moldId: m.id,
+      jobId,
+      targetOutput: m.targetOutput as number,
+      estimasiKg: m.estimasiKg,
+      goodAwal: sejauhIni.get(m.id)?.goodProduct ?? 0,
+      materialAwal: sejauhIni.get(m.id)?.materialUsedKg ?? 0,
+      byId,
+    })),
+  });
+}
+
 const machineSelect = {
   select: { id: true, machineNumber: true, tonaseTon: true, status: true },
   orderBy: { machineNumber: 'asc' as const },
@@ -50,14 +90,21 @@ const machineSelect = {
 
 const withDetails = {
   include: {
-    molds: {
-      orderBy: { kodeMold: 'asc' as const },
-      // Sesi produksi terbaru dan akumulasi produksinya dipakai menentukan apakah
-      // cetakan itu masih boleh diproduksi. Tanpa ini Log Produksi tidak punya
-      // cara tahu cetakan mana yang sudah tuntas.
+    // Cetakan booking dibaca dari RIWAYAT pemakaian, bukan dari keterikatan
+    // langsung: cetakan dilepas saat booking tutup supaya bisa dibooking lagi,
+    // jadi booking yang sudah selesai tetap menampilkan cetakan apa saja yang
+    // dulu dipakai beserta hasilnya.
+    moldUsages: {
+      orderBy: { at: 'asc' as const },
       include: {
-        runs: { orderBy: { at: 'desc' as const }, take: 1 },
-        logProduksi: { select: { goodProduct: true } },
+        mold: {
+          include: {
+            runs: { orderBy: { at: 'desc' as const } },
+            // Seluruh log dipakai: hasil satu sesi dihitung sebagai selisih
+            // terhadap sesi sesudahnya, bukan dari log booking ini saja.
+            logProduksi: { select: { goodProduct: true, jobId: true } },
+          },
+        },
       },
     },
     machines: machineSelect,
@@ -72,7 +119,17 @@ type JobWithDetails = Prisma.JobGetPayload<typeof withDetails>;
 // berjalan. Begitu cetakan tiba dan job AKTIF, susunan mesinnya dianggap final.
 const BOLEH_UBAH_MESIN: JobLifecycle[] = [JobLifecycle.DIAJUKAN, JobLifecycle.DIKONFIRMASI];
 
-const detailJob = (j: JobWithDetails) => toJob(j, j.molds, j.machines, j.extensions);
+const detailJob = (j: JobWithDetails) =>
+  toJob(
+    j,
+    [...(j.moldUsages ?? [])]
+      .map((u) => u.mold)
+      .sort((a, b) => a.kodeMold.localeCompare(b.kodeMold)),
+    j.machines,
+    j.extensions,
+    new Date(),
+    j.id,
+  );
 
 @Injectable()
 export class JobsService {
@@ -91,7 +148,7 @@ export class JobsService {
   async create(user: PrismaUser, dto: CreateJobDto): Promise<Job> {
     const molds = await this.prisma.mold.findMany({
       where: { id: { in: dto.moldIds }, managerId: user.id },
-      select: { id: true, kodeMold: true, jobId: true },
+      select: { id: true, kodeMold: true, jobId: true, targetOutput: true, estimasiKg: true },
     });
     // Cetakan tenant lain atau tidak ada sama-sama 404: jangan bocorkan keberadaannya.
     if (molds.length !== dto.moldIds.length) {
@@ -127,6 +184,13 @@ export class JobsService {
           catatan: dto.catatan,
         },
       });
+      // Riwayat pemakaian cetakan per booking: jobId di Mold nanti dilepas saat
+      // booking tutup, jadi tanpa baris ini pemakaiannya hilang dari catatan.
+      await tx.moldJobUsage.createMany({
+        data: dto.moldIds.map((moldId) => ({ moldId, jobId: created.id })),
+        skipDuplicates: true,
+      });
+      await bukaSesiBooking(tx, molds, created.id, user.id);
       await tx.mold.updateMany({
         where: { id: { in: dto.moldIds } },
         data: { jobId: created.id },
@@ -412,7 +476,14 @@ export class JobsService {
 
     const molds = await this.prisma.mold.findMany({
       where: { id: { in: moldIds }, managerId: user.id },
-      select: { id: true, kodeMold: true, tonaseTon: true, jobId: true },
+      select: {
+        id: true,
+        kodeMold: true,
+        tonaseTon: true,
+        jobId: true,
+        targetOutput: true,
+        estimasiKg: true,
+      },
     });
     if (molds.length !== moldIds.length) {
       throw new NotFoundException('Sebagian cetakan tidak ditemukan');
@@ -433,9 +504,16 @@ export class JobsService {
       );
     }
 
-    await this.prisma.mold.updateMany({
-      where: { id: { in: moldIds } },
-      data: { jobId: job.id, trackingStatus: asMoldTracking(MoldTrackingStatus.PLANNING) },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.moldJobUsage.createMany({
+        data: moldIds.map((moldId) => ({ moldId, jobId: job.id })),
+        skipDuplicates: true,
+      });
+      await bukaSesiBooking(tx, molds, job.id, user.id);
+      await tx.mold.updateMany({
+        where: { id: { in: moldIds } },
+        data: { jobId: job.id, trackingStatus: asMoldTracking(MoldTrackingStatus.PLANNING) },
+      });
     });
 
     await this.notifyStaf(
@@ -490,7 +568,16 @@ export class JobsService {
         data: { lifecycle: asLifecycle(JobLifecycle.DITOLAK), rejectionReason: dto.reason },
         ...withDetails,
       });
-      await tx.mold.updateMany({ where: { jobId: job.id }, data: { jobId: null } });
+      // Booking ditolak berarti tidak pernah terjadi, jadi riwayat pemakaiannya
+      // dihapus juga, bukan disimpan sebagai pemakaian yang seolah berlangsung.
+      await tx.moldJobUsage.deleteMany({ where: { jobId: job.id } });
+      // Sesi produksi yang dibuka untuk booking ini ikut dihapus: booking yang
+      // ditolak tidak pernah berjalan, jadi tidak layak muncul di riwayat.
+      await tx.moldProductionRun.deleteMany({ where: { jobId: job.id } });
+      await tx.mold.updateMany({
+        where: { jobId: job.id },
+        data: { jobId: null, trackingStatus: null },
+      });
       return result;
     });
     await this.notifications.create(

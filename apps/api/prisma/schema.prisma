@@ -234,8 +234,28 @@ model Mold {
   logPengiriman  LogPengiriman[]
   logPenerimaan  LogPenerimaan[]
   runs           MoldProductionRun[]
+  usages         MoldJobUsage[]
 
   @@index([jobId])
+}
+
+// Riwayat pemakaian cetakan per booking. jobId pada Mold hanya menyimpan booking
+// yang SEDANG berjalan dan dilepas saat booking tutup, supaya cetakan bisa
+// dibooking lagi. Tanpa tabel ini pemakaian lamanya ikut hilang begitu dilepas.
+//
+// Satu baris per pasangan cetakan dan booking, jadi cetakan yang dipakai berkali
+// kali punya beberapa baris dengan job berbeda.
+model MoldJobUsage {
+  id     String   @id @default(cuid())
+  moldId String
+  jobId  String
+  at     DateTime @default(now())
+
+  mold Mold @relation(fields: [moldId], references: [id], onDelete: Cascade)
+  job  Job  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([moldId, jobId])
+  @@index([moldId, at])
 }
 
 // Satu sesi produksi cetakan. Cetakan yang sudah selesai boleh dipakai lagi
@@ -319,6 +339,7 @@ model Job {
   logProduksi   LogProduksi[]
   logPengiriman LogPengiriman[]
   logPenerimaan LogPenerimaan[]
+  moldUsages    MoldJobUsage[]
 
   @@unique([managerId, jobNumber])
 }

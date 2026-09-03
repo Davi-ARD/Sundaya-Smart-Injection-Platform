@@ -23,6 +23,9 @@ function txMock() {
   return {
     job: { findUnique: jest.fn(), update: jest.fn() },
     machine: { update: jest.fn() },
+    // Menutup booking ikut melepas cetakannya supaya bisa dibooking lagi.
+    mold: { updateMany: jest.fn() },
+    moldJobUsage: { createMany: jest.fn(), deleteMany: jest.fn() },
   };
 }
 
@@ -78,6 +81,8 @@ function jobRow(o: Record<string, unknown> = {}) {
     rejectionReason: null,
     createdAt: new Date('2026-07-01'),
     molds: [],
+    // Cetakan booking dibaca dari riwayat pemakaian, bukan keterikatan langsung.
+    moldUsages: [],
     machines: [],
     extensions: [],
     ...o,
@@ -115,6 +120,11 @@ describe('JobsService.create (booking)', () => {
         findUniqueOrThrow: jest.fn().mockResolvedValue(row),
       },
       mold: { updateMany: jest.fn() },
+      // Riwayat pemakaian cetakan per booking dicatat di transaksi yang sama.
+      moldJobUsage: { createMany: jest.fn(), deleteMany: jest.fn() },
+      // Cetakan yang masuk booking membuka sesi produksi baru di transaksi ini.
+      moldProductionRun: { createMany: jest.fn(), deleteMany: jest.fn() },
+      logProduksi: { groupBy: jest.fn().mockResolvedValue([]) },
     };
     // Sekuens nomor job diambil di dalam transaksi yang sama.
     (tx.job as unknown as { count: jest.Mock }).count = jest.fn().mockResolvedValue(4);
@@ -186,6 +196,36 @@ describe('JobsService.create (booking)', () => {
     await service.create(manager, { ...dto, moldIds: ['mold-1'] });
 
     expect(tx.job.create.mock.calls[0][0].data.jobNumber).toBe('JOB-KMD1-001');
+  });
+
+  it('cetakan yang dibooking ulang membuka sesi baru dari akumulasi terakhir', async () => {
+    const prisma = prismaMock();
+    // Cetakan sudah menghasilkan 50 pcs di booking sebelumnya dan targetnya 50.
+    prisma.mold.findMany.mockResolvedValue([
+      { id: 'mold-1', kodeMold: 'MLD1', jobId: null, targetOutput: 50, estimasiKg: 100 },
+    ]);
+    const tx = mockCreateTx(prisma, jobRow());
+    (tx as unknown as { logProduksi: { groupBy: jest.Mock } }).logProduksi.groupBy = jest
+      .fn()
+      .mockResolvedValue([{ moldId: 'mold-1', _sum: { goodProduct: 50, materialUsedKg: 80 } }]);
+    prisma.user.findMany.mockResolvedValue([]);
+
+    const service = new JobsService(
+      prisma as unknown as PrismaService,
+      notificationsMock() as unknown as NotificationsService,
+    );
+    await service.create(manager, { ...dto, moldIds: ['mold-1'] });
+
+    // Titik awal sesi = akumulasi terakhir, sehingga capaian booking baru mulai
+    // dari nol. Tanpa ini cetakan langsung terhitung selesai dan produksinya
+    // terkunci sejak booking pertama kali dibuat.
+    const runs = (tx as unknown as { moldProductionRun: { createMany: jest.Mock } })
+      .moldProductionRun.createMany;
+    expect(runs).toHaveBeenCalledWith({
+      data: [
+        expect.objectContaining({ moldId: 'mold-1', targetOutput: 50, goodAwal: 50, materialAwal: 80 }),
+      ],
+    });
   });
 
   it('409 bila cetakan sudah dibooking, sebut kodenya', async () => {
@@ -509,8 +549,15 @@ describe('JobsService.reject', () => {
       jobRow({ lifecycle: 'DITOLAK', rejectionReason: 'mesin penuh' }),
     );
 
+    const moldUpdate = jest.fn();
+    const usageDelete = jest.fn();
     prisma.$transaction.mockImplementation((fn: (t: unknown) => unknown) =>
-      fn({ job: { update: prisma.job.update }, mold: { updateMany: jest.fn() } }),
+      fn({
+        job: { update: prisma.job.update },
+        mold: { updateMany: moldUpdate },
+        moldJobUsage: { deleteMany: usageDelete },
+        moldProductionRun: { deleteMany: jest.fn() },
+      }),
     );
     const notifications = notificationsMock();
     const service = new JobsService(prisma as unknown as PrismaService, notifications as unknown as NotificationsService);
@@ -519,6 +566,13 @@ describe('JobsService.reject', () => {
     const data = prisma.job.update.mock.calls[0][0].data;
     expect(data.lifecycle).toBe(JobLifecycle.DITOLAK);
     expect(data.rejectionReason).toBe('mesin penuh');
+    // Booking yang ditolak tidak pernah terjadi: cetakannya bebas lagi dan
+    // riwayat pemakaiannya dihapus, bukan disimpan sebagai pemakaian palsu.
+    expect(moldUpdate).toHaveBeenCalledWith({
+      where: { jobId: 'job-1' },
+      data: { jobId: null, trackingStatus: null },
+    });
+    expect(usageDelete).toHaveBeenCalledWith({ where: { jobId: 'job-1' } });
     expect(result.lifecycle).toBe(JobLifecycle.DITOLAK);
     // Manager pemilik booking harus tahu kenapa bookingnya ditolak.
     expect(notifications.create).toHaveBeenCalledWith(
@@ -602,6 +656,13 @@ describe('closeExpiredJobs (masa sewa habis -> booking tutup)', () => {
     expect(tx.machine.update).toHaveBeenCalledWith({
       where: { id: 'm-1' },
       data: { status: MachineStatus.TERSEDIA },
+    });
+    // Cetakan ikut dilepas supaya bisa dibooking lagi, dan status trackingnya
+    // direset agar di master data kembali terbaca "belum dibooking". Tanpa ini
+    // cetakan terkunci permanen pada booking yang sudah selesai.
+    expect(tx.mold.updateMany).toHaveBeenCalledWith({
+      where: { jobId: 'job-1' },
+      data: { jobId: null, trackingStatus: null },
     });
     expect(tx.job.update.mock.calls[0][0].data.lifecycle).toBe(JobLifecycle.SELESAI);
   });

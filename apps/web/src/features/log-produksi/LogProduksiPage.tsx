@@ -59,26 +59,30 @@ export function LogProduksiPage() {
   // bukan dari dropdown di dalam form.
   const [catatTarget, setCatatTarget] = useState<{ jobId: string; moldId: string } | null>(null)
 
-  useEffect(() => {
-    const loadJobs = async () => {
-      try {
-        // Rencana pengiriman ikut dimuat supaya tiap kartu job bisa menampilkan
-        // cetakan dan material apa yang dijadwalkan Manager untuk job itu.
-        const [list, kirim] = await Promise.all([
-          api.listJobs(accessToken),
-          api.listPengiriman(accessToken),
-        ])
-        setJobs(list)
-        setPengiriman(kirim)
-        setJobId((current) => current || list[0]?.id || '')
-      } catch (caught) {
-        toast.error(errorMessage(caught, 'Gagal memuat job'))
-      } finally {
-        setIsLoadingJobs(false)
-      }
+  // Capaian tiap cetakan dibaca dari job (dihitung server per sesi produksi),
+  // jadi daftar job ikut dimuat ulang setiap habis mencatat produksi. Tanpa itu
+  // angka sesi di kartu dan di form tertinggal satu langkah.
+  const loadJobs = useCallback(async () => {
+    try {
+      // Rencana pengiriman ikut dimuat supaya tiap kartu job bisa menampilkan
+      // cetakan dan material apa yang dijadwalkan Manager untuk job itu.
+      const [list, kirim] = await Promise.all([
+        api.listJobs(accessToken),
+        api.listPengiriman(accessToken),
+      ])
+      setJobs(list)
+      setPengiriman(kirim)
+      setJobId((current) => current || list[0]?.id || '')
+    } catch (caught) {
+      toast.error(errorMessage(caught, 'Gagal memuat job'))
+    } finally {
+      setIsLoadingJobs(false)
     }
-    void loadJobs()
   }, [accessToken, toast])
+
+  useEffect(() => {
+    void loadJobs()
+  }, [loadJobs])
 
   const loadLogs = useCallback(async () => {
     if (!jobId) return
@@ -191,11 +195,11 @@ export function LogProduksiPage() {
           moldId={catatTarget.moldId}
           molds={jobs.find((j) => j.id === catatTarget.jobId)?.molds ?? []}
           machines={jobs.find((j) => j.id === catatTarget.jobId)?.machines ?? []}
-          logs={logs}
           onClose={() => setCatatTarget(null)}
           onSaved={() => {
             setCatatTarget(null)
             void loadLogs()
+            void loadJobs()
           }}
         />
       ) : null}
@@ -247,7 +251,6 @@ function LogFormPanel({
   moldId,
   molds,
   machines,
-  logs,
   onClose,
   onSaved,
 }: {
@@ -257,8 +260,6 @@ function LogFormPanel({
   moldId: string
   molds: JobMold[]
   machines: JobMachine[]
-  // Log job ini, dipakai menghitung capaian tiap cetakan terhadap targetnya.
-  logs: LogProduksi[]
   onClose: () => void
   onSaved: () => void
 }) {
@@ -275,11 +276,12 @@ function LogFormPanel({
   const [isSaving, setIsSaving] = useState(false)
 
   const selectedMold = molds.find((m) => m.moldId === moldId)
-  // Capaian cetakan terpilih sejauh ini, dihitung dari timeline job yang sudah dimuat.
-  const goodSejauhIni = useMemo(
-    () => logs.filter((l) => l.moldId === moldId).reduce((a, l) => a + (l.goodProduct ?? 0), 0),
-    [logs, moldId],
-  )
+  // Capaian dibaca dari server, bukan dijumlah ulang dari timeline job. Angka
+  // server dihitung terhadap SESI produksi yang sedang berjalan, sehingga target
+  // yang baru diubah Manager mulai lagi dari nol dan tidak melanjutkan hasil
+  // sesi sebelumnya. Menjumlah timeline di sini akan menghitung seumur hidup
+  // cetakan dan salah menyatakan sesi baru sudah selesai.
+  const goodSejauhIni = selectedMold?.goodProduct ?? 0
   const target = selectedMold?.targetOutput ?? null
   const sisaTarget = target != null ? Math.max(target - goodSejauhIni, 0) : null
   // Cermin aturan server: cetakan yang sudah menyentuh target dinyatakan selesai.
@@ -497,17 +499,23 @@ function JobCard({
           >
             <div className="flex items-center justify-between gap-2">
               <span className="font-semibold text-slate-900">{m.kodeMold}</span>
+              {/* Booking yang sudah tutup menampilkan HASIL AKHIR, bukan
+                  "Berjalan": produksinya memang tidak akan berlanjut lagi. */}
               {m.selesai ? (
                 <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
-                  <CheckCircle2 className="h-3 w-3" /> Selesai
+                  <CheckCircle2 className="h-3 w-3" /> {sewaBerjalan ? 'Selesai' : 'Tercapai'}
                 </span>
               ) : m.targetOutput == null ? (
                 <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
                   Tanpa target
                 </span>
-              ) : (
+              ) : sewaBerjalan ? (
                 <span className="rounded-full bg-brand-100 px-2 py-0.5 text-xs font-medium text-brand-700">
                   Berjalan
+                </span>
+              ) : (
+                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                  Tidak tercapai
                 </span>
               )}
             </div>

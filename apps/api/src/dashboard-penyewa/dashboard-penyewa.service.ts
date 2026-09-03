@@ -244,6 +244,10 @@ export class DashboardPenyewaService {
   // Perkembangan plan mold (Manager Penyewa): satu baris per cetakan miliknya,
   // menggabung tracking fisik, booking/mesin, capaian produksi, dan kuota material.
   // Jadi satu-satunya tabel di dashboard Manager (menggantikan tabel job terpisah).
+  // Satu baris per PEMAKAIAN cetakan, bukan per cetakan. Cetakan yang dipakai di
+  // beberapa booking muncul beberapa kali dengan job berbeda, dan angkanya
+  // dihitung khusus untuk booking itu saja. Cetakan yang belum pernah dibooking
+  // tetap muncul satu baris tanpa job.
   async moldPlan(user: PrismaUser): Promise<MoldPlanRow[]> {
     const molds = await this.prisma.mold.findMany({
       where: { managerId: user.id },
@@ -251,50 +255,92 @@ export class DashboardPenyewaService {
       include: {
         logProduksi: { orderBy: { occurredAt: 'desc' } },
         runs: { orderBy: { at: 'desc' } },
-        job: {
+        usages: {
+          orderBy: { at: 'desc' },
           include: {
-            machines: { select: { machineNumber: true }, orderBy: { machineNumber: 'asc' } },
+            job: {
+              include: {
+                machines: { select: { machineNumber: true }, orderBy: { machineNumber: 'asc' } },
+              },
+            },
           },
         },
       },
     });
 
     const now = new Date();
-    return molds.map((mold) => {
-      const job = mold.job;
-      const stats = summarizeLogs(mold.logProduksi);
-      const totalOutput = stats.totalGoodProduct + stats.totalReject;
-      const material = materialQuota(mold.estimasiKg, stats.materialUsedKg);
+    return molds.flatMap((mold) => {
+      // Tanpa riwayat pemakaian berarti belum pernah dibooking: satu baris polos.
+      if (!mold.usages.length) return [this.moldPlanRow(mold, null, mold.logProduksi, mold.runs, now)];
 
-      return {
-        moldId: mold.id,
-        kodeMold: mold.kodeMold,
-        namaProduk: mold.namaProduk,
-        cavity: mold.cavity,
-        tonaseTon: mold.tonaseTon,
-        trackingStatus: mold.trackingStatus as unknown as MoldTrackingStatus,
-        jobId: job?.id ?? null,
-        jobNumber: job?.jobNumber ?? null,
-        lifecycle: (job?.lifecycle as unknown as JobLifecycle | undefined) ?? null,
-        machineNumbers: job?.machines.map((m) => m.machineNumber) ?? [],
-        progressMolding: progressFor(stats.totalGoodProduct, mold.targetOutput, mold.runs?.[0]),
-        targetOutput: mold.targetOutput,
-        totalGoodProduct: stats.totalGoodProduct,
-        totalReject: stats.totalReject,
-        achievement: achievementPercent(stats.totalGoodProduct, mold.targetOutput),
-        rejectRate: totalOutput ? round((stats.totalReject / totalOutput) * 100) : 0,
-        sisaHariSewa: remainingDays(job?.endDate ?? null, now),
-        etaHari: etaDays(stats.totalGoodProduct, mold.targetOutput, stats.produksiHari),
-        planMaterialUtama: mold.planMaterialUtama,
-        estimasiKg: mold.estimasiKg,
-        materialUsedKg: stats.materialUsedKg,
-        materialRemainingKg: material.remaining,
-        materialUsagePercent: material.percent,
-        endDate: job?.endDate?.toISOString() ?? null,
-        harian: toHarian(mold.logProduksi),
-        runs: toRuns(mold.runs ?? [], stats.totalGoodProduct, stats.materialUsedKg),
-      };
+      return mold.usages.map((usage) =>
+        this.moldPlanRow(
+          mold,
+          usage.job,
+          mold.logProduksi.filter((l) => l.jobId === usage.jobId),
+          mold.runs.filter((r) => r.jobId === usage.jobId),
+          now,
+          { logs: mold.logProduksi, runs: mold.runs },
+        ),
+      );
     });
+  }
+
+  // Satu baris rencana cetakan. Log dan sesi sudah disaring pemanggil ke booking
+  // yang bersangkutan, sehingga capaian satu baris tidak bercampur booking lain.
+  private moldPlanRow(
+    mold: MoldRow,
+    job: JobRow | null,
+    logs: LogRow[],
+    runs: RunRow[],
+    now: Date,
+    // Riwayat sesi sengaja TIDAK disaring per booking: panel detail cetakan harus
+    // menampilkan seluruh pemakaian cetakan itu sepanjang umurnya, bukan hanya
+    // yang kebetulan jatuh di booking baris ini.
+    seluruh: { logs: LogRow[]; runs: RunRow[] } = { logs, runs },
+  ): MoldPlanRow {
+    const stats = summarizeLogs(logs);
+    const statsSeluruh = summarizeLogs(seluruh.logs);
+    const totalOutput = stats.totalGoodProduct + stats.totalReject;
+    const material = materialQuota(mold.estimasiKg, stats.materialUsedKg);
+    // Cetakan yang sedang menempel pada booking ini menampilkan status tracking
+    // berjalannya; baris booking lama tidak lagi punya status karena cetakannya
+    // sudah dilepas saat booking itu tutup.
+    const tracking =
+      job != null && mold.jobId === job.id
+        ? (mold.trackingStatus as unknown as MoldTrackingStatus | null)
+        : job == null
+          ? (mold.trackingStatus as unknown as MoldTrackingStatus | null)
+          : null;
+
+    return {
+      moldId: mold.id,
+      kodeMold: mold.kodeMold,
+      namaProduk: mold.namaProduk,
+      cavity: mold.cavity,
+      tonaseTon: mold.tonaseTon,
+      trackingStatus: tracking,
+      jobId: job?.id ?? null,
+      jobNumber: job?.jobNumber ?? null,
+      lifecycle: (job?.lifecycle as unknown as JobLifecycle | undefined) ?? null,
+      machineNumbers: job?.machines.map((m) => m.machineNumber) ?? [],
+      progressMolding: progressFor(stats.totalGoodProduct, mold.targetOutput, runs[0]),
+      targetOutput: runs[0]?.targetOutput ?? mold.targetOutput,
+      totalGoodProduct: stats.totalGoodProduct,
+      totalReject: stats.totalReject,
+      achievement: achievementPercent(stats.totalGoodProduct, mold.targetOutput),
+      rejectRate: totalOutput ? round((stats.totalReject / totalOutput) * 100) : 0,
+      sisaHariSewa: remainingDays(job?.endDate ?? null, now),
+      etaHari: etaDays(stats.totalGoodProduct, mold.targetOutput, stats.produksiHari),
+      planMaterialUtama: mold.planMaterialUtama,
+      estimasiKg: mold.estimasiKg,
+      materialUsedKg: stats.materialUsedKg,
+      materialRemainingKg: material.remaining,
+      materialUsagePercent: material.percent,
+      endDate: job?.endDate?.toISOString() ?? null,
+      harian: toHarian(logs),
+      runs: toRuns(seluruh.runs, statsSeluruh.totalGoodProduct, statsSeluruh.materialUsedKg),
+    };
   }
 }
 
@@ -343,8 +389,32 @@ function toHarian(logs: LogRow[]): DailyCycleEntry[] {
     }));
 }
 
+// Bentuk baris yang dibaca moldPlanRow. Ditulis eksplisit supaya fungsi itu
+// tidak bergantung pada tipe hasil query yang panjang.
+type MoldRow = {
+  id: string;
+  kodeMold: string;
+  namaProduk: string;
+  cavity: number;
+  tonaseTon: number;
+  jobId: string | null;
+  trackingStatus: string | null;
+  planMaterialUtama: string | null;
+  estimasiKg: number | null;
+  targetOutput: number | null;
+};
+
+type JobRow = {
+  id: string;
+  jobNumber: string;
+  lifecycle: string;
+  endDate: Date | null;
+  machines: { machineNumber: string }[];
+};
+
 type RunRow = {
   id: string;
+  jobId?: string | null;
   targetOutput: number;
   estimasiKg: number | null;
   goodAwal: number;
@@ -353,6 +423,7 @@ type RunRow = {
 };
 
 type LogRow = {
+  jobId?: string;
   eventType: string;
   occurredAt: Date;
   goodProduct: number | null;

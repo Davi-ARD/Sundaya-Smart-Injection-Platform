@@ -97,6 +97,14 @@ export async function tutupBooking(
     );
     await tx.machine.update({ where: { id: m.id }, data: { status: asMachineStatus(status) } });
   }
+  // Cetakan dilepas dari booking yang tutup supaya bisa dibooking lagi. Riwayat
+  // pemakaiannya tidak ikut hilang karena tersimpan terpisah di MoldJobUsage.
+  // Status tracking ikut direset: di master data cetakan itu kembali terbaca
+  // "belum dibooking", bukan menyisakan Completed dari booking yang sudah lewat.
+  await tx.mold.updateMany({
+    where: { jobId },
+    data: { jobId: null, trackingStatus: null },
+  });
   await tx.job.update({
     where: { id: jobId },
     data: { lifecycle: asLifecycle(JobLifecycle.SELESAI) },
